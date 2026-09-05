@@ -196,6 +196,16 @@ try {
     ok('集計に納期超過 1 件', /1/.test(await a.locator('.tile[data-tone="bad"] .tile__value').textContent()))
     await a.click('[data-testid="tab-list"]')
     await a.evaluate(() => { const ed = window.__qcEditor; ed.updateShape(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'E2E-001').id, { dueDate: '' }) })
+
+    // ドロワーの高さをドラッグで変更
+    const h0 = await a.evaluate(() => document.querySelector('.app__drawer').getBoundingClientRect().height)
+    const handle = await a.locator('[data-testid="drawer-handle"]').boundingBox()
+    await a.mouse.move(handle.x + 300, handle.y + 4)
+    await a.mouse.down()
+    await a.mouse.move(handle.x + 300, handle.y - 120, { steps: 5 })
+    await a.mouse.up()
+    const h1 = await a.evaluate(() => document.querySelector('.app__drawer').getBoundingClientRect().height)
+    ok(`ドロワーの高さをドラッグで変更 (${h0} → ${h1})`, h1 > h0 + 80)
   }
 
   // CSV: ダウンロードイベントが発生し内容に見出しが含まれる

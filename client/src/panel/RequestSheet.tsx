@@ -28,8 +28,8 @@ interface Column {
 
 const COLUMNS: Column[] = [
   { key: 'no', label: '受付番号', width: 118, kind: 'readonly' },
-  { key: 'status', label: '状態', width: 92, kind: 'select' },
-  { key: 'priority', label: '優先度', width: 76, kind: 'priority' },
+  { key: 'status', label: '状態', width: 100, kind: 'select' },
+  { key: 'priority', label: '優先度', width: 84, kind: 'priority' },
   { key: 'title', label: '件名', width: 120, kind: 'text' },
   { key: 'dept', label: '依頼部門', width: 100, kind: 'text' },
   { key: 'partNo', label: '品番', width: 110, kind: 'text' },
@@ -40,7 +40,7 @@ const COLUMNS: Column[] = [
   { key: 'dueDate', label: '希望納期', width: 130, kind: 'date' },
   { key: 'assignee', label: '担当', width: 90, kind: 'text' },
   { key: 'note', label: '備考', width: 200, kind: 'text' },
-  { key: 'result', label: '結果', width: 96, kind: 'result' },
+  { key: 'result', label: '結果', width: 110, kind: 'result' },
   { key: 'resultNote', label: '所見', width: 160, kind: 'text' },
   { key: 'judgedBy', label: '判定者', width: 80, kind: 'readonly' },
   { key: 'judgedAt', label: '判定日', width: 96, kind: 'readonly' },

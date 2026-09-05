@@ -11,6 +11,8 @@ import { isEmbed, notifyHost } from '../embed'
 import { useSingleSelection } from '../panel/useCards'
 
 const DRAWER_KEY = 'qc.drawerOpen'
+const DRAWER_H_KEY = 'qc.drawerHeight'
+const DRAWER_MIN = 160
 
 export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const [user, setUser] = useState<Me | null | undefined>(undefined)
@@ -19,6 +21,36 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const [peers, setPeers] = useState(0)
   const [editor, setEditor] = useState<Editor | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900)
+  const [drawerH, setDrawerH] = useState(() => {
+    try {
+      const v = Number(localStorage.getItem(DRAWER_H_KEY))
+      return v >= DRAWER_MIN ? v : 260
+    } catch {
+      return 260
+    }
+  })
+  // ドロワー上端のドラッグで高さを変える
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startH = drawerH
+    const max = Math.round(window.innerHeight * 0.75)
+    const move = (ev: PointerEvent) => setDrawerH(Math.min(max, Math.max(DRAWER_MIN, startH + (startY - ev.clientY))))
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      setDrawerH((h) => {
+        try {
+          localStorage.setItem(DRAWER_H_KEY, String(h))
+        } catch {
+          /* ignore */
+        }
+        return h
+      })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
   const [drawerOpen, setDrawerOpen] = useState(() => {
     try {
       return localStorage.getItem(DRAWER_KEY) !== '0'
@@ -64,7 +96,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const readonly = user.role === 'viewer'
 
   return (
-    <div className="app" data-drawer={drawerOpen} data-sidebar={sidebarOpen} data-embed={isEmbed()}>
+    <div className="app" data-drawer={drawerOpen} data-sidebar={sidebarOpen} data-embed={isEmbed()} style={{ ['--drawer-h' as string]: `${drawerH}px` }}>
       {editor && <SelectionNotifier editor={editor} roomId={roomId} />}
       <header className="app__header">
         <button className="link" onClick={() => navigate('/')}>
@@ -106,6 +138,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
       </main>
       {drawerOpen && (
         <section className="app__drawer">
+          <div className="app__drawer-handle" onPointerDown={startResize} title="ドラッグで高さを変更" data-testid="drawer-handle" />
           {editor ? (
             <RequestSheet editor={editor} roomId={roomId} boardName={title} readonly={readonly} />
           ) : null}
