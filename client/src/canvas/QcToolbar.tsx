@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEditor, useEditorSnapshot } from './hooks'
 import type { ToolId } from './editor'
+import { TemplateMenu } from './TemplateMenu'
 
 type Item = { id: ToolId; label: string; icon: string; key: string } | 'sep'
 
@@ -18,6 +19,7 @@ const ITEMS: Item[] = [
   { id: 'line', label: '直線', icon: '╱', key: 'L' },
   { id: 'rect', label: '四角', icon: '▭', key: 'R' },
   { id: 'ellipse', label: '楕円', icon: '◯', key: 'O' },
+  { id: 'frame', label: '区画', icon: '▢', key: 'F' },
   'sep',
   { id: 'request-card', label: '依頼', icon: '📋', key: 'C' },
   { id: 'comment', label: 'コメント', icon: '💬', key: 'M' }
@@ -57,6 +59,8 @@ export function QcToolbar(): JSX.Element {
         <span className="qc-toolbar__icon">↷</span>
         <span>進む</span>
       </button>
+      <div className="qc-toolbar__sep" />
+      <TemplateMenu />
     </div>
   )
 }

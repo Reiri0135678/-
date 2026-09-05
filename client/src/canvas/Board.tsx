@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Circle, Layer, Line, Rect, Stage, Transformer } from 'react-konva'
-import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, todayString, type ArrowShape, type DrawShape, type Shape } from '@shared/shapes'
+import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, shapesInFrame, todayString, type ArrowShape, type DrawShape, type FrameShape, type Shape } from '@shared/shapes'
 import { BoardEditor, bindingFor, newId, resolveArrow, shapeBounds, type Point, type ToolId } from './editor'
 import { EditorContext, useEditorSnapshot } from './hooks'
 import { ShapeView, shapeIdOf, type ShapeHandlers } from './shapes/ShapeView'
@@ -16,6 +16,8 @@ import { PageBar } from './PageBar'
 import { CommentPins, CommentPopover, type CommentPopoverState } from './Comments'
 import { ContextMenu, type MenuState } from './ContextMenu'
 import { FindBar } from './FindBar'
+import { Minimap } from './Minimap'
+import { TemplateMenu } from './TemplateMenu'
 import { loadImageSize } from './useImage'
 import { expandFiles } from './pdf'
 
@@ -58,7 +60,7 @@ export function Board(props: BoardProps): JSX.Element {
   )
 }
 
-const CREATE_TOOLS: ReadonlySet<ToolId> = new Set(['arrow', 'line', 'rect', 'ellipse', 'request-card'])
+const CREATE_TOOLS: ReadonlySet<ToolId> = new Set(['arrow', 'line', 'rect', 'ellipse', 'frame', 'request-card'])
 const KEY_TOOLS: Record<string, ToolId> = {
   v: 'select',
   h: 'hand',
@@ -71,6 +73,7 @@ const KEY_TOOLS: Record<string, ToolId> = {
   l: 'line',
   r: 'rect',
   o: 'ellipse',
+  f: 'frame',
   c: 'request-card',
   m: 'comment'
 }
@@ -172,7 +175,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       onDblClick(shape, e) {
         if (snap.readonly) return
         e.cancelBubble = true
-        if (shape.type === 'text' || shape.type === 'note' || shape.type === 'rect' || shape.type === 'ellipse') {
+        if (shape.type === 'text' || shape.type === 'note' || shape.type === 'rect' || shape.type === 'ellipse' || shape.type === 'frame') {
           editor.select(shape.id)
           editor.setEditing(shape.id)
         }
@@ -185,6 +188,12 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         for (const id of sel) {
           const s = editor.getShape(id)
           if (s) m.set(id, { x: s.x, y: s.y })
+          // 区画を動かすときは中の図形も一緒に
+          if (s?.type === 'frame') {
+            for (const inner of shapesInFrame(s as FrameShape, editor.getShapes())) {
+              if (!inner.locked && !m.has(inner.id)) m.set(inner.id, { x: inner.x, y: inner.y })
+            }
+          }
         }
         dragStart.current = m
       },
@@ -338,6 +347,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       return { ...defaultsFor('arrow'), ...base, x: a.x, y: a.y, dx: b.x - a.x, dy: b.y - a.y, color: st.color, size: st.size, dash: st.dash, headEnd: tool === 'arrow', headStart: false } as Shape
     if (tool === 'rect') return { ...defaultsFor('rect'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill, dash: st.dash, kind: st.geoKind } as Shape
     if (tool === 'ellipse') return { ...defaultsFor('ellipse'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill, dash: st.dash } as Shape
+    if (tool === 'frame') return { ...defaultsFor('frame'), ...base, x, y, w: Math.max(200, w), h: Math.max(140, h) } as Shape
     return { ...defaultsFor('request-card'), ...base, x: a.x, y: a.y, w: Math.max(CARD_W, w), h: Math.max(CARD_H, h) } as Shape
   }
 
@@ -832,6 +842,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       <QcToolbar />
       <StylePanel />
       <PageBar />
+      <Minimap editor={editor} />
       <ZoomBar />
       {snap.status !== 'online' && (
         <div className="board-banner" data-status={snap.status}>

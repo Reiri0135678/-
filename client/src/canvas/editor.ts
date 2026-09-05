@@ -39,6 +39,7 @@ export type ToolId =
   | 'rect'
   | 'ellipse'
   | 'line'
+  | 'frame'
   | 'request-card'
   | 'comment'
 
@@ -400,6 +401,7 @@ export class BoardEditor {
 
   /** 図形を作成して返す。type 以外は省略可 */
   createShape<T extends Shape = Shape>(init: { type: ShapeType; x?: number; y?: number } & Partial<T>): T {
+    const explicitZ = (init as { z?: number }).z
     const shape = {
       ...defaultsFor(init.type),
       page: this.snapshot.currentPage,
@@ -407,7 +409,7 @@ export class BoardEditor {
       id: (init as { id?: string }).id ?? newId(),
       x: init.x ?? 0,
       y: init.y ?? 0,
-      z: this.nextZ(),
+      z: explicitZ ?? (init.type === 'frame' ? (this.snapshot.shapes.length ? this.snapshot.shapes[0]!.z - 1 : 0) : this.nextZ()),
       by: this.userName,
       updatedAt: Date.now()
     } as T
@@ -647,6 +649,35 @@ export class BoardEditor {
     return created
   }
 
+  /** 図形の組(雛形・貼り付け以外)を現在のページに入れる。frame は背面、それ以外は前面へ。返り値は作成した id */
+  insertShapes(list: Array<Partial<Shape> & { type: ShapeType }>, at: Point): string[] {
+    if (this.snapshot.readonly || list.length === 0) return []
+    const idMap = new Map<string, string>()
+    for (const s of list) if (s.id) idMap.set(s.id, newId())
+    const bounds = boundsOf(list.map((s) => ({ ...defaultsFor(s.type), ...s }) as Shape))!
+    const off = { x: at.x - (bounds.x + bounds.w / 2), y: at.y - (bounds.y + bounds.h / 2) }
+    const created: string[] = []
+    const frames = list.filter((s) => s.type === 'frame')
+    const others = list.filter((s) => s.type !== 'frame')
+    const minZ = this.snapshot.shapes.length ? this.snapshot.shapes[0]!.z : 0
+    let backZ = minZ - frames.length
+    for (const s of [...frames, ...others]) {
+      const copy = { ...s, id: s.id ? idMap.get(s.id)! : newId(), x: (s.x ?? 0) + off.x, y: (s.y ?? 0) + off.y } as Shape & { z?: number }
+      if (copy.type === 'arrow') {
+        if (copy.startBind) copy.startBind = idMap.has(copy.startBind.id) ? { ...copy.startBind, id: idMap.get(copy.startBind.id)! } : null
+        if (copy.endBind) copy.endBind = idMap.has(copy.endBind.id) ? { ...copy.endBind, id: idMap.get(copy.endBind.id)! } : null
+      }
+      if (copy.type === 'frame') copy.z = backZ++
+      this.createShape(copy as unknown as Parameters<typeof this.createShape>[0])
+      created.push(copy.id)
+    }
+    // 吸着矢印の端点を確定
+    const arrows = created.map((id) => this.snapshot.byId.get(id)).filter((x): x is ArrowShape => !!x && x.type === 'arrow' && !!(x.startBind || x.endBind))
+    if (arrows.length) this.updateShapes(arrows.map((a) => ({ id: a.id, patch: resolveArrow(a, (id) => this.snapshot.byId.get(id)) })))
+    this.select(created)
+    return created
+  }
+
   /** 文字を含む図形を検索(文字・付箋・ラベル・依頼カード) */
   find(query: string): Shape[] {
     const q = query.trim().toLowerCase()
@@ -655,6 +686,7 @@ export class BoardEditor {
       const texts: string[] = []
       if (s.type === 'text' || s.type === 'note') texts.push(s.text)
       if (s.type === 'rect' || s.type === 'ellipse') texts.push(s.label)
+      if (s.type === 'frame') texts.push(s.title)
       if (s.type === 'image') texts.push(s.name)
       if (s.type === 'request-card') texts.push(s.no, s.title, s.dept, s.partNo, s.lot, s.requester, s.note, s.assignee)
       return texts.some((t) => t && t.toLowerCase().includes(q))
@@ -840,7 +872,7 @@ export class BoardEditor {
     const list = this.snapshot.shapes
     for (let i = list.length - 1; i >= 0; i--) {
       const s = list[i]!
-      if (exclude.includes(s.id) || s.type === 'arrow' || s.type === 'draw') continue
+      if (exclude.includes(s.id) || s.type === 'arrow' || s.type === 'draw' || s.type === 'frame') continue
       if (s.type === 'request-card' && s.archived) continue
       const b = shapeBounds(s)
       if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return s

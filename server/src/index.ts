@@ -186,6 +186,50 @@ app.get('/api/rooms/:id/history', auth.require('viewer'), async (req, res) => {
   res.json(list)
 })
 
+// ---- 版(スナップショット) ------------------------------------------------
+app.get('/api/rooms/:id/versions', auth.require('viewer'), async (req, res) => {
+  const room = await rooms.get(String(req.params['id']))
+  if (!room) {
+    res.status(404).json({ error: 'not found' })
+    return
+  }
+  res.json(await room.listVersions())
+})
+app.post('/api/rooms/:id/versions', auth.require('member'), express.json(), async (req, res) => {
+  const room = await rooms.get(String(req.params['id']))
+  if (!room) {
+    res.status(404).json({ error: 'not found' })
+    return
+  }
+  const info = await room.saveVersion(String(req.body?.name ?? '').slice(0, 60), req.user!.name)
+  console.log(`[version] saved ${info.id} on ${req.params['id']} by ${req.user!.name}`)
+  res.status(201).json(info)
+})
+app.post('/api/rooms/:id/versions/:vid/restore', auth.require('member'), async (req, res) => {
+  const room = await rooms.get(String(req.params['id']))
+  if (!room) {
+    res.status(404).json({ error: 'not found' })
+    return
+  }
+  // 復元前の状態も自動で残す(取り消し用)
+  await room.saveVersion('復元前の自動保存', req.user!.name)
+  const ok = await room.restoreVersion(String(req.params['vid']), req.user!.name)
+  if (!ok) {
+    res.status(404).json({ error: 'version not found' })
+    return
+  }
+  console.log(`[version] restored ${req.params['vid']} on ${req.params['id']} by ${req.user!.name}`)
+  res.json({ ok: true })
+})
+app.delete('/api/rooms/:id/versions/:vid', auth.require('admin'), async (req, res) => {
+  const room = await rooms.get(String(req.params['id']))
+  if (!room) {
+    res.status(404).json({ error: 'not found' })
+    return
+  }
+  res.json({ ok: await room.deleteVersion(String(req.params['vid'])) })
+})
+
 // ---- 通知・保守(管理者向け) ----------------------------------------------
 app.get('/api/notify/status', auth.require('viewer'), (_req, res) => {
   res.json(notifier.status())

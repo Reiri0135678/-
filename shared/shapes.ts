@@ -38,6 +38,7 @@ export type ShapeType =
   | 'rect'
   | 'ellipse'
   | 'image'
+  | 'frame'
   | 'request-card'
 
 export interface ShapeBase {
@@ -148,6 +149,12 @@ export interface ImageShape extends ShapeBase {
   src: string
   name: string
 }
+/** 区画: 名前付きの領域。動かすと中の図形も一緒に動く。常に背面 */
+export interface FrameShape extends ShapeBase {
+  type: 'frame'
+  title: string
+  color: string
+}
 export interface RequestCardShape extends ShapeBase {
   type: 'request-card'
   /** 受付番号(サーバーが採番。例 QC-2026-0001)。人が参照する主キー */
@@ -192,6 +199,7 @@ export type Shape =
   | RectShape
   | EllipseShape
   | ImageShape
+  | FrameShape
   | RequestCardShape
 
 export const CARD_W = 220
@@ -225,6 +233,8 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
       return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2, dash: 'solid', label: '', fontSize: 16 }
     case 'image':
       return { ...base, type, w: 200, h: 150, src: '', name: '' }
+    case 'frame':
+      return { ...base, type, w: 600, h: 400, title: '区画', color: '#6a9bcc' }
     case 'request-card':
       return {
         ...base,
@@ -544,3 +554,21 @@ export function dashArray(dash: LineDash, size: number): number[] | undefined {
 
 /** クリップボード用の包み。他アプリのテキストと区別するための印 */
 export const CLIPBOARD_MARK = 'qc-board/shapes'
+
+/** 区画の中に入っている図形(外接枠が区画に収まるもの) */
+export function shapesInFrame(frame: FrameShape, all: Shape[]): Shape[] {
+  return all.filter((s) => {
+    if (s.id === frame.id || s.type === 'frame' || s.page !== frame.page) return false
+    const b = s.type === 'arrow' ? { x: Math.min(s.x, s.x + s.dx), y: Math.min(s.y, s.y + s.dy), w: Math.abs(s.dx), h: Math.abs(s.dy) } : { x: s.x, y: s.y, w: s.w, h: s.h }
+    return b.x >= frame.x && b.y >= frame.y && b.x + b.w <= frame.x + frame.w && b.y + b.h <= frame.y + frame.h
+  })
+}
+
+// ---- 版(スナップショット) ----------------------------------------------
+export interface VersionInfo {
+  id: string
+  name: string
+  by: string
+  ts: number
+  shapes: number
+}

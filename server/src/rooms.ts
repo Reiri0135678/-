@@ -14,6 +14,7 @@ import {
   CARD_W,
   CLOSED_STATUSES,
   defaultsFor,
+  type VersionInfo,
   normalizeShape,
   toRequestRecord,
   type HistoryEntry,
@@ -232,6 +233,60 @@ export class Room {
       }, { server: true, user: 'system' } satisfies ServerOrigin)
     }
     return targets.length
+  }
+
+  // ---- 版(スナップショット): 名前を付けて保存し、後で復元できる ----------------
+  private get snapDir(): string {
+    return this.file.replace(/\.yjs$/, '.versions')
+  }
+  async listVersions(): Promise<VersionInfo[]> {
+    if (!existsSync(this.snapDir)) return []
+    const files = (await readdir(this.snapDir)).filter((f) => f.endsWith('.json'))
+    const list = await Promise.all(files.map(async (f) => JSON.parse(await readFile(join(this.snapDir, f), 'utf8')) as VersionInfo))
+    return list.sort((a, b) => b.ts - a.ts)
+  }
+  async saveVersion(name: string, by: string): Promise<VersionInfo> {
+    await mkdir(this.snapDir, { recursive: true })
+    const id = `v_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const info: VersionInfo = { id, name: name || new Date().toLocaleString('ja-JP'), by, ts: Date.now(), shapes: this.shapes.size }
+    await writeFile(join(this.snapDir, `${id}.yjs`), Y.encodeStateAsUpdate(this.doc))
+    await writeFile(join(this.snapDir, `${id}.json`), JSON.stringify(info))
+    return info
+  }
+  /** 版の内容で図形・ページ・コメントを置き換える(全接続者に同期される) */
+  async restoreVersion(id: string, by: string): Promise<boolean> {
+    const file = join(this.snapDir, `${id}.yjs`)
+    if (!/^v_[a-z0-9]+$/.test(id) || !existsSync(file)) return false
+    const tmp = new Y.Doc()
+    Y.applyUpdate(tmp, new Uint8Array(await readFile(file)))
+    const src = {
+      shapes: tmp.getMap('shapes').toJSON() as Record<string, Record<string, unknown>>,
+      pages: tmp.getMap('pages').toJSON() as Record<string, unknown>,
+      comments: tmp.getMap('comments').toJSON() as Record<string, Record<string, unknown>>
+    }
+    this.doc.transact(() => {
+      for (const [name, data] of [['shapes', src.shapes], ['comments', src.comments]] as const) {
+        const map = this.doc.getMap(name) as Y.Map<Y.Map<unknown>>
+        for (const k of [...map.keys()]) map.delete(k)
+        for (const [k, v] of Object.entries(data)) {
+          const m = new Y.Map<unknown>()
+          for (const [kk, vv] of Object.entries(v)) m.set(kk, vv)
+          map.set(k, m)
+        }
+      }
+      const pages = this.doc.getMap('pages')
+      for (const k of [...pages.keys()]) pages.delete(k)
+      for (const [k, v] of Object.entries(src.pages)) pages.set(k, v)
+    }, { server: true, user: by } satisfies ServerOrigin)
+    tmp.destroy()
+    return true
+  }
+  async deleteVersion(id: string): Promise<boolean> {
+    if (!/^v_[a-z0-9]+$/.test(id)) return false
+    const { rm } = await import('node:fs/promises')
+    await rm(join(this.snapDir, `${id}.yjs`), { force: true })
+    await rm(join(this.snapDir, `${id}.json`), { force: true })
+    return true
   }
 
   getCard(shapeId: string): RequestCardShape | null {

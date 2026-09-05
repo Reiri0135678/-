@@ -3,7 +3,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Arrow, Ellipse, Group, Image as KImage, Line, Rect, Text } from 'react-konva'
 import { getStroke } from 'perfect-freehand'
-import { dashArray, type DrawShape, type EllipseShape, type ImageShape, type NoteShape, type RectShape, type RequestCardShape, type Shape, type TextShape } from '@shared/shapes'
+import { dashArray, type DrawShape, type EllipseShape, type FrameShape, type ImageShape, type NoteShape, type RectShape, type RequestCardShape, type Shape, type TextShape } from '@shared/shapes'
 import { useImage } from '../useImage'
 
 export interface ShapeHandlers {
@@ -125,6 +125,13 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
           <LockBadge shape={shape} />
         </Group>
       )
+    case 'frame':
+      return (
+        <Group {...common}>
+          <FrameView shape={shape} />
+          <LockBadge shape={shape} />
+        </Group>
+      )
     case 'request-card':
       return (
         <Group {...common}>
@@ -133,6 +140,19 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
         </Group>
       )
   }
+}
+
+/** 区画: 中身の操作を邪魔しないよう、当たり判定は見出し帯と枠線だけ */
+function FrameView({ shape }: { shape: FrameShape }): JSX.Element {
+  const { w, h } = shape
+  return (
+    <>
+      <Rect width={w} height={h} fill={`${shape.color}12`} stroke={shape.color} strokeWidth={1.5} dash={[8, 6]} cornerRadius={10} listening={false} />
+      <Rect width={w} height={h} stroke="rgba(0,0,0,0.001)" strokeWidth={1} hitStrokeWidth={14} cornerRadius={10} />
+      <Rect x={0} y={-30} width={Math.min(w, Math.max(80, shape.title.length * 14 + 24))} height={28} fill={shape.color} cornerRadius={[8, 8, 0, 0]} />
+      <Text text={shape.title || '区画'} x={10} y={-30} height={28} verticalAlign="middle" fontSize={13} fontStyle="bold" fontFamily={FONT} fill="#fff" listening={false} />
+    </>
+  )
 }
 
 /** 四角系の図形(四角・角丸・三角・ひし形・六角) */

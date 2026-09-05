@@ -133,3 +133,27 @@ export async function fetchHistory(roomId: string, shapeId?: string): Promise<Hi
   const q = shapeId ? `?shapeId=${encodeURIComponent(shapeId)}` : ''
   return json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/history${q}`))
 }
+
+// ---- 版(スナップショット) ----------------------------------------------
+export interface VersionInfo {
+  id: string
+  name: string
+  by: string
+  ts: number
+  shapes: number
+}
+export async function listVersions(roomId: string): Promise<VersionInfo[]> {
+  return json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/versions`))
+}
+export async function saveVersion(roomId: string, name: string): Promise<VersionInfo> {
+  return json(
+    await fetch(`/api/rooms/${encodeURIComponent(roomId)}/versions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name })
+    })
+  )
+}
+export async function restoreVersion(roomId: string, versionId: string): Promise<void> {
+  await json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' }))
+}

@@ -383,6 +383,74 @@ try {
     await b.evaluate(() => window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }))
   }
 
+  // 区画・ミニマップ・版の履歴・雛形
+  {
+    const board = await a.locator('.board').boundingBox()
+    const pt = (x, y) => [board.x + x, board.y + y]
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.setTool('frame') })
+    await a.mouse.move(...pt(120, 60))
+    await a.mouse.down()
+    await a.mouse.move(...pt(700, 560), { steps: 5 })
+    await a.mouse.up()
+    const frame = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'frame') || null))
+    ok(`区画ツールで区画を作成 (${frame.w}x${frame.h})`, frame.w >= 500 && frame.h >= 450)
+    ok('区画は最背面に置かれる', await a.evaluate(() => window.__qcEditor.getShapes()[0].type === 'frame'))
+    // 区画の中の図形は一緒に動く: rectA(400,420) は区画内、pasted rect は区画外
+    const beforeA = await a.evaluate(() => window.__qcEditor.getShape('s_rectA'))
+    const outside = await a.evaluate((f) => window.__qcEditor.getShapes().filter((s) => s.type === 'rect' && !(s.x >= f.x && s.y >= f.y && s.x + s.w <= f.x + f.w && s.y + s.h <= f.y + f.h)).map((s) => [s.id, s.x, s.y]), frame)
+    await a.evaluate(() => window.__qcEditor.setTool('select'))
+    // 見出し帯をドラッグ(区画の左上 -30px の帯)
+    await a.mouse.move(...pt(frame.x + 30, frame.y - 15))
+    await a.mouse.down()
+    await a.mouse.move(...pt(frame.x + 130, frame.y + 35), { steps: 6 })
+    await a.mouse.up()
+    const afterA = await waitFor(() => a.evaluate((x) => { const s = window.__qcEditor.getShape('s_rectA'); return s.x !== x ? s : null }, beforeA.x))
+    ok(`区画を動かすと中の図形も動く (rectA ${beforeA.x}→${afterA.x})`, Math.abs(afterA.x - beforeA.x - 100) < 12 && Math.abs(afterA.y - beforeA.y - 50) < 12)
+    ok('区画の外の図形は動かない', await a.evaluate((o) => o.every(([id, x, y]) => { const s = window.__qcEditor.getShape(id); return !s || (s.x === x && s.y === y) }), outside))
+    ok('区画は相手にも届く', await waitFor(() => b.evaluate((id) => !!window.__qcEditor.getShape(id), frame.id)))
+    await a.evaluate((id) => { const ed = window.__qcEditor; ed.updateShape(id, { title: '検査エリア' }) }, frame.id)
+
+    // ミニマップ: クリックで表示位置が動く
+    await a.waitForSelector('[data-testid="minimap"]')
+    const cam0 = await a.evaluate(() => window.__qcEditor.getSnapshot().camera)
+    const mm = await a.locator('[data-testid="minimap"]').boundingBox()
+    await a.mouse.click(mm.x + 20, mm.y + 20)
+    const cam1 = await a.evaluate(() => window.__qcEditor.getSnapshot().camera)
+    ok('ミニマップのクリックで表示位置が変わる', cam1.x !== cam0.x || cam1.y !== cam0.y)
+    await a.evaluate(() => window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }))
+
+    // 版の履歴: 保存 → 変更 → 復元で戻る(相手にも反映)
+    await a.click('[data-testid="versions-btn"]')
+    await a.waitForSelector('[data-testid="versions-pop"]')
+    await a.fill('[data-testid="version-name"]', '区画作成後')
+    await a.click('[data-testid="version-save"]')
+    ok('版を保存', (await waitFor(async () => { const n = await a.locator('[data-testid="version-row"]').count(); return n >= 1 ? n : null })) >= 1)
+    const countBefore = await a.evaluate(() => window.__qcEditor.getSnapshot().allShapes.length)
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.createShape({ id: 's_tmp1', type: 'note', x: 900, y: 100, text: '復元で消える' }); ed.deleteShapes(['s_al1']) })
+    await waitFor(() => b.evaluate(() => !!window.__qcEditor.getShape('s_tmp1') && !window.__qcEditor.getShape('s_al1')))
+    a.once('dialog', (d) => d.accept())
+    await a.click('[data-testid="version-restore"] >> nth=0')
+    ok('復元で保存時の状態に戻る(追加した図形が消え、消した図形が戻る)', await waitFor(() => a.evaluate((n) => { const ed = window.__qcEditor; return !ed.getShape('s_tmp1') && !!ed.getShape('s_al1') && ed.getSnapshot().allShapes.length === n }, countBefore)))
+    ok('復元は相手にも反映', await waitFor(() => b.evaluate(() => !window.__qcEditor.getShape('s_tmp1') && !!window.__qcEditor.getShape('s_al1'))))
+    ok('復元前の状態も自動で版に残る', (await waitFor(async () => { const t = await a.locator('[data-testid="versions-pop"]').textContent(); return /復元前の自動保存/.test(t) ? t : null })) !== null)
+    await a.keyboard.press('Escape')
+    await a.click('[data-testid="versions-btn"]')
+
+    // 雛形: なぜなぜ分析を挿入
+    const n0 = await a.evaluate(() => window.__qcEditor.getShapes().length)
+    await a.click('[data-testid="tpl-btn"]')
+    await a.click('[data-tpl="why5"]')
+    const added = await waitFor(() => a.evaluate((n0) => { const n = window.__qcEditor.getShapes().length - n0; return n >= 16 ? n : null }, n0))
+    ok(`雛形「なぜなぜ分析」を挿入 (${added} 図形)`, added === 16)
+    ok('雛形の矢印は付箋に吸着済み', await a.evaluate(() => { const sel = window.__qcEditor.getSelectedShapes(); const arrows = sel.filter((s) => s.type === 'arrow'); return arrows.length === 7 && arrows.every((a) => a.startBind && a.endBind && Math.hypot(a.dx, a.dy) > 10) }))
+    ok('雛形は相手にも届く', await waitFor(() => b.evaluate((n) => window.__qcEditor.getShapes().length >= n, n0 + 16)))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.deleteShapes(ed.getSnapshot().selection); ed.setCamera({ x: 0, y: 0, scale: 1 }) })
+    await a.click('[data-testid="tpl-btn"]')
+    await a.click('[data-tpl="4m"]')
+    ok('雛形「4M」の区画は最背面に入る', await waitFor(() => a.evaluate(() => { const ss = window.__qcEditor.getShapes(); const frames = ss.filter((s) => s.type === 'frame' && /Man|Machine|Material|Method/.test(s.title)); return frames.length === 4 && frames.every((f) => ss.indexOf(f) < 6) })))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.deleteShapes(ed.getSnapshot().selection); ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.selectNone() })
+  }
+
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
   ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))

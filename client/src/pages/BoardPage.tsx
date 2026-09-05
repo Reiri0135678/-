@@ -10,6 +10,7 @@ import { roleLabel } from './Landing'
 import { isEmbed, notifyHost } from '../embed'
 import { useSingleSelection } from '../panel/useCards'
 import { useEditorSnapshot } from '../canvas/hooks'
+import { VersionsMenu } from '../canvas/VersionsMenu'
 
 const DRAWER_KEY = 'qc.drawerOpen'
 const DRAWER_H_KEY = 'qc.drawerHeight'
@@ -118,6 +119,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
           {status === 'online' ? (editor ? <Peers editor={editor} /> : `接続中 · 他 ${peers} 人`) : status === 'connecting' ? '接続中…' : '切断'}
           {' · '}
           {user.name}({roleLabel(user.role)})
+          <VersionsMenu roomId={roomId} readonly={readonly} />
           <button className="link" onClick={toggleDrawer} data-testid="toggle-drawer">
             {drawerOpen ? '一覧を閉じる' : '一覧を開く'}
           </button>
