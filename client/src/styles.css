@@ -85,7 +85,7 @@ button { font: inherit; }
 .qc-toolbar {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
   display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 4px;
-  max-height: calc(100% - 16px); overflow: auto; scrollbar-width: none;
+  max-height: calc(100% - 16px); overflow: visible;
   background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 10px;
   box-shadow: var(--shadow); z-index: 300;
 }
