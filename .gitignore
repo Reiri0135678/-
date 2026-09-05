@@ -8,3 +8,7 @@ out/
 .DS_Store
 Thumbs.db
 coverage/
+server/data/*.json
+web/dev-dist/
+web/public/pwa-*.png
+web/public/apple-touch-icon.png

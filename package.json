@@ -1,0 +1,27 @@
+{
+  "name": "kaizen-board",
+  "private": true,
+  "version": "0.1.0",
+  "description": "改善提案・困りごとボード (PWA + BFF + kintone)",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,green \"npm run dev -w server\" \"npm run dev -w web\"",
+    "build": "npm run build -w shared && npm run build -w web && npm run build -w server",
+    "start": "npm run start -w server",
+    "test": "npm run test -w shared && npm run test -w server",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w server && npm run typecheck -w web",
+    "seed": "npm run seed -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
