@@ -29,6 +29,10 @@ export interface RequestCardProps {
   requestedAt: string
   /** 備考・検査項目のメモ */
   note: string
+  /** 紐付けた図面・写真(画像図形)の shape id */
+  linkedShapeIds: string[]
+  /** kintone 連携済みならレコード番号。未連携は空文字 */
+  kintoneRecordId: string
 }
 
 export type RequestCardShape = TLBaseShape<'request-card', RequestCardProps>
@@ -44,7 +48,9 @@ export const requestCardProps: RecordProps<RequestCardShape> = {
   status: T.literalEnum(...REQUEST_STATUSES),
   requester: T.string,
   requestedAt: T.string,
-  note: T.string
+  note: T.string,
+  linkedShapeIds: T.arrayOf(T.string),
+  kintoneRecordId: T.string
 }
 
 export const requestCardDefaultProps: RequestCardProps = {
@@ -58,13 +64,16 @@ export const requestCardDefaultProps: RequestCardProps = {
   status: '未受付',
   requester: '',
   requestedAt: '',
-  note: ''
+  note: '',
+  linkedShapeIds: [],
+  kintoneRecordId: ''
 }
 
 // ---- マイグレーション --------------------------------------------------
 // 保存済みボード(JSON スナップショット)に props を後から足すときは必ずここに追記する。
 const versions = createShapePropsMigrationIds('request-card', {
-  AddRequesterAndNote: 1
+  AddRequesterAndNote: 1,
+  AddLinksAndKintone: 2
 })
 
 export const requestCardMigrations = createShapePropsMigrationSequence({
@@ -81,6 +90,17 @@ export const requestCardMigrations = createShapePropsMigrationSequence({
         delete props.requestedAt
         delete props.note
       }
+    },
+    {
+      id: versions.AddLinksAndKintone,
+      up(props) {
+        props.linkedShapeIds ??= []
+        props.kintoneRecordId ??= ''
+      },
+      down(props) {
+        delete props.linkedShapeIds
+        delete props.kintoneRecordId
+      }
     }
   ]
 })
@@ -91,4 +111,64 @@ export function todayString(now = new Date()): string {
   const m = String(now.getMonth() + 1).padStart(2, '0')
   const d = String(now.getDate()).padStart(2, '0')
   return `${y}-${m}-${d}`
+}
+
+/** kintone 連携や CSV 出力で使う、カード 1 枚分の平坦なレコード */
+export interface RequestRecord {
+  shapeId: string
+  boardName: string
+  title: string
+  dept: string
+  partNo: string
+  lot: string
+  qty: string
+  status: RequestStatus
+  requester: string
+  requestedAt: string
+  note: string
+  kintoneRecordId: string
+}
+
+export const REQUEST_RECORD_COLUMNS: Array<{ key: keyof RequestRecord; label: string }> = [
+  { key: 'status', label: '状態' },
+  { key: 'title', label: '件名' },
+  { key: 'dept', label: '依頼部門' },
+  { key: 'partNo', label: '品番' },
+  { key: 'lot', label: 'ロット' },
+  { key: 'qty', label: '数量' },
+  { key: 'requester', label: '依頼者' },
+  { key: 'requestedAt', label: '依頼日' },
+  { key: 'note', label: '備考' },
+  { key: 'kintoneRecordId', label: 'kintone' },
+  { key: 'boardName', label: 'ボード' },
+  { key: 'shapeId', label: 'ID' }
+]
+
+export function toRequestRecord(
+  shape: { id: string; props: RequestCardProps },
+  boardName: string
+): RequestRecord {
+  const p = shape.props
+  return {
+    shapeId: shape.id,
+    boardName,
+    title: p.title,
+    dept: p.dept,
+    partNo: p.partNo,
+    lot: p.lot,
+    qty: p.qty,
+    status: p.status,
+    requester: p.requester,
+    requestedAt: p.requestedAt,
+    note: p.note,
+    kintoneRecordId: p.kintoneRecordId
+  }
+}
+
+/** Excel で開ける CSV(BOM 付き UTF-8) */
+export function toCsv(records: RequestRecord[]): string {
+  const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const head = REQUEST_RECORD_COLUMNS.map((c) => esc(c.label)).join(',')
+  const rows = records.map((r) => REQUEST_RECORD_COLUMNS.map((c) => esc(String(r[c.key]))).join(','))
+  return '﻿' + [head, ...rows].join('\r\n') + '\r\n'
 }

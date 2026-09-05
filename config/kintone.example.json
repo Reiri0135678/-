@@ -1,0 +1,18 @@
+{
+  "baseUrl": "https://<サブドメイン>.cybozu.com",
+  "appId": "<アプリID>",
+  "apiToken": "<APIトークン(レコード閲覧・追加・編集)>",
+  "fields": {
+    "shapeId": "shape_id",
+    "boardName": "board",
+    "title": "title",
+    "dept": "dept",
+    "partNo": "part_no",
+    "lot": "lot",
+    "qty": "qty",
+    "status": "status",
+    "requester": "requester",
+    "requestedAt": "requested_at",
+    "note": "note"
+  }
+}

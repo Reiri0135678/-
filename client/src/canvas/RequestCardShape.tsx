@@ -48,7 +48,11 @@ export class RequestCardShapeUtil extends BaseBoxShapeUtil<RequestCardShape> {
       <HTMLContainer>
         <div className="qc-card">
           <div className="qc-card__head">
-            <span>{p.title}</span>
+            <span>
+              {p.title}
+              {p.linkedShapeIds.length > 0 && <span className="qc-card__clip">📎{p.linkedShapeIds.length}</span>}
+              {p.kintoneRecordId && <span className="qc-card__k">k#{p.kintoneRecordId}</span>}
+            </span>
             <span className="qc-card__status" data-status={p.status}>
               {p.status}
             </span>

@@ -120,3 +120,58 @@ button { font: inherit; }
 
 /* ---- カード脚注 ---- */
 .qc-card__foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; }
+
+/* ---- レイアウト: ドロワー ---- */
+.app { grid-template-rows: 44px 1fr; }
+.app[data-drawer='true'] { grid-template-rows: 44px 1fr 240px; }
+.app__drawer {
+  grid-column: 1 / -1; background: var(--qc-panel); border-top: 1px solid var(--qc-border);
+  min-height: 0; display: flex; flex-direction: column;
+}
+.center { display: grid; place-items: center; height: 100%; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.btn--lg { padding: 9px 14px; font-size: 14px; }
+.who { display: flex; justify-content: space-between; align-items: center; font-size: 13px; padding: 8px 0; }
+.role { font-size: 11px; color: #6b7280; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: #e5e7eb; }
+.badge--ok { background: #dcfce7; color: #166534; align-self: flex-start; }
+.badge--warn { background: #fef3c7; color: #92400e; }
+.hint { font-size: 12px; color: #1d4ed8; background: #eff6ff; padding: 6px 8px; border-radius: 6px; margin: 0; }
+.panel h3 { margin: 0; font-size: 12px; color: #6b7280; }
+
+/* ---- 図面ギャラリー ---- */
+.gallery { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gallery__item { border: 1px solid var(--qc-border); border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff; }
+.gallery__item:hover { border-color: var(--qc-accent); }
+.gallery__item[data-linking='true'] { outline: 2px dashed var(--qc-accent); outline-offset: -2px; }
+.gallery__item img { display: block; width: 100%; height: 80px; object-fit: cover; background: #f3f4f6; }
+.gallery__ph { height: 80px; background: #f3f4f6; }
+.gallery__meta { display: flex; justify-content: space-between; align-items: center; gap: 4px; padding: 4px 6px; font-size: 11px; }
+.gallery__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linked { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.linked li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.linked__thumb { padding: 0; border: 1px solid var(--qc-border); border-radius: 6px; overflow: hidden; background: #fff; cursor: pointer; width: 48px; height: 36px; }
+.linked__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ---- スプレッドシート ---- */
+.sheet { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.sheet__bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--qc-border); font-size: 13px; flex-wrap: wrap; }
+.sheet__search { font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--qc-border); border-radius: 6px; width: 220px; }
+.sheet__bar select { font: inherit; font-size: 12px; padding: 4px 6px; border: 1px solid var(--qc-border); border-radius: 6px; background: #fff; }
+.sheet__spacer { flex: 1; }
+.sheet__msg { padding: 4px 12px; font-size: 12px; background: #eff6ff; color: #1e40af; }
+.sheet__scroll { overflow: auto; min-height: 0; flex: 1; }
+.grid { border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 100%; }
+.grid th { position: sticky; top: 0; background: #f9fafb; text-align: left; font-weight: 500; color: #4b5563; padding: 5px 6px; border-bottom: 1px solid var(--qc-border); cursor: pointer; user-select: none; white-space: nowrap; }
+.grid th:hover { background: #f3f4f6; }
+.grid__arrow { font-size: 9px; margin-left: 4px; }
+.grid td { padding: 0; border-bottom: 1px solid #eef0f3; border-right: 1px solid #f3f4f6; }
+.grid tbody tr[data-selected='true'] td { background: #eef2ff; }
+.grid td input, .grid td select { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 5px 6px; border: 1px solid transparent; background: transparent; border-radius: 0; }
+.grid td input:focus, .grid td select:focus { outline: none; border-color: var(--qc-accent); background: #fff; }
+.grid__ro { display: block; padding: 5px 6px; color: #6b7280; }
+.grid td.muted { padding: 10px; }
+
+/* ---- カード内バッジ ---- */
+.qc-card__clip, .qc-card__k { font-size: 10px; font-weight: 400; margin-left: 6px; color: #6b7280; }
+.qc-card__k { color: #166534; }

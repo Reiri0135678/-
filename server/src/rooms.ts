@@ -3,6 +3,7 @@ import type { TLRecord } from '@tldraw/tlschema'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createQcSchema } from '../../shared/schema'
+import { toRequestRecord, type RequestCardProps, type RequestRecord } from '../../shared/request-card'
 
 export interface RoomMeta {
   id: string
@@ -110,6 +111,41 @@ export class RoomManager {
     } catch (err) {
       console.error(`[room] persist failed ${id}`, err)
     }
+  }
+
+  async meta(id: string): Promise<RoomMeta | null> {
+    if (!ROOM_ID.test(id)) return null
+    try {
+      return JSON.parse(await readFile(this.metaPath(id), 'utf8')) as RoomMeta
+    } catch {
+      return null
+    }
+  }
+
+  /** ボード上の依頼カードを平坦なレコードにして返す */
+  async listRequests(id: string): Promise<RequestRecord[] | null> {
+    const meta = await this.meta(id)
+    const room = meta && (await this.get(id))
+    if (!meta || !room) return null
+    const snap = room.getCurrentSnapshot()
+    return snap.documents
+      .map((d) => d.state as { typeName: string; type?: string; id: string; props?: RequestCardProps })
+      .filter((r) => r.typeName === 'shape' && r.type === 'request-card' && r.props)
+      .map((r) => toRequestRecord({ id: r.id, props: r.props! }, meta.name))
+  }
+
+  /** kintone レコード番号をカードに書き戻す(全接続者に同期される) */
+  async setKintoneIds(id: string, ids: Record<string, string>): Promise<void> {
+    const room = await this.get(id)
+    if (!room) return
+    await room.updateStore((store) => {
+      for (const [shapeId, recordId] of Object.entries(ids)) {
+        const rec = store.get(shapeId) as (TLRecord & { props?: RequestCardProps }) | null
+        if (!rec || rec.typeName !== 'shape' || !rec.props) continue
+        if (rec.props.kintoneRecordId === recordId) continue
+        store.put({ ...rec, props: { ...rec.props, kintoneRecordId: recordId } } as TLRecord)
+      }
+    })
   }
 
   private metaPath(id: string): string {
