@@ -289,6 +289,37 @@
   </script>
 </section>
 
+<!-- ===================== F11 ===================== -->
+<section class="demo" id="f11">
+  <h2><span class="no">F11</span>イベントループと描画のタイミング <small>同期処理 → microtask → 描画 → setTimeout</small></h2>
+  <p class="what">JS は「今の処理が全部終わってから」描画する。だから <b>クラスを外して即付け直しても、間に描画が無いので何も起きない</b>（14・64 の <code>void el.offsetWidth</code> はレイアウトを強制して「外した状態」を確定させる裏技）。順序は：同期コード → microtask（<code>Promise.then</code>, <code>await</code> の続き）→ <code>requestAnimationFrame</code> → 描画 → <code>setTimeout</code>。「描画してから次をやりたい」なら rAF を2回重ねる。</p>
+  <p class="how"><b>操作：</b>「順序を見る」で各コールバックの実行順をログに出す。「再アニメーション」で、リフロー強制あり／なしの違いを見る。</p>
+  <div class="stage">
+    <div class="row"><button id="f11-order">順序を見る</button><button id="f11-bad">再アニメーション（リフローなし＝動かない）</button><button id="f11-good">再アニメーション（void offsetWidth）</button><button id="f11-raf">再アニメーション（rAF 2回）</button></div>
+    <div class="row"><div id="f11-ball" class="f11-ball"></div><div class="log" id="f11-log" style="flex:1;height:120px"></div></div>
+  </div>
+  <style data-code>
+    .f11-ball { width: 30px; height: 30px; border-radius: 50%; background: var(--accent); }
+    .f11-ball.pop { animation: f11-pop .5s ease-out; }
+    @keyframes f11-pop { 30% { transform: scale(1.6); } }
+  </style>
+  <script data-code>
+    (() => {
+      const log = $('#f11-log'), ball = $('#f11-ball');
+      $('#f11-order').onclick = () => {
+        log.textContent = '';
+        setTimeout(() => logTo(log, '5. setTimeout(0)（描画の後）'), 0);
+        requestAnimationFrame(() => { logTo(log, '3. requestAnimationFrame（描画の直前）'); requestAnimationFrame(() => logTo(log, '4. rAF の中の rAF（次のフレーム＝描画済み）')); });
+        Promise.resolve().then(() => logTo(log, '2. Promise.then（microtask：同期処理の直後、描画の前）'));
+        logTo(log, '1. 同期コード');
+      };
+      $('#f11-bad').onclick = () => { ball.classList.remove('pop'); ball.classList.add('pop'); };                       // 間に描画が無い → 変化なし扱い
+      $('#f11-good').onclick = () => { ball.classList.remove('pop'); void ball.offsetWidth; ball.classList.add('pop'); }; // レイアウト強制で「外れた」を確定
+      $('#f11-raf').onclick = () => { ball.classList.remove('pop'); requestAnimationFrame(() => requestAnimationFrame(() => ball.classList.add('pop'))); }; // 1フレーム描かせてから付ける
+    })();
+  </script>
+</section>
+
 <!-- ===================== F8 ===================== -->
 <section class="demo" id="f8">
   <h2><span class="no">F8</span>混同しやすい用語の対比表 <small>名前が似ている・動きが似ている</small></h2>
@@ -312,6 +343,7 @@
     <tr><td class="k">sticky vs fixed</td><td>fixed はビューポートに固定（親を無視）。sticky はスクロール親の中でだけ固定され、親が流れれば一緒に流れる。表の見出しは sticky</td><td><a href="03-custom.html#n24">24</a></td></tr>
     <tr><td class="k">ページネーション vs 無限スクロール vs 仮想スクロール</td><td>前2つは「取得の分割」（サーバから少しずつ）。仮想スクロールは「描画の分割」（手元にある大量データのDOMを減らす）。併用できる</td><td><a href="02-basic.html#n21">21</a> <a href="03-custom.html#n23">23</a></td></tr>
     <tr><td class="k">スクロールスナップ vs スナップ（吸着）</td><td>前者はスクロール停止位置の吸着（CSS）。後者はドラッグ中の位置吸着（ガイド線、グリッド）。名前が同じだけ</td><td><a href="03-custom.html#n25">25</a> <a href="04-pro.html#n47">47</a></td></tr>
+    <tr><td class="k">microtask vs rAF vs setTimeout</td><td>Promise.then は同期処理の直後（描画前）。rAF は描画の直前。setTimeout は描画の後。「描画してから」は rAF を2回</td><td><a href="#f11">F11</a></td></tr>
     <tr><td class="k">スロットル vs デバウンス</td><td>スロットルは一定間隔で必ず1回。デバウンスは止まってから1回。描画は rAF バッチ</td><td><a href="#f6">F6</a> <a href="04-pro.html#n54">54</a></td></tr>
     <tr><td class="k">preventDefault vs stopPropagation</td><td>前者はブラウザの既定動作（スクロール、リンク遷移、右クリックメニュー）を止める。後者はイベントの伝播を止める。無関係</td><td><a href="#f2">F2</a> <a href="#f4">F4</a></td></tr>
     <tr><td class="k">FLIP vs View Transitions</td><td>FLIP は自分で before/after を測って transform で誤魔化す。View Transitions はブラウザがスナップショットして同じことを自動でやる。対応ブラウザなら後者が楽</td><td><a href="03-custom.html#n30">30</a> <a href="03-custom.html#n31">31</a></td></tr>

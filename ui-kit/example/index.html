@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ui-kit 実例：受注一覧</title>
+<script src="../dist/ui-kit.js"></script>
+<style>
+  :root { --accent: #2563eb; --line: #e5e7eb; --muted: #6b7280; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; color: #1d1f23; background: #f6f7f9; height: 100vh; display: flex; flex-direction: column; }
+  header { display: flex; gap: 8px; align-items: center; padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  input[type=search], input[type=text], select { font: inherit; padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  button { font: inherit; padding: 5px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; } button:hover { background: #f1f5f9; } button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e0e7ff; color: #3730a3; cursor: default; } .badge.warn { background: #fef3c7; color: #92400e; } .badge.off { background: #fee2e2; color: #991b1b; }
+  #split { flex: 1; min-height: 0; }
+  #list { height: 100%; overflow: auto; background: #fff; user-select: none; }
+  .row { display: grid; grid-template-columns: 90px 1fr 140px 60px 80px; height: 30px; line-height: 30px; padding: 0 10px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; overflow: hidden; cursor: default; }
+  .row.sel { background: #dbeafe; } .row.head { position: sticky; top: 0; background: #f1f5f9; font-weight: 600; z-index: 1; }
+  .row mark { background: #fde68a; padding: 0; }
+  .uk-gutter { background: #cbd5e1; } .uk-gutter:hover { background: var(--accent); }
+  #detail { height: 100%; overflow: auto; padding: 14px; background: #fff; }
+  #detail label { display: block; margin-bottom: 8px; } #detail label span { display: inline-block; width: 70px; color: var(--muted); }
+  #pins { list-style: none; padding: 0; margin: 6px 0; } #pins li { padding: 6px 10px; background: #f8fafc; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; cursor: grab; touch-action: none; } #pins li.lifted { box-shadow: 0 8px 20px rgba(0,0,0,.15); background: #fff; }
+  .uk-toast { padding: 10px 14px; border-radius: 8px; background: #0f172a; color: #fff; font-size: 13px; box-shadow: 0 8px 20px rgba(0,0,0,.2); animation: in .25s ease-out; } .uk-toast.error { background: #dc2626; } .uk-toast.leaving { animation: out .25s ease-in forwards; }
+  @keyframes in { from { opacity: 0; transform: translateY(12px); } } @keyframes out { to { opacity: 0; transform: translateY(12px); } }
+  #modal { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: grid; place-items: center; } #modal[hidden] { display: none; } #modal .panel { background: #fff; padding: 18px; border-radius: 10px; width: 320px; } #modal :focus-visible { outline: 3px solid #f59e0b; }
+  #tip { position: fixed; background: #0f172a; color: #fff; font-size: 12px; padding: 6px 10px; border-radius: 6px; pointer-events: none; max-width: 240px; }
+  kbd { border: 1px solid #cbd5e1; border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 11px; background: #fff; }
+  .hint { color: var(--muted); font-size: 12px; margin-left: auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>受注一覧（ui-kit 実例）</h1>
+  <input id="q" type="search" placeholder="検索（Ctrl+F）" style="width:200px">
+  <label><input type="checkbox" id="fuzzy"> あいまい</label>
+  <span id="count" class="badge">-</span>
+  <button id="undo" title="Ctrl+Z">↶</button><button id="redo" title="Ctrl+Shift+Z">↷</button>
+  <label><input type="checkbox" id="offline"> オフライン（模擬）</label>
+  <span id="sync" class="badge">同期済み</span>
+  <button id="other">他ユーザーが更新（競合を起こす）</button>
+  <button id="open">別ウィンドウ</button>
+  <span class="hint"><kbd>Ctrl</kbd>+<kbd>F</kbd> 検索 / <kbd>Ctrl</kbd>+<kbd>Z</kbd> 取消 / <kbd>Ctrl</kbd>+<kbd>S</kbd> 送信 / <kbd>Esc</kbd> 選択解除</span>
+</header>
+<div id="split">
+  <div id="list"></div>
+  <div id="detail"><p style="color:var(--muted)">左の行を選択してください</p></div>
+</div>
+<div id="modal" role="dialog" aria-modal="true" hidden><div class="panel"><b id="modal-title"></b><p style="color:var(--muted)">この操作は取り消せません。</p><div style="display:flex;gap:8px;justify-content:flex-end"><button id="modal-cancel">キャンセル</button><button id="modal-ok" class="primary">削除</button></div></div></div>
+<div id="tip" hidden></div>
+<script>
+(() => {
+  const K = window.UIKit, $ = s => document.querySelector(s);
+  // ---------- データ（疑似サーバ） ----------
+  const STATUS = ['受注', '製造中', '出荷済'];
+  const server = new Map(Array.from({ length: 5000 }, (_, i) => [1001 + i, { id: 1001 + i, name: `部品${i + 1}`, customer: ['株式会社サンプル', '有限会社テスト', '合同会社デモ'][i % 3], qty: (i % 9 + 1) * 10, status: STATUS[(i * 7) % 3], revision: 1 }]));
+  const api = { // 13-kintone の PUT 相当。revision 不一致は競合エラー
+    put: (id, patch, revision) => new Promise((ok, ng) => setTimeout(() => {
+      if ($('#offline').checked) return ng(new Error('offline'));
+      const cur = server.get(id); if (cur.revision !== revision) return ng(Object.assign(new Error('conflict'), { code: 'CONFLICT', server: { ...cur } }));
+      server.set(id, { ...cur, ...patch, revision: cur.revision + 1 }); ok(server.get(id));
+    }, 300)),
+  };
+  // ---------- 状態 ----------
+  const history = K.createHistory({ records: [...server.values()].map(r => ({ ...r })), pins: [] });   // undo 対象
+  const ws = K.createPersistentStore('ui-kit.example.ws', { filter: '', fuzzy: false, selected: null, scroll: 0, sizes: [null, 360] }); // 永続化
+  const toast = K.createToaster({ max: 3 });
+  let view = [];                                                                                          // 検索結果（表示順の行）
+  const byId = id => history.state.records.find(r => r.id === id);
+  // ---------- 通信キュー（オフライン対応 + 競合解決） ----------
+  const queue = K.createOfflineQueue({ storageKey: 'ui-kit.example.queue', isOnline: () => !$('#offline').checked, send: async job => {
+    try { const saved = await api.put(job.id, job.patch, job.revision); applyServer(saved); }
+    catch (err) {
+      if (err.code !== 'CONFLICT') throw err;                                                             // 通信系はキューに残す
+      const base = { ...job.base }, mine = { ...job.base, ...job.patch }, theirs = { qty: err.server.qty, status: err.server.status, name: err.server.name };
+      const { merged, conflicts } = K.threeWayMerge(base, mine, theirs);                                   // 78: 3方向マージ
+      toast.show(`#${job.id}: 他ユーザー更新と自動マージ${conflicts.length ? `（競合 ${conflicts.map(c => c.key).join(',')} は自分を優先）` : ''}`, { kind: conflicts.length ? 'error' : 'info', duration: 4000 });
+      const saved = await api.put(job.id, merged, err.server.revision); applyServer(saved);
+    }
+  }});
+  const applyServer = saved => { const r = byId(saved.id); if (r) Object.assign(r, saved); renderList(); renderDetail(); };
+  const syncBadge = () => { const b = $('#sync'); const off = $('#offline').checked; b.textContent = off ? `オフライン / 未同期 ${queue.size}` : queue.size ? `送信中 / 未同期 ${queue.size}` : '同期済み'; b.className = 'badge ' + (off ? 'off' : queue.size ? 'warn' : ''); };
+  queue.subscribe(syncBadge); $('#offline').onchange = () => { syncBadge(); queue.flush(); };
+  // ---------- 編集（楽観的更新 + undo + キュー） ----------
+  const edit = (id, patch) => {
+    const r = byId(id); const base = { qty: r.qty, status: r.status, name: r.name };
+    const records = history.state.records.map(x => x.id === id ? { ...x, ...patch } : x);                 // 先に画面へ（57）
+    history.commit({ ...history.state, records });
+    queue.push({ id, patch, base, revision: r.revision });                                                // 送信はキュー経由（79）
+    channel.publish({ records: history.state.records.filter(x => x.id === id) });
+    renderList(); renderDetail();
+  };
+  // ---------- 検索 + 仮想リスト ----------
+  const list = $('#list'); list.innerHTML = '<div class="row head"><div>ID</div><div>品名 / 顧客</div><div>ステータス</div><div>数量</div><div>rev</div></div>';
+  const vl = K.createVirtualList(list, { rowHeight: 30, count: 0, renderRow: i => {
+    const h = view[i], r = h.item, sel = ws.get().selected === r.id;
+    const label = h.ranges.length ? K.highlight(`${r.name} ${r.customer}`, h.ranges) : `${r.name} ${r.customer}`;
+    return `<div class="row ${sel ? 'sel' : ''}" data-id="${r.id}"><div>#${r.id}</div><div>${label}</div><div>${r.status}</div><div>${r.qty}</div><div>${r.revision}</div></div>`;
+  }});
+  const runSearch = () => {
+    const { filter, fuzzy } = ws.get();
+    view = K.search(history.state.records, filter, { text: r => `${r.name} ${r.customer}`, fuzzy });
+    vl.setCount(view.length); $('#count').textContent = `${view.length.toLocaleString()} / ${history.state.records.length.toLocaleString()} 件`;
+  };
+  const renderList = () => { runSearch(); vl.refresh(); };
+  $('#q').addEventListener('input', K.debounce(() => { ws.set({ filter: $('#q').value, scroll: 0 }); list.scrollTop = 0; renderList(); }, 250));
+  $('#fuzzy').onchange = () => { ws.set({ fuzzy: $('#fuzzy').checked }); renderList(); };
+  list.addEventListener('click', e => { const row = e.target.closest('[data-id]'); if (row) { ws.set({ selected: +row.dataset.id }); vl.refresh(); renderDetail(); } });
+  list.addEventListener('scroll', () => ws.set({ scroll: list.scrollTop }));
+  // ---------- 詳細（インライン編集 / ピン / 削除モーダル） ----------
+  const detail = $('#detail');
+  const renderDetail = () => {
+    const r = byId(ws.get().selected);
+    if (!r) { detail.innerHTML = '<p style="color:var(--muted)">左の行を選択してください</p>'; return; }
+    detail.innerHTML = `<h3 style="margin:0 0 10px">#${r.id} ${r.name} <small style="color:var(--muted)">rev ${r.revision}</small></h3>
+      <label><span>顧客</span>${r.customer}</label>
+      <label><span>数量</span><input id="f-qty" type="text" value="${r.qty}" style="width:80px"></label>
+      <label><span>ステータス</span><select id="f-status">${STATUS.map(s => `<option ${s === r.status ? 'selected' : ''}>${s}</option>`).join('')}</select></label>
+      <div style="display:flex;gap:8px;margin:12px 0"><button id="pin">ピン留め</button><button id="del">削除…</button></div>
+      <b>ピン留め（ドラッグで並べ替え）</b><ul id="pins">${history.state.pins.map(id => `<li data-id="${id}">⋮⋮ #${id} ${byId(id)?.name || ''}</li>`).join('') || '<li style="color:var(--muted);cursor:default">なし</li>'}</ul>`;
+    $('#f-qty').addEventListener('change', e => { const v = +e.target.value; if (v > 0) edit(r.id, { qty: v }); else { toast.show('数量は1以上', { kind: 'error' }); e.target.focus(); } });
+    $('#f-status').addEventListener('change', e => edit(r.id, { status: e.target.value }));
+    $('#pin').onclick = () => { if (!history.state.pins.includes(r.id)) { history.commit({ ...history.state, pins: [...history.state.pins, r.id] }); renderDetail(); } };
+    $('#del').onclick = () => openModal(r);
+    K.createSortable($('#pins'), { onChange: items => { const pins = items.map(li => +li.dataset.id).filter(Boolean); history.commit({ ...history.state, pins }); } });
+  };
+  // 削除モーダル：focus-trap（58）
+  const modal = $('#modal'); let trap = null;
+  const openModal = r => { $('#modal-title').textContent = `#${r.id} ${r.name} を削除しますか？`; modal.hidden = false; trap = K.activateFocusTrap(modal, { inertTargets: [document.querySelector('header'), $('#split')], onEscape: closeModal, initialFocus: '#modal-cancel' });
+    $('#modal-ok').onclick = () => { history.commit({ ...history.state, records: history.state.records.filter(x => x.id !== r.id), pins: history.state.pins.filter(id => id !== r.id) }); ws.set({ selected: null }); closeModal(); renderList(); renderDetail(); toast.show(`#${r.id} を削除（Ctrl+Z で戻せます）`); }; };
+  const closeModal = () => { trap?.release(); trap = null; modal.hidden = true; };
+  $('#modal-cancel').onclick = closeModal;
+  // ---------- ショートカット ----------
+  // undo/redo は画面だけ戻すのではなく、変わったレコードをサーバにも送る（差分をキューへ）
+  const travel = (dir) => {
+    const before = history.state; const after = dir === 'undo' ? history.undo() : history.redo(); if (after === before) return;
+    after.records.forEach(r => { const b = before.records.find(x => x.id === r.id); if (b && (b.qty !== r.qty || b.status !== r.status)) queue.push({ id: r.id, patch: { qty: r.qty, status: r.status }, base: { qty: b.qty, status: b.status, name: b.name }, revision: r.revision }); });
+    renderList(); renderDetail();
+  };
+  K.registerHotkeys({
+    'mod+f': () => { $('#q').focus(); $('#q').select(); },
+    'mod+z': () => travel('undo'),
+    'mod+shift+z': () => travel('redo'),
+    'mod+s': () => queue.flush().then(r => toast.show(r.sent ? `${r.sent} 件送信` : r.failed ? '送信失敗（未同期のまま）' : '未送信なし')),
+    'escape': () => { if (!modal.hidden) return; ws.set({ selected: null }); vl.refresh(); renderDetail(); },
+  });
+  $('#undo').onclick = () => travel('undo'); $('#redo').onclick = () => travel('redo');
+  // ---------- ツールチップ（position） ----------
+  const tip = $('#tip');
+  $('#sync').addEventListener('pointerenter', e => { tip.textContent = queue.size ? `未同期: ${queue.jobs.map(j => '#' + j.id).join(', ')}` : '全ての変更がサーバに反映されています'; tip.hidden = false; const p = K.computePosition(e.target.getBoundingClientRect(), tip.getBoundingClientRect(), { placement: 'bottom' }); tip.style.left = p.left + 'px'; tip.style.top = p.top + 'px'; });
+  $('#sync').addEventListener('pointerleave', () => tip.hidden = true);
+  // ---------- 別ウィンドウ同期（sync） ----------
+  const channel = K.createSyncChannel('ui-kit.example', { onState: s => { s.records?.forEach(u => { const r = byId(u.id); if (r) Object.assign(r, u); }); renderList(); renderDetail(); } });
+  channel.hello(() => ({ records: history.state.records.slice(0, 200) }));
+  $('#open').onclick = () => window.open(location.href, '_blank', 'width=1000,height=700');
+  // ---------- 他ユーザー更新の模擬（競合） ----------
+  $('#other').onclick = () => { const id = ws.get().selected || 1001; const cur = server.get(id); server.set(id, { ...cur, qty: cur.qty + 5, revision: cur.revision + 1 }); toast.show(`サーバ側で #${id} が更新された（rev ${cur.revision + 1}）。次の保存で競合解決が動く`); };
+  // ---------- レイアウト（split）と初期化 ----------
+  const split = K.createSplit($('#split'), { sizes: ws.get().sizes, min: 240, gutter: 6, onChange: s => ws.set({ sizes: s }) });
+  $('#q').value = ws.get().filter; $('#fuzzy').checked = ws.get().fuzzy;
+  renderList(); renderDetail(); syncBadge();
+  requestAnimationFrame(() => { list.scrollTop = ws.get().scroll; });
+  history.subscribe(() => { $('#undo').disabled = !history.canUndo; $('#redo').disabled = !history.canRedo; });
+  window.__app = { history, ws, queue, view: () => view, server };   // 検証用
+})();
+</script>
+</body>
+</html>

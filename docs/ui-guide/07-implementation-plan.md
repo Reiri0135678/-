@@ -33,7 +33,8 @@
 | `store.js` | 75, 80, 81 | デバウンス付き永続化ストア | 下書き、レイアウト、ワークスペース状態 |
 | `sync.js` | 85 | BroadcastChannel + storage の2経路同期 | 複数ウィンドウ（一覧と詳細を別窓で開く等） |
 
-- 実行: `node ui-kit/test/run.mjs`（Playwright と Chromium が必要。19件）
+- 追加モジュール（第5弾）: `focus-trap` `position` `toast` `sortable` `split`。単一ファイル版 `dist/ui-kit.js`（`npm run build`）と実例 `example/index.html`
+- 実行: `npm test`（Playwright と Chromium が必要。26件）、`npm run test:docs`（教材ページの検証）
 - 副作用: `createDrag` は要素の `touch-action` を `none` にする。`store.js` / `offline-queue.js` は `localStorage` に書く。`sync.js` は `localStorage` に最終メッセージを残す
 
 ## Phase 1：Mission Bridge 側の受け入れ準備（要リポジトリ）

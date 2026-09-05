@@ -98,3 +98,4 @@ window.ITEMS = [
 window.TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html', E:'06-effects.html' };
 window.TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・第4弾）', E:'E. 演出・体感の上位効果（第4弾）' };
 window.itemNo = (it, i) => it.no ?? i + 1;
+window.KIT = {2:'drag, camera', 3:'camera', 10:'drag', 16:'toast', 17:'position', 20:'position', 23:'virtual-list', 32:'sortable', 33:'split', 35:'hotkeys', 36:'hotkeys, search', 37:'undo', 39:'position', 43:'camera', 44:'camera', 45:'camera', 47:'drag', 49:'drag', 51:'drag', 52:'drag', 58:'focus-trap', 71:'virtual-list', 72:'virtual-list', 74:'search', 75:'store', 77:'merge', 78:'merge', 79:'offline-queue', 80:'split, store', 81:'store', 84:'camera', 85:'sync'};

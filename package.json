@@ -4,6 +4,8 @@
   "type": "module",
   "description": "UI操作レクチャー資料（docs/ui-guide）と部品ライブラリ（ui-kit）",
   "scripts": {
-    "test": "node ui-kit/test/run.mjs"
+    "build": "node ui-kit/build.mjs",
+    "test": "node ui-kit/test/run.mjs",
+    "test:docs": "node docs/ui-guide/test/verify.mjs"
   }
 }
