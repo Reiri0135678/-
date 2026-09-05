@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Circle, Layer, Line, Rect, Stage, Transformer } from 'react-konva'
-import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, shapesInFrame, todayString, type ArrowShape, type DrawShape, type FrameShape, type Shape } from '@shared/shapes'
+import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, shapesInFrame, tableSize, todayString, type ArrowShape, type DrawShape, type FrameShape, type ImageShape, type Shape, type TableShape } from '@shared/shapes'
 import { BoardEditor, bindingFor, newId, resolveArrow, shapeBounds, type Point, type ToolId } from './editor'
 import { EditorContext, useEditorSnapshot } from './hooks'
 import { ShapeView, shapeIdOf, type ShapeHandlers } from './shapes/ShapeView'
@@ -17,9 +17,12 @@ import { CommentPins, CommentPopover, type CommentPopoverState } from './Comment
 import { ContextMenu, type MenuState } from './ContextMenu'
 import { FindBar } from './FindBar'
 import { Minimap } from './Minimap'
+import { LaserTrails } from './Laser'
+import { CropOverlay } from './CropOverlay'
 import { TemplateMenu } from './TemplateMenu'
 import { loadImageSize } from './useImage'
 import { expandFiles } from './pdf'
+import { saveTemplate } from '../api'
 
 export type BoardStatus = 'connecting' | 'online' | 'offline'
 
@@ -74,6 +77,8 @@ const KEY_TOOLS: Record<string, ToolId> = {
   r: 'rect',
   o: 'ellipse',
   f: 'frame',
+  b: 'table',
+  p: 'laser',
   c: 'request-card',
   m: 'comment'
 }
@@ -91,6 +96,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   const [bindTarget, setBindTarget] = useState<string | null>(null)
   const [commentPop, setCommentPop] = useState<CommentPopoverState | null>(null)
   const [menu, setMenu] = useState<MenuState | null>(null)
+  const [laser, setLaser] = useState<number[]>([])
   const [findOpen, setFindOpen] = useState(false)
   const [spaceDown, setSpaceDown] = useState(false)
   const gesture = useRef<
@@ -98,6 +104,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     | { kind: 'create'; start: Point; id: string }
     | { kind: 'marquee'; start: Point; additive: boolean }
     | { kind: 'erase' }
+    | { kind: 'laser' }
     | null
   >(null)
   const dragStart = useRef<Map<string, Point> | null>(null)
@@ -175,6 +182,14 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       onDblClick(shape, e) {
         if (snap.readonly) return
         e.cancelBubble = true
+        if (shape.type === 'table') {
+          const node = e.target as Konva.Node
+          const r = node.getAttr('cellR') as number | undefined
+          const c = node.getAttr('cellC') as number | undefined
+          editor.select(shape.id)
+          editor.setEditing(shape.id, { r: r ?? 0, c: c ?? 0 })
+          return
+        }
         if (shape.type === 'text' || shape.type === 'note' || shape.type === 'rect' || shape.type === 'ellipse' || shape.type === 'frame') {
           editor.select(shape.id)
           editor.setEditing(shape.id)
@@ -253,6 +268,10 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         } else if (cur.type === 'text') {
           patch.w = Math.max(20, cur.w * sx)
           ;(patch as { fontSize: number }).fontSize = Math.max(8, cur.fontSize * sy)
+        } else if (cur.type === 'table') {
+          const colWidths = cur.colWidths.map((w) => Math.max(24, w * sx))
+          const rowHeights = cur.rowHeights.map((h) => Math.max(16, h * sy))
+          Object.assign(patch, { colWidths, rowHeights, ...tableSize({ colWidths, rowHeights }) })
         } else {
           patch.w = Math.max(4, cur.w * sx)
           patch.h = Math.max(4, cur.h * sy)
@@ -280,6 +299,12 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       return
     }
     if (e.evt.button === 1 || spaceDown || snap.tool === 'hand') return // ステージのドラッグ(パン)に任せる
+    if (snap.tool === 'laser') {
+      gesture.current = { kind: 'laser' }
+      setLaser([p.x, p.y])
+      editor.laserMove(p)
+      return
+    }
     if (snap.readonly) {
       if (onEmpty) editor.selectNone()
       return
@@ -313,6 +338,12 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     if (tool === 'eraser') {
       gesture.current = { kind: 'erase' }
       eraseAt(stage)
+      return
+    }
+    if (tool === 'table') {
+      const s = editor.createShape<TableShape>({ type: 'table', x: p.x, y: p.y, color: snap.style.color })
+      editor.select(s.id)
+      editor.setTool('select')
       return
     }
     if (tool === 'text') {
@@ -367,6 +398,9 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       setMarquee({ a: g.start, b: p })
     } else if (g.kind === 'erase') {
       eraseAt(stage)
+    } else if (g.kind === 'laser') {
+      setLaser((pts) => [...pts.slice(-58), p.x, p.y])
+      editor.laserMove(p)
     }
   }
 
@@ -375,6 +409,13 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     gesture.current = null
     const p = pointerPage()
     if (!g) return
+    if (g.kind === 'laser') {
+      window.setTimeout(() => {
+        setLaser([])
+        editor.laserMove(null)
+      }, 600)
+      return
+    }
     if (g.kind === 'draw') {
       setDraft(null)
       commitDraw(g.points)
@@ -722,7 +763,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
 
   ;(window as unknown as { __qcExport?: typeof exportPng }).__qcExport = exportPng
   const panning = snap.tool === 'hand' || spaceDown
-  const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : snap.tool === 'comment' ? 'help' : 'crosshair'
+  const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : snap.tool === 'comment' ? 'help' : snap.tool === 'laser' ? 'none' : 'crosshair'
 
   return (
     <div
@@ -817,7 +858,13 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
             return <Rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} stroke="#6a9bcc" strokeWidth={2 / snap.camera.scale} dash={[4, 3]} cornerRadius={6} />
           })()}
           <Cursors collaborators={snap.collaborators.filter((c) => c.page === snap.currentPage)} scale={snap.camera.scale} byId={snap.byId} />
+          <LaserTrails collaborators={snap.collaborators.filter((c) => c.page === snap.currentPage)} mine={laser} myColor={editor.userColor} scale={snap.camera.scale} />
         </Layer>
+        {snap.cropping && snap.byId.get(snap.cropping)?.type === 'image' && (
+          <Layer>
+            <CropOverlay editor={editor} image={snap.byId.get(snap.cropping) as ImageShape} scale={snap.camera.scale} />
+          </Layer>
+        )}
       </Stage>
       {snap.editingId && <TextEditor editor={editor} shapeId={snap.editingId} />}
       {commentPop && <CommentPopover editor={editor} state={commentPop} onClose={() => setCommentPop(null)} />}
@@ -828,6 +875,24 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
           onClose={() => setMenu(null)}
           onExport={(scope) => void exportPng(scope)}
           onComment={(at, shapeId) => setCommentPop({ at, shapeId })}
+          onSaveTemplate={() => {
+            const sel = editor.getSelectedShapes()
+            if (!sel.length) return
+            const name = window.prompt('雛形の名前', '')
+            if (!name) return
+            const b = boundsOfShapes(sel)!
+            const shapes = sel.map((sh) => {
+              const { z: _z, by: _b, updatedAt: _u, page: _p, ...rest } = sh
+              void _z
+              void _b
+              void _u
+              void _p
+              return { ...rest, x: sh.x - b.x, y: sh.y - b.y, locked: false }
+            })
+            saveTemplate(name, shapes)
+              .then(() => window.dispatchEvent(new CustomEvent('qc-templates-changed')))
+              .catch((e) => window.alert(`保存に失敗しました: ${e instanceof Error ? e.message : String(e)}`))
+          }}
         />
       )}
       {findOpen && <FindBar editor={editor} onClose={() => setFindOpen(false)} />}

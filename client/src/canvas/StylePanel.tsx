@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
-import { COLORS, GEO_KINDS, NOTE_COLORS, type ArrowShape, type LineDash, type TextAlign } from '@shared/shapes'
+import { COLORS, GEO_KINDS, NOTE_COLORS, type ArrowShape, type ImageShape, type LineDash, type TableShape, type TextAlign } from '@shared/shapes'
+import { loadImageSize } from './useImage'
 import { useEditor, useEditorSnapshot } from './hooks'
 
 const SIZES: Array<{ label: string; value: number }> = [
@@ -121,6 +122,57 @@ export function StylePanel(): JSX.Element | null {
             ))}
           </div>
         </>
+      )}
+      {sel.length === 1 && sel[0]!.type === 'table' && (
+        <div className="style-panel__row" data-testid="table-row">
+          <button className="chip" onClick={() => editor.tableInsertRow(sel[0]!.id)} title="行を追加" data-table="row+">
+            行+
+          </button>
+          <button className="chip" onClick={() => editor.tableDeleteRow(sel[0]!.id)} title="最後の行を削除" data-table="row-">
+            行−
+          </button>
+          <button className="chip" onClick={() => editor.tableInsertCol(sel[0]!.id)} title="列を追加" data-table="col+">
+            列+
+          </button>
+          <button className="chip" onClick={() => editor.tableDeleteCol(sel[0]!.id)} title="最後の列を削除" data-table="col-">
+            列−
+          </button>
+          <button className="chip" data-active={(sel[0] as TableShape).headerRow} onClick={() => editor.updateShape<TableShape>(sel[0]!.id, { headerRow: !(sel[0] as TableShape).headerRow })} title="1 行目を見出しにする" data-table="header">
+            見出し
+          </button>
+        </div>
+      )}
+      {sel.length === 1 && sel[0]!.type === 'image' && (
+        <div className="style-panel__row" data-testid="image-row">
+          {snap.cropping === sel[0]!.id ? (
+            <>
+              <button className="chip" data-active onClick={() => (window as unknown as { __qcCrop?: { apply: () => void } }).__qcCrop?.apply()} data-crop="apply">
+                切り抜きを適用
+              </button>
+              <button className="chip" onClick={() => editor.setCropping(null)} data-crop="cancel">
+                やめる
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="chip" onClick={() => editor.setCropping(sel[0]!.id)} data-crop="start">
+                トリミング
+              </button>
+              {(sel[0] as ImageShape).crop && (
+                <button
+                  className="chip"
+                  onClick={() => {
+                    const img = sel[0] as ImageShape
+                    loadImageSize(img.src).then((n) => editor.uncropImage(img.id, n)).catch(() => undefined)
+                  }}
+                  data-crop="reset"
+                >
+                  解除
+                </button>
+              )}
+            </>
+          )}
+        </div>
       )}
       {sel.length >= 2 && (
         <div className="style-panel__row" data-testid="align-row">

@@ -451,6 +451,88 @@ try {
     await a.evaluate(() => { const ed = window.__qcEditor; ed.deleteShapes(ed.getSnapshot().selection); ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.selectNone() })
   }
 
+  // 表・レーザーポインター・自作の雛形
+  {
+    const board = await a.locator('.board').boundingBox()
+    const pt = (x, y) => [board.x + x, board.y + y]
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }) })
+    // 表ツールでクリック → 3x3 の表ができ、選択された状態で select ツールに戻る
+    await a.keyboard.press('b')
+    await a.mouse.click(...pt(850, 300))
+    const table = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'table') || null))
+    ok(`表ツールで表を作成 (${table.cells.length}x${table.colWidths.length})`, table.cells.length === 3 && table.colWidths.length === 3 && table.w === table.colWidths.reduce((x, y) => x + y, 0))
+    ok('表の作成後は選択ツールに戻り表が選ばれている', await a.evaluate((id) => { const s = window.__qcEditor.getSnapshot(); return s.tool === 'select' && s.selection.length === 1 && s.selection[0] === id }, table.id))
+    // 左上セルをダブルクリック → 入力 → Tab で隣のセルへ
+    await a.mouse.dblclick(...pt(table.x + 20, table.y + 15))
+    await a.waitForFunction(() => { const t = document.querySelector('[data-testid="text-editor"]'); return !!t && document.activeElement === t && t.value === '項目' })
+    ok('セルのダブルクリックで編集が始まる(既存の文字が全選択される)', await a.evaluate(() => { const c = window.__qcEditor.getSnapshot().editingCell; const t = document.querySelector('[data-testid="text-editor"]'); return !!c && c.r === 0 && c.c === 0 && t.selectionStart === 0 && t.selectionEnd === 2 }))
+    await a.keyboard.type('寸法')
+    await a.keyboard.press('Tab')
+    await a.waitForFunction(() => { const t = document.querySelector('[data-testid="text-editor"]'); return !!t && document.activeElement === t && t.value === '基準' && t.selectionEnd === 2 })
+    ok('Tab で隣のセルへ移る', await a.evaluate(() => { const c = window.__qcEditor.getSnapshot().editingCell; return !!c && c.r === 0 && c.c === 1 }))
+    await a.keyboard.type('±0.1')
+    await a.keyboard.press('Enter')
+    ok('セルの文字が保存される(既存の文字は置き換わる)', await a.evaluate((id) => { const t = window.__qcEditor.getShape(id); return t.cells[0][0] === '寸法' && t.cells[0][1] === '±0.1' && t.cells[0][2] === '結果' }, table.id))
+    ok('表は相手にも同じ内容で届く', await waitFor(() => b.evaluate((id) => { const t = window.__qcEditor.getShape(id); return !!t && t.cells[0][0] === '寸法' && t.cells[0][1] === '±0.1' }, table.id)))
+    // 行・列の追加/削除(スタイルパネル)
+    await a.evaluate((id) => window.__qcEditor.select(id), table.id)
+    await a.waitForSelector('[data-testid="table-row"]')
+    await a.click('[data-table="row+"]')
+    await a.click('[data-table="col+"]')
+    ok('行+ 列+ で 4x4 になり大きさも追従', await a.evaluate((id) => { const t = window.__qcEditor.getShape(id); return t.cells.length === 4 && t.colWidths.length === 4 && t.cells.every((r) => r.length === 4) && t.h === t.rowHeights.reduce((x, y) => x + y, 0) }, table.id))
+    await a.click('[data-table="col-"]')
+    ok('列− で 4x3 に戻り文字は残る', await a.evaluate((id) => { const t = window.__qcEditor.getShape(id); return t.colWidths.length === 3 && t.cells[0][0] === '寸法' }, table.id))
+    ok('行・列の変更が相手にも届く', await waitFor(() => b.evaluate((id) => { const t = window.__qcEditor.getShape(id); return !!t && t.cells.length === 4 && t.colWidths.length === 3 }, table.id)))
+    await a.evaluate(() => window.__qcEditor.selectNone())
+
+    // レーザーポインター: A がなぞると B の awareness に軌跡が届き、図形は増えない
+    const nBefore = await a.evaluate(() => window.__qcEditor.getSnapshot().allShapes.length)
+    await a.keyboard.press('p')
+    await a.mouse.move(...pt(500, 300))
+    await a.mouse.down()
+    await a.mouse.move(...pt(600, 350), { steps: 8 })
+    await a.mouse.move(...pt(700, 300), { steps: 8 })
+    const trail = await waitFor(() => b.evaluate(() => { const c = window.__qcEditor.getSnapshot().collaborators.find((c) => c.laser && c.laser.points.length >= 4); return c ? c.laser.points.length : null }))
+    ok(`レーザーの軌跡が相手に届く (${trail} 点)`, trail >= 4)
+    await a.mouse.up()
+    ok('レーザーは図形を作らない', (await a.evaluate(() => window.__qcEditor.getSnapshot().allShapes.length)) === nBefore)
+    ok('レーザーを離すと軌跡が消える', await waitFor(() => b.evaluate(() => window.__qcEditor.getSnapshot().collaborators.every((c) => !c.laser))))
+    await a.keyboard.press('v')
+
+    // 自作の雛形: 付箋 2 枚を選んで右クリック → 名前を付けて保存 → 雛形メニューから挿入 → 削除
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.createShape({ id: 's_tp1', type: 'note', x: 450, y: 80, text: '受入' }); ed.createShape({ id: 's_tp2', type: 'note', x: 640, y: 80, text: '判定' }); ed.select(['s_tp1', 's_tp2']) })
+    a.once('dialog', (d) => d.accept('受入手順'))
+    await a.mouse.move(...pt(470, 100))
+    await a.mouse.down({ button: 'right' })
+    await a.mouse.up({ button: 'right' })
+    await a.waitForSelector('[data-testid="context-menu"]')
+    await a.click('[data-testid="menu-save-template"]')
+    const tplList = await waitFor(async () => { const r = await fetch(`${BASE}/api/templates`, { headers: { cookie: await cookieOf(a) } }); const j = await r.json(); return j.length ? j : null })
+    ok(`雛形をサーバーに保存 (${tplList[0].name}, ${tplList[0].shapes.length} 図形, 作成者 ${tplList[0].by})`, tplList.length === 1 && tplList[0].name === '受入手順' && tplList[0].shapes.length === 2 && tplList[0].by === '山田')
+    ok('雛形の図形は相対座標に直されている', tplList[0].shapes.some((s) => s.x === 0 && s.y === 0))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.deleteShapes(['s_tp1', 's_tp2']); ed.selectNone() })
+    // B(別の人)の雛形メニューにも出て挿入できる
+    const nb = await b.evaluate(() => window.__qcEditor.getShapes().length)
+    await b.click('[data-testid="tpl-btn"]')
+    await b.waitForSelector('[data-tpl-custom]')
+    ok('自作の雛形が相手のメニューにも出る', (await b.locator('[data-tpl-custom]').count()) === 1)
+    await b.click('[data-tpl-custom]')
+    ok('自作の雛形を挿入すると 2 図形が増える', await waitFor(() => b.evaluate((n) => window.__qcEditor.getShapes().length === n + 2, nb)))
+    ok('挿入した図形は選択され新しい id を持つ', await b.evaluate(() => { const sel = window.__qcEditor.getSelectedShapes(); return sel.length === 2 && sel.every((s) => s.type === 'note' && !['s_tp1', 's_tp2'].includes(s.id)) }))
+    await b.evaluate(() => { const ed = window.__qcEditor; ed.deleteShapes(ed.getSnapshot().selection) })
+    // 他人の雛形は削除できない(403) / 本人は削除できる
+    const del = await fetch(`${BASE}/api/templates/${tplList[0].id}`, { method: 'DELETE', headers: { cookie: await cookieOf(b) } })
+    ok('他人が作った雛形は削除できない', del.status === 403)
+    a.once('dialog', (d) => d.accept())
+    await a.click('[data-testid="tpl-btn"]')
+    await a.waitForSelector('[data-tpl-delete]')
+    await a.click('[data-tpl-delete]')
+    ok('本人は雛形を削除できる', await waitFor(async () => ((await a.locator('[data-tpl-custom]').count()) === 0 ? true : null)))
+    await a.keyboard.press('Escape')
+    ok('Esc で雛形メニューが閉じる', await waitFor(async () => ((await a.locator('[data-testid="tpl-pop"]').count()) === 0 ? true : null)))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.selectNone() })
+  }
+
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
   ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))
@@ -569,6 +651,27 @@ try {
   ok('画像はログイン無しでは取得不可', (await fetch(`${BASE}${imgSrc}`)).status === 401)
   await a.waitForSelector('[data-testid="gallery"] .gallery__item')
   ok('A のギャラリーに 1 件', (await a.locator('[data-testid="gallery"] .gallery__item').count()) === 1)
+
+  // 画像トリミング: 選択 → トリミング開始 → 範囲を指定 → 適用 → 解除
+  {
+    const img0 = await a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'image'))
+    await a.evaluate((id) => { const ed = window.__qcEditor; ed.select(id); ed.setCamera({ x: 0, y: 0, scale: 1 }) }, img0.id)
+    await a.waitForSelector('[data-crop="start"]')
+    await a.click('[data-crop="start"]')
+    await a.waitForFunction(() => !!window.__qcCrop)
+    ok('トリミング中は適用/やめるが出る', (await a.locator('[data-crop="apply"]').count()) === 1)
+    await a.evaluate((i) => window.__qcCrop.setBox({ x: i.x + i.w / 4, y: i.y + i.h / 4, w: i.w / 2, h: i.h / 2 }), img0)
+    await a.click('[data-crop="apply"]')
+    const cropped = await waitFor(() => a.evaluate((id) => { const s = window.__qcEditor.getShape(id); return s.crop ? s : null }, img0.id))
+    ok(`切り抜き後の表示寸法が半分になる (${cropped.w}x${cropped.h})`, Math.abs(cropped.w - img0.w / 2) < 1 && Math.abs(cropped.h - img0.h / 2) < 1)
+    ok(`切り抜き範囲が元画像のピクセルで記録される (${cropped.crop.x},${cropped.crop.y},${cropped.crop.w}x${cropped.crop.h})`, cropped.crop.x === 30 && cropped.crop.y === 20 && cropped.crop.w === 60 && cropped.crop.h === 40)
+    ok('切り抜きは相手にも届く', await waitFor(() => b.evaluate((id) => { const s = window.__qcEditor.getShape(id); return !!s && !!s.crop && s.crop.w === 60 }, img0.id)))
+    await a.waitForSelector('[data-crop="reset"]')
+    await a.click('[data-crop="reset"]')
+    const reset = await waitFor(() => a.evaluate((id) => { const s = window.__qcEditor.getShape(id); return s.crop ? null : s }, img0.id))
+    ok(`解除で元の全体に戻る (${reset.w}x${reset.h} at ${reset.x},${reset.y})`, reset.w === img0.w && reset.h === img0.h && Math.abs(reset.x - img0.x) < 1 && Math.abs(reset.y - img0.y) < 1)
+    await a.evaluate(() => window.__qcEditor.selectNone())
+  }
 
   // 図面の紐付け: A がカードを選び「図面を紐付け」→ ギャラリーをクリック
   await a.evaluate(() => {

@@ -3,7 +3,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Arrow, Ellipse, Group, Image as KImage, Line, Rect, Text } from 'react-konva'
 import { getStroke } from 'perfect-freehand'
-import { dashArray, type DrawShape, type EllipseShape, type FrameShape, type ImageShape, type NoteShape, type RectShape, type RequestCardShape, type Shape, type TextShape } from '@shared/shapes'
+import { dashArray, type DrawShape, type EllipseShape, type FrameShape, type ImageShape, type NoteShape, type RectShape, type RequestCardShape, type Shape, type TableShape, type TextShape } from '@shared/shapes'
 import { useImage } from '../useImage'
 
 export interface ShapeHandlers {
@@ -129,6 +129,13 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
       return (
         <Group {...common}>
           <FrameView shape={shape} />
+          <LockBadge shape={shape} />
+        </Group>
+      )
+    case 'table':
+      return (
+        <Group {...common}>
+          <TableView shape={shape} />
           <LockBadge shape={shape} />
         </Group>
       )
@@ -284,7 +291,50 @@ function ImageView({ shape }: { shape: ImageShape }): JSX.Element {
       </>
     )
   }
-  return <KImage image={img} width={shape.w} height={shape.h} />
+  return <KImage image={img} width={shape.w} height={shape.h} crop={shape.crop ? { x: shape.crop.x, y: shape.crop.y, width: shape.crop.w, height: shape.crop.h } : undefined} />
+}
+
+/** 表: 罫線とセル文字。セルには cellId 属性を付けてダブルクリックで編集できるようにする */
+function TableView({ shape }: { shape: TableShape }): JSX.Element {
+  const xs = [0]
+  for (const w of shape.colWidths) xs.push(xs[xs.length - 1]! + w)
+  const ys = [0]
+  for (const h of shape.rowHeights) ys.push(ys[ys.length - 1]! + h)
+  const W = xs[xs.length - 1]!
+  const H = ys[ys.length - 1]!
+  return (
+    <>
+      <Rect width={W} height={H} fill="#fffefb" stroke={shape.color} strokeWidth={1.2} />
+      {shape.headerRow && shape.rowHeights[0] !== undefined && <Rect width={W} height={shape.rowHeights[0]} fill="#f3f1ea" listening={false} />}
+      {xs.slice(1, -1).map((x, i) => (
+        <Line key={`v${i}`} points={[x, 0, x, H]} stroke={shape.color} strokeWidth={0.8} listening={false} />
+      ))}
+      {ys.slice(1, -1).map((y, i) => (
+        <Line key={`h${i}`} points={[0, y, W, y]} stroke={shape.color} strokeWidth={0.8} listening={false} />
+      ))}
+      {shape.cells.map((row, r) =>
+        row.map((text, c) => (
+          <Text
+            key={`${r}-${c}`}
+            x={xs[c]! + 6}
+            y={ys[r]! + 4}
+            width={Math.max(1, (shape.colWidths[c] ?? 0) - 12)}
+            height={Math.max(1, (shape.rowHeights[r] ?? 0) - 8)}
+            text={text}
+            fontSize={shape.fontSize}
+            fontFamily={FONT}
+            fontStyle={shape.headerRow && r === 0 ? 'bold' : 'normal'}
+            fill="#141413"
+            verticalAlign="middle"
+            wrap="word"
+            ellipsis
+            cellR={r}
+            cellC={c}
+          />
+        ))
+      )}
+    </>
+  )
 }
 
 function CardView({ shape: s }: { shape: RequestCardShape }): JSX.Element {

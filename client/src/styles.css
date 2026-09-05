@@ -376,3 +376,7 @@ button { font: inherit; }
 .versions { width: 300px; }
 .versions__save { display: flex; gap: 6px; }
 .versions__save input { flex: 1; font: inherit; font-size: 12px; padding: 4px 8px; border: 1px solid var(--qc-border); border-radius: 6px; }
+
+.tpl__head { margin-top: 6px; font-size: 12px; color: var(--qc-muted); }
+.tpl__custom { display: flex; align-items: center; }
+.tpl__custom .tpl__item { flex: 1; }

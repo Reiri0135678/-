@@ -10,7 +10,7 @@ export interface MenuState {
 }
 
 /** 右クリックメニュー */
-export function ContextMenu({ editor, state, onClose, onExport, onComment }: { editor: BoardEditor; state: MenuState; onClose: () => void; onExport: (scope: 'page' | 'selection') => void; onComment: (at: Point, shapeId: string | null) => void }): JSX.Element {
+export function ContextMenu({ editor, state, onClose, onExport, onComment, onSaveTemplate }: { editor: BoardEditor; state: MenuState; onClose: () => void; onExport: (scope: 'page' | 'selection') => void; onComment: (at: Point, shapeId: string | null) => void; onSaveTemplate: () => void }): JSX.Element {
   const snap = useEditorSnapshot(editor)
   useEffect(() => {
     // メニューの外を押したとき、または何かキーを押したときに閉じる
@@ -66,6 +66,7 @@ export function ContextMenu({ editor, state, onClose, onExport, onComment }: { e
       {item('コメントを付ける', () => onComment(state.page, state.shapeId), { disabled: ro, testid: 'menu-comment' })}
       <div className="menu__sep" />
       {item(has ? '選択範囲を PNG 保存' : 'ページを PNG 保存', () => onExport(has ? 'selection' : 'page'), { testid: 'menu-export' })}
+      {item('選択範囲を雛形として保存', onSaveTemplate, { disabled: !has || ro, testid: 'menu-save-template' })}
     </div>
   )
 }

@@ -157,3 +157,21 @@ export async function saveVersion(roomId: string, name: string): Promise<Version
 export async function restoreVersion(roomId: string, versionId: string): Promise<void> {
   await json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/versions/${encodeURIComponent(versionId)}/restore`, { method: 'POST' }))
 }
+
+// ---- 自作の雛形 -----------------------------------------------------------
+export interface UserTemplateInfo {
+  id: string
+  name: string
+  by: string
+  ts: number
+  shapes: unknown[]
+}
+export async function listTemplates(): Promise<UserTemplateInfo[]> {
+  return json(await fetch('/api/templates'))
+}
+export async function saveTemplate(name: string, shapes: unknown[]): Promise<{ id: string }> {
+  return json(await fetch('/api/templates', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, shapes }) }))
+}
+export async function deleteTemplate(id: string): Promise<void> {
+  await json(await fetch(`/api/templates/${encodeURIComponent(id)}`, { method: 'DELETE' }))
+}

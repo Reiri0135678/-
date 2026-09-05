@@ -6,13 +6,16 @@ import {
   DEFAULT_PAGE,
   NOTE_COLORS,
   defaultsFor,
+  tableSize,
   normalizeComment,
   normalizeShape,
   type ArrowBinding,
   type ArrowShape,
   type CommentThread,
   type GeoKind,
+  type ImageShape,
   type LineDash,
+  type TableShape,
   type PageInfo,
   type Shape,
   type ShapeType,
@@ -40,8 +43,10 @@ export type ToolId =
   | 'ellipse'
   | 'line'
   | 'frame'
+  | 'table'
   | 'request-card'
   | 'comment'
+  | 'laser'
 
 export interface Camera {
   x: number
@@ -64,6 +69,8 @@ export interface Collaborator {
   page: string
   /** 見ている範囲(追従用) */
   view: { x: number; y: number; scale: number; w: number; h: number } | null
+  /** レーザーポインターの軌跡(直近の点列と時刻) */
+  laser: { points: number[]; ts: number } | null
 }
 export interface Style {
   color: string
@@ -92,6 +99,10 @@ export interface EditorSnapshot {
   showResolved: boolean
   /** 追従中の相手(clientId) */
   following: number | null
+  /** 編集中のセル(表) */
+  editingCell: { r: number; c: number } | null
+  /** トリミング中の画像 id */
+  cropping: string | null
   selection: string[]
   tool: ToolId
   camera: Camera
@@ -165,6 +176,8 @@ export class BoardEditor {
       comments: [],
       showResolved: false,
       following: null,
+      editingCell: null,
+      cropping: null,
       selection: [],
       tool: 'select',
       camera: { x: 0, y: 0, scale: 1 },
@@ -344,7 +357,8 @@ export class BoardEditor {
         selection: (state['selection'] as string[]) ?? [],
         draft: (state['draft'] as Shape | null) ?? null,
         page: String(state['page'] ?? DEFAULT_PAGE),
-        view: (state['view'] as Collaborator['view']) ?? null
+        view: (state['view'] as Collaborator['view']) ?? null,
+        laser: (state['laser'] as Collaborator['laser']) ?? null
       })
     })
     this.patch({ collaborators: list })
@@ -687,6 +701,7 @@ export class BoardEditor {
       if (s.type === 'text' || s.type === 'note') texts.push(s.text)
       if (s.type === 'rect' || s.type === 'ellipse') texts.push(s.label)
       if (s.type === 'frame') texts.push(s.title)
+      if (s.type === 'table') texts.push(...s.cells.flat())
       if (s.type === 'image') texts.push(s.name)
       if (s.type === 'request-card') texts.push(s.no, s.title, s.dept, s.partNo, s.lot, s.requester, s.note, s.assignee)
       return texts.some((t) => t && t.toLowerCase().includes(q))
@@ -738,8 +753,8 @@ export class BoardEditor {
 
   // ---- ツール・スタイル ------------------------------------------------
   setTool(tool: ToolId): void {
-    if (this.snapshot.readonly && tool !== 'select' && tool !== 'hand') return
-    this.patch({ tool, editingId: null })
+    if (this.snapshot.readonly && tool !== 'select' && tool !== 'hand' && tool !== 'laser') return
+    this.patch({ tool, editingId: null, editingCell: null })
   }
   setStyle(p: Partial<Style>): void {
     const style = { ...this.snapshot.style, ...p }
@@ -766,8 +781,100 @@ export class BoardEditor {
       })
     )
   }
-  setEditing(id: string | null): void {
-    this.patch({ editingId: id })
+  setEditing(id: string | null, cell: { r: number; c: number } | null = null): void {
+    this.patch({ editingId: id, editingCell: id ? cell : null })
+  }
+  setCropping(id: string | null): void {
+    this.patch({ cropping: id })
+  }
+
+  // ---- 表 ----------------------------------------------------------------
+  setCell(id: string, r: number, c: number, text: string): void {
+    const t = this.snapshot.byId.get(id)
+    if (!t || t.type !== 'table') return
+    const cells = t.cells.map((row) => [...row])
+    if (!cells[r] || cells[r]![c] === undefined) return
+    cells[r]![c] = text
+    this.updateShape<TableShape>(id, { cells })
+  }
+  tableInsertRow(id: string, at?: number): void {
+    const t = this.snapshot.byId.get(id)
+    if (!t || t.type !== 'table') return
+    const i = at ?? t.cells.length
+    const cells = [...t.cells]
+    cells.splice(i, 0, new Array(t.colWidths.length).fill(''))
+    const rowHeights = [...t.rowHeights]
+    rowHeights.splice(i, 0, t.rowHeights[t.rowHeights.length - 1] ?? 40)
+    this.updateShape<TableShape>(id, { cells, rowHeights, ...tableSize({ colWidths: t.colWidths, rowHeights }) })
+  }
+  tableDeleteRow(id: string, at?: number): void {
+    const t = this.snapshot.byId.get(id)
+    if (!t || t.type !== 'table' || t.cells.length <= 1) return
+    const i = at ?? t.cells.length - 1
+    const cells = t.cells.filter((_, r) => r !== i)
+    const rowHeights = t.rowHeights.filter((_, r) => r !== i)
+    this.updateShape<TableShape>(id, { cells, rowHeights, ...tableSize({ colWidths: t.colWidths, rowHeights }) })
+  }
+  tableInsertCol(id: string, at?: number): void {
+    const t = this.snapshot.byId.get(id)
+    if (!t || t.type !== 'table') return
+    const i = at ?? t.colWidths.length
+    const cells = t.cells.map((row) => {
+      const r = [...row]
+      r.splice(i, 0, '')
+      return r
+    })
+    const colWidths = [...t.colWidths]
+    colWidths.splice(i, 0, t.colWidths[t.colWidths.length - 1] ?? 120)
+    this.updateShape<TableShape>(id, { cells, colWidths, ...tableSize({ colWidths, rowHeights: t.rowHeights }) })
+  }
+  tableDeleteCol(id: string, at?: number): void {
+    const t = this.snapshot.byId.get(id)
+    if (!t || t.type !== 'table' || t.colWidths.length <= 1) return
+    const i = at ?? t.colWidths.length - 1
+    const cells = t.cells.map((row) => row.filter((_, c) => c !== i))
+    const colWidths = t.colWidths.filter((_, c) => c !== i)
+    this.updateShape<TableShape>(id, { cells, colWidths, ...tableSize({ colWidths, rowHeights: t.rowHeights }) })
+  }
+
+  // ---- 画像のトリミング --------------------------------------------------
+  /** 表示上の矩形(ページ座標)で切り抜く。natural は元画像のピクセル寸法 */
+  cropImage(id: string, rect: { x: number; y: number; w: number; h: number }, natural: { w: number; h: number }): void {
+    const img = this.snapshot.byId.get(id)
+    if (!img || img.type !== 'image') return
+    const cur = img.crop ?? { x: 0, y: 0, w: natural.w, h: natural.h }
+    const rx = Math.max(0, Math.min(1, (rect.x - img.x) / img.w))
+    const ry = Math.max(0, Math.min(1, (rect.y - img.y) / img.h))
+    const rw = Math.max(0.02, Math.min(1 - rx, rect.w / img.w))
+    const rh = Math.max(0.02, Math.min(1 - ry, rect.h / img.h))
+    const crop = { x: Math.round(cur.x + cur.w * rx), y: Math.round(cur.y + cur.h * ry), w: Math.round(cur.w * rw), h: Math.round(cur.h * rh) }
+    this.updateShape<ImageShape>(id, { crop, x: img.x + img.w * rx, y: img.y + img.h * ry, w: img.w * rw, h: img.h * rh })
+    this.patch({ cropping: null })
+  }
+  uncropImage(id: string, natural: { w: number; h: number }): void {
+    const img = this.snapshot.byId.get(id)
+    if (!img || img.type !== 'image' || !img.crop) return
+    // 表示倍率を保ったまま全体に戻す
+    const k = img.w / img.crop.w
+    this.updateShape<ImageShape>(id, { crop: null, x: img.x - img.crop.x * k, y: img.y - img.crop.y * k, w: natural.w * k, h: natural.h * k })
+  }
+
+  // ---- レーザーポインター ----------------------------------------------------
+  private laserPts: number[] = []
+  private laserTimer: number | null = null
+  laserMove(p: Point | null): void {
+    if (!p) {
+      this.laserPts = []
+      this.provider.awareness.setLocalStateField('laser', null)
+      return
+    }
+    this.laserPts.push(p.x, p.y)
+    if (this.laserPts.length > 60) this.laserPts.splice(0, this.laserPts.length - 60)
+    if (this.laserTimer !== null) return
+    this.laserTimer = window.setTimeout(() => {
+      this.laserTimer = null
+      this.provider.awareness.setLocalStateField('laser', { points: [...this.laserPts], ts: Date.now() })
+    }, 30)
   }
 
   // ---- 取り消し ----------------------------------------------------------

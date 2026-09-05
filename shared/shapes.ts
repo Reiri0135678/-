@@ -39,6 +39,7 @@ export type ShapeType =
   | 'ellipse'
   | 'image'
   | 'frame'
+  | 'table'
   | 'request-card'
 
 export interface ShapeBase {
@@ -148,6 +149,18 @@ export interface ImageShape extends ShapeBase {
   type: 'image'
   src: string
   name: string
+  /** 元画像のピクセル座標での切り抜き範囲。無ければ全体 */
+  crop: { x: number; y: number; w: number; h: number } | null
+}
+/** 表: 行×列の文字セル。列幅・行高は個別に持つ(w/h はその合計) */
+export interface TableShape extends ShapeBase {
+  type: 'table'
+  cells: string[][]
+  colWidths: number[]
+  rowHeights: number[]
+  headerRow: boolean
+  color: string
+  fontSize: number
 }
 /** 区画: 名前付きの領域。動かすと中の図形も一緒に動く。常に背面 */
 export interface FrameShape extends ShapeBase {
@@ -200,6 +213,7 @@ export type Shape =
   | EllipseShape
   | ImageShape
   | FrameShape
+  | TableShape
   | RequestCardShape
 
 export const CARD_W = 220
@@ -232,9 +246,26 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
     case 'ellipse':
       return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2, dash: 'solid', label: '', fontSize: 16 }
     case 'image':
-      return { ...base, type, w: 200, h: 150, src: '', name: '' }
+      return { ...base, type, w: 200, h: 150, src: '', name: '', crop: null }
     case 'frame':
       return { ...base, type, w: 600, h: 400, title: '区画', color: '#6a9bcc' }
+    case 'table':
+      return {
+        ...base,
+        type,
+        w: 360,
+        h: 120,
+        cells: [
+          ['項目', '基準', '結果'],
+          ['', '', ''],
+          ['', '', '']
+        ],
+        colWidths: [120, 120, 120],
+        rowHeights: [40, 40, 40],
+        headerRow: true,
+        color: DEFAULT_COLOR,
+        fontSize: 14
+      }
     case 'request-card':
       return {
         ...base,
@@ -571,4 +602,19 @@ export interface VersionInfo {
   by: string
   ts: number
   shapes: number
+}
+
+/** 表の寸法をセルの幅・高さから求める */
+export function tableSize(t: Pick<TableShape, 'colWidths' | 'rowHeights'>): { w: number; h: number } {
+  return { w: t.colWidths.reduce((a, b) => a + b, 0), h: t.rowHeights.reduce((a, b) => a + b, 0) }
+}
+
+// ---- 自作の雛形 -----------------------------------------------------------
+export interface UserTemplate {
+  id: string
+  name: string
+  by: string
+  ts: number
+  /** 左上を原点にした相対座標の図形 */
+  shapes: Array<Partial<Shape> & { type: ShapeType; id?: string }>
 }
