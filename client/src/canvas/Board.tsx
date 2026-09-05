@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Layer, Rect, Stage, Transformer } from 'react-konva'
-import { CARD_H, CARD_W, defaultsFor, todayString, type DrawShape, type Shape } from '@shared/shapes'
+import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, todayString, type DrawShape, type Shape } from '@shared/shapes'
 import { BoardEditor, newId, shapeBounds, type Point, type ToolId } from './editor'
 import { EditorContext, useEditorSnapshot } from './hooks'
 import { ShapeView, shapeIdOf, type ShapeHandlers } from './shapes/ShapeView'
@@ -254,7 +254,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         by: '',
         updatedAt: 0,
         points: [p.x, p.y],
-        color: tool === 'highlight' ? '#fde047' : snap.style.color,
+        color: tool === 'highlight' ? HIGHLIGHT_COLOR : snap.style.color,
         size: tool === 'highlight' ? Math.max(snap.style.size, 4) : snap.style.size,
         opacity: tool === 'highlight' ? 0.45 : 1
       })
@@ -388,7 +388,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       w: x1 - x0,
       h: y1 - y0,
       points: rel,
-      color: isHl ? '#fde047' : snap.style.color,
+      color: isHl ? HIGHLIGHT_COLOR : snap.style.color,
       size: isHl ? Math.max(snap.style.size, 4) : snap.style.size,
       opacity: isHl ? 0.45 : 1
     })
@@ -623,9 +623,9 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
             keepRatio={false}
             ignoreStroke
             anchorSize={8}
-            borderStroke="#2563eb"
-            anchorStroke="#2563eb"
-            anchorFill="#fff"
+            borderStroke="#d97757"
+            anchorStroke="#d97757"
+            anchorFill="#fffefb"
             boundBoxFunc={(_old, box) => (box.width < 4 || box.height < 4 ? _old : box)}
           />
           {marquee && (
@@ -634,8 +634,8 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
               y={Math.min(marquee.a.y, marquee.b.y)}
               width={Math.abs(marquee.b.x - marquee.a.x)}
               height={Math.abs(marquee.b.y - marquee.a.y)}
-              fill="rgba(37,99,235,0.08)"
-              stroke="#2563eb"
+              fill="rgba(217,119,87,0.08)"
+              stroke="#d97757"
               strokeWidth={1 / snap.camera.scale}
               listening={false}
             />

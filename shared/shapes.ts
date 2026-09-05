@@ -149,9 +149,12 @@ export type Shape =
 export const CARD_W = 220
 export const CARD_H = 148
 
-export const DEFAULT_COLOR = '#1f2937'
-export const COLORS = ['#1f2937', '#dc2626', '#2563eb', '#16a34a', '#f59e0b', '#9333ea'] as const
-export const NOTE_COLORS = ['#fef3c7', '#dbeafe', '#dcfce7', '#fce7f3'] as const
+/** ペン・図形の色(落ち着いた暖色系のパレット) */
+export const DEFAULT_COLOR = '#141413'
+export const COLORS = ['#141413', '#b5462b', '#3f6f9e', '#5f7a45', '#d97757', '#7b5c9c'] as const
+/** 付箋の色(紙色) */
+export const NOTE_COLORS = ['#f7ebcf', '#dfe9f2', '#e4e9d9', '#f3dcd4'] as const
+export const HIGHLIGHT_COLOR = '#f2d16b'
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never
 export type ShapeDefaults = DistributiveOmit<Shape, 'id' | 'x' | 'y' | 'z' | 'by' | 'updatedAt'>

@@ -85,7 +85,7 @@ const MAX_SCALE = 8
 function userColor(name: string): string {
   let h = 0
   for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0
-  const palette = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0891b2', '#db2777']
+  const palette = ['#d97757', '#6a9bcc', '#788c5d', '#b5462b', '#7b5c9c', '#3f6f9e', '#c9922a']
   return palette[h % palette.length]!
 }
 

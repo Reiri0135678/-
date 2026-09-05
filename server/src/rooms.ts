@@ -156,19 +156,24 @@ export class Room {
   }
 
   private numbering = false
-  /** 受付番号が空の依頼カードに採番する(作成経路を問わずサーバーが付ける) */
+  private numberingRequested = false
+  /** 受付番号が空の依頼カードに採番する(作成経路を問わずサーバーが付ける)。実行中に来た依頼も取りこぼさない */
   private async assignNumbers(): Promise<void> {
+    this.numberingRequested = true
     if (this.numbering) return
     this.numbering = true
     try {
-      const pending: string[] = []
-      this.shapes.forEach((m, id) => {
-        if (m.get('type') === 'request-card' && !m.get('no')) pending.push(id)
-      })
-      for (const id of pending) {
-        const no = await this.nextNumber()
-        const m = this.shapes.get(id)
-        if (m && !m.get('no')) this.doc.transact(() => m.set('no', no), { server: true, user: 'system' } satisfies ServerOrigin)
+      while (this.numberingRequested) {
+        this.numberingRequested = false
+        const pending: string[] = []
+        this.shapes.forEach((m, id) => {
+          if (m.get('type') === 'request-card' && !m.get('no')) pending.push(id)
+        })
+        for (const id of pending) {
+          const no = await this.nextNumber()
+          const m = this.shapes.get(id)
+          if (m && !m.get('no')) this.doc.transact(() => m.set('no', no), { server: true, user: 'system' } satisfies ServerOrigin)
+        }
       }
     } finally {
       this.numbering = false

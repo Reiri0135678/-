@@ -123,6 +123,11 @@ PDF の画像化、タブレット幅のサイドバーとピンチズーム、�
 依存ライブラリはすべて MIT ライセンス(React, Konva, react-konva, Yjs, y-websocket, y-protocols, lib0, perfect-freehand, express, ws)。
 商用利用に費用・キー・透かし表示は不要。v0.5 まで使っていた tldraw SDK(独自ライセンス)は v0.6 で撤去済み。
 
+## デザイン
+
+配色・書体は `client/src/styles.css` 先頭の CSS 変数(`--qc-*`, `--font-*`)に集約。キャンバス側の色は `shared/shapes.ts`(ペン・付箋の色)と
+`client/src/canvas/shapes/ShapeView.tsx`(カードの色)にある。紙色の下地(#faf9f5)、テラコッタのアクセント(#d97757)、明朝系の見出しが基調。
+
 ## キーボード操作
 
 | キー | 操作 |
