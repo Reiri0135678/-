@@ -34,6 +34,7 @@ export function QcToolbar(): JSX.Element {
             key={it.id}
             className="qc-toolbar__btn"
             data-active={current === it.id}
+            data-tool={it.id}
             title={it.label}
             onClick={() => editor.setCurrentTool(it.id)}
           >

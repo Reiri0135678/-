@@ -3,29 +3,16 @@ import {
   BaseBoxShapeUtil,
   HTMLContainer,
   Rectangle2d,
-  T,
   resizeBox,
   type RecordProps,
   type TLResizeInfo,
   type TLShape
 } from 'tldraw'
-
-/**
- * 検査依頼カード図形。
- * 将来 kintone のレコードと 1:1 で対応させる想定。props はそのままレコード項目に写せる粒度に保つ。
- */
-export type RequestStatus = '未受付' | '受付' | '検査中' | '完了'
-
-export interface RequestCardProps {
-  w: number
-  h: number
-  title: string
-  dept: string
-  partNo: string
-  lot: string
-  qty: string
-  status: RequestStatus
-}
+import {
+  requestCardDefaultProps,
+  requestCardProps,
+  type RequestCardProps
+} from '@shared/request-card'
 
 // tldraw 5 系は独自図形をモジュール拡張で型登録する
 declare module 'tldraw' {
@@ -36,31 +23,13 @@ declare module 'tldraw' {
 
 export type RequestCardShape = TLShape<'request-card'>
 
+/** 検査依頼カード図形の描画・操作。スキーマ本体は shared/request-card.ts */
 export class RequestCardShapeUtil extends BaseBoxShapeUtil<RequestCardShape> {
   static override type = 'request-card' as const
-
-  static override props: RecordProps<RequestCardShape> = {
-    w: T.number,
-    h: T.number,
-    title: T.string,
-    dept: T.string,
-    partNo: T.string,
-    lot: T.string,
-    qty: T.string,
-    status: T.literalEnum('未受付', '受付', '検査中', '完了')
-  }
+  static override props: RecordProps<RequestCardShape> = requestCardProps
 
   override getDefaultProps(): RequestCardShape['props'] {
-    return {
-      w: 220,
-      h: 120,
-      title: '検査依頼',
-      dept: '製造1課',
-      partNo: '',
-      lot: '',
-      qty: '',
-      status: '未受付'
-    }
+    return { ...requestCardDefaultProps }
   }
 
   override getGeometry(shape: RequestCardShape): Rectangle2d {

@@ -1,27 +1,40 @@
 {
   "name": "qc-board",
-  "version": "0.1.0",
-  "description": "品質管理室 検査依頼デジタル化アプリ(ホワイトボード基盤)",
-  "main": "./out/main/index.js",
+  "version": "0.2.0",
+  "description": "品質管理室 検査依頼デジタル化アプリ(多人数同時編集ホワイトボード)",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
-    "preview": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json"
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "tsx watch server/src/index.ts",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "tsx server/src/index.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
+    "test:e2e": "node scripts/e2e-sync.mjs"
   },
   "dependencies": {
+    "@tldraw/sync": "5.4.0",
+    "@tldraw/sync-core": "5.4.0",
+    "@tldraw/tlschema": "5.4.0",
+    "@tldraw/validate": "5.4.0",
+    "express": "^5.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tldraw": "^5.4.0"
+    "tldraw": "5.4.0",
+    "tsx": "^4.23.13",
+    "ws": "^8.21.3"
   },
   "devDependencies": {
-    "@tldraw/assets": "^5.4.0",
+    "@tldraw/assets": "5.4.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/ws": "^8.18.0",
     "@vitejs/plugin-react": "^5.0.0",
-    "electron": "^44.2.0",
-    "electron-vite": "^5.0.0",
+    "concurrently": "^9.0.0",
+    "playwright-core": "^1.58.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"
   }
