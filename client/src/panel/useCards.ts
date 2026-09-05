@@ -6,13 +6,13 @@ import { useEditorSnapshot } from '../canvas/hooks'
 /** ボード上の依頼カード一覧(リアクティブ) */
 export function useCards(editor: BoardEditor): RequestCardShape[] {
   const snap = useEditorSnapshot(editor)
-  return useMemo(() => snap.shapes.filter((s): s is RequestCardShape => s.type === 'request-card'), [snap.shapes])
+  return useMemo(() => snap.allShapes.filter((s): s is RequestCardShape => s.type === 'request-card'), [snap.allShapes])
 }
 
 /** ボード上の画像図形一覧(リアクティブ) */
 export function useImages(editor: BoardEditor): ImageShape[] {
   const snap = useEditorSnapshot(editor)
-  return useMemo(() => snap.shapes.filter((s): s is ImageShape => s.type === 'image'), [snap.shapes])
+  return useMemo(() => snap.allShapes.filter((s): s is ImageShape => s.type === 'image'), [snap.allShapes])
 }
 
 /** 単一選択されている図形(なければ null) */

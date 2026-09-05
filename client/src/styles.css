@@ -323,3 +323,26 @@ button { font: inherit; }
 .cols__pop label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .grid__resizer { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; }
 .grid__resizer:hover { background: var(--qc-accent-soft); }
+
+/* ---- ページバー ---- */
+.page-bar { position: absolute; left: 80px; bottom: 12px; display: flex; gap: 4px; padding: 4px; background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 10px; box-shadow: var(--shadow); z-index: 300; max-width: 60%; overflow-x: auto; }
+.page-tab { font: inherit; font-size: 12px; padding: 4px 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 6px; color: var(--qc-muted); }
+.page-tab[data-active='true'] { background: var(--qc-accent-soft); color: var(--qc-text); border-color: var(--qc-accent); }
+.page-tab--add { color: var(--qc-accent); font-weight: 700; }
+.page-tab__peers { font-size: 10px; background: var(--qc-blue-soft); color: var(--qc-blue); border-radius: 999px; padding: 0 6px; }
+.page-tab__x { color: var(--qc-faint); padding: 0 2px; }
+.page-tab__x:hover { color: var(--qc-red); }
+.zoom-bar { left: auto; }
+
+/* ---- コメント ---- */
+.comment-pop { position: absolute; width: 320px; background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 12px; box-shadow: var(--shadow); z-index: 330; font-size: 13px; }
+.comment-pop__head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--qc-border); }
+.comment-pop__head > b { flex: 1; }
+.comment-pop__actions { display: flex; gap: 4px; }
+.comment-pop__list { list-style: none; margin: 0; padding: 8px 12px; max-height: 240px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+.comment-pop__list p { margin: 2px 0 0; white-space: pre-wrap; }
+.comment-pop__form { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--qc-border); }
+.comment-pop__form textarea { flex: 1; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--qc-border); border-radius: 8px; resize: none; }
+.chip--b { font-weight: 700; }
+.chip--i { font-style: italic; }
+.chip--u { text-decoration: underline; }

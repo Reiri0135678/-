@@ -194,6 +194,92 @@ try {
     await b.evaluate(() => window.__qcEditor.setTool('select'))
   }
 
+  // 他人の選択範囲・文字装飾・グループ/ロック・複数ページ・コメント
+  {
+    // 他人の選択範囲
+    await b.evaluate(() => window.__qcEditor.select('s_rectA'))
+    ok('相手の選択範囲が在席情報で届く', await waitFor(() => a.evaluate(() => window.__qcEditor.getCollaborators().some((c) => c.selection.includes('s_rectA')))))
+    await b.evaluate(() => window.__qcEditor.selectNone())
+
+    // 文字装飾
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.createShape({ id: 's_text1', type: 'text', x: 100, y: 700, w: 200, h: 28, text: '装飾テスト' })
+      ed.select('s_text1')
+    })
+    await a.waitForSelector('[data-testid="text-style"]')
+    await a.click('[data-style="bold"]')
+    await a.click('[data-style="underline"]')
+    await a.click('[data-align="center"]')
+    await a.click('[data-font-size="24"]')
+    ok('太字・下線・中央揃え・サイズが相手に同期', await waitFor(() => b.evaluate(() => { const t = window.__qcEditor.getShape('s_text1'); return t && t.bold && t.underline && !t.italic && t.align === 'center' && t.fontSize === 24 })))
+
+    // グループ化
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.createShape({ id: 's_rectC', type: 'rect', x: 400, y: 700, w: 80, h: 60 })
+      ed.select(['s_rectA', 's_rectC'])
+    })
+    await a.click('[data-testid="group"]')
+    ok('グループ化で同じ groupId が付く', await waitFor(() => a.evaluate(() => { const ed = window.__qcEditor; const g = ed.getShape('s_rectA').groupId; return !!g && ed.getShape('s_rectC').groupId === g })))
+    await a.evaluate(() => window.__qcEditor.select('s_rectC'))
+    ok('グループの一員を選ぶと全体が選ばれる', (await a.evaluate(() => window.__qcEditor.getSnapshot().selection.length)) === 2)
+    await a.click('.board', { position: { x: 5, y: 5 } })
+    await a.evaluate(() => window.__qcEditor.select('s_rectC'))
+    await a.keyboard.press('Control+Shift+g')
+    ok('Ctrl+Shift+G でグループ解除', await waitFor(() => a.evaluate(() => window.__qcEditor.getShape('s_rectA').groupId === null && window.__qcEditor.getShape('s_rectC').groupId === null)))
+
+    // ロック
+    await a.evaluate(() => window.__qcEditor.select('s_rectC'))
+    await a.click('[data-testid="lock"]')
+    ok('ロックが相手に同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShape('s_rectC').locked === true)))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.updateShape('s_rectC', { x: 999 }); ed.deleteShapes(['s_rectC']) })
+    await a.waitForTimeout(300)
+    const lockedC = await a.evaluate(() => window.__qcEditor.getShape('s_rectC'))
+    ok('ロック中は移動も削除もされない', lockedC && lockedC.x === 400)
+    await a.evaluate(() => window.__qcEditor.select('s_rectC'))
+    await a.keyboard.press('Control+l')
+    ok('Ctrl+L でロック解除', await waitFor(() => a.evaluate(() => window.__qcEditor.getShape('s_rectC').locked === false)))
+    await a.evaluate(() => window.__qcEditor.deleteShapes(['s_rectC']))
+
+    // 複数ページ
+    await a.click('[data-testid="page-add"]')
+    const pageId = await waitFor(() => a.evaluate(() => { const s = window.__qcEditor.getSnapshot(); return s.pages.length === 2 && s.currentPage !== 'p1' ? s.currentPage : null }))
+    await a.evaluate(() => window.__qcEditor.createShape({ id: 's_note_p2', type: 'note', x: 100, y: 100, text: '2 ページ目' }))
+    ok('新しいページの図形は 1 ページ目に出ない', await a.evaluate(() => { const ed = window.__qcEditor; ed.setPage('p1'); const hidden = !ed.getShapes().some((s) => s.id === 's_note_p2'); const all = ed.getSnapshot().allShapes.some((s) => s.id === 's_note_p2'); return hidden && all }))
+    ok('相手にもページが同期される', await waitFor(() => b.evaluate((id) => window.__qcEditor.getSnapshot().pages.some((p) => p.id === id), pageId)))
+    await b.evaluate((id) => window.__qcEditor.setPage(id), pageId)
+    ok('相手がページを切り替えると図形が見える', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.id === 's_note_p2'))))
+    ok('ページバーに相手の人数が出る', await waitFor(async () => (await a.locator(`[data-page="${pageId}"] .page-tab__peers`).textContent()) === '1'))
+    await a.evaluate((id) => window.__qcEditor.renamePage(id, '図面レビュー'), pageId)
+    ok('ページ名の変更が同期', await waitFor(() => b.evaluate((id) => window.__qcEditor.getSnapshot().pages.find((p) => p.id === id)?.name === '図面レビュー', pageId)))
+    ok('図形があるページは削除できない', (await a.evaluate((id) => window.__qcEditor.deletePage(id), pageId)) === false)
+    await b.evaluate(() => { window.__qcEditor.deleteShapes(['s_note_p2']); window.__qcEditor.setPage('p1') })
+    await waitFor(() => a.evaluate(() => !window.__qcEditor.getSnapshot().allShapes.some((s) => s.id === 's_note_p2')))
+    ok('空になったページは削除できる', (await a.evaluate((id) => window.__qcEditor.deletePage(id), pageId)) === true && (await waitFor(() => b.evaluate(() => window.__qcEditor.getSnapshot().pages.length === 1 ? 1 : null))) === 1)
+
+    // コメント
+    const board = await a.locator('.board').boundingBox()
+    const pt = (x, y) => [board.x + x, board.y + y]
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.setTool('comment') })
+    await a.mouse.click(...pt(460, 460))
+    await a.waitForSelector('[data-testid="comment-pop"]')
+    await a.fill('[data-testid="comment-input"]', 'この寸法を確認してください')
+    await a.click('[data-testid="comment-submit"]')
+    const cm = await waitFor(() => b.evaluate(() => window.__qcEditor.getSnapshot().comments[0] || null))
+    ok('コメントが図形に付いて相手に届く', cm.shapeId === 's_rectA' && cm.text === 'この寸法を確認してください' && cm.author === '山田')
+    await b.evaluate((id) => window.__qcEditor.replyComment(id, '確認しました'), cm.id)
+    ok('返信が届く', await waitFor(() => a.evaluate((id) => window.__qcEditor.getSnapshot().comments.find((c) => c.id === id)?.replies.length === 1, cm.id)))
+    // ピンをクリックしてスレッドを開く
+    const pin = await a.evaluate(() => { const ed = window.__qcEditor; const s = ed.getShape('s_rectA'); return ed.pageToScreen({ x: s.x + s.w, y: s.y }) })
+    await a.mouse.click(board.x + pin.x, board.y + pin.y)
+    await a.waitForSelector('[data-testid="comment-list"]')
+    ok('ピンをクリックするとスレッドが開く(2 件)', (await a.locator('[data-testid="comment-list"] li').count()) === 2)
+    await a.click('[data-testid="comment-resolve"]')
+    ok('解決したコメントは同期される', await waitFor(() => b.evaluate((id) => window.__qcEditor.getSnapshot().comments.find((c) => c.id === id)?.resolved === true, cm.id)))
+    await a.keyboard.press('Escape')
+  }
+
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
   ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))

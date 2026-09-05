@@ -2,13 +2,18 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import {
   COLORS,
+  DEFAULT_PAGE,
   NOTE_COLORS,
   defaultsFor,
+  normalizeComment,
   normalizeShape,
   type ArrowBinding,
   type ArrowShape,
+  type CommentThread,
+  type PageInfo,
   type Shape,
-  type ShapeType
+  type ShapeType,
+  type TextAlign
 } from '@shared/shapes'
 
 /**
@@ -31,6 +36,7 @@ export type ToolId =
   | 'rect'
   | 'ellipse'
   | 'request-card'
+  | 'comment'
 
 export interface Camera {
   x: number
@@ -49,18 +55,32 @@ export interface Collaborator {
   selection: string[]
   /** 描画途中の図形(ペンの線など)。書き終える前から相手に見せる */
   draft: Shape | null
+  /** 見ているページ */
+  page: string
 }
 export interface Style {
   color: string
   size: number
   noteColor: string
   fill: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  align: TextAlign
 }
 export type ConnectionStatus = 'connecting' | 'online' | 'offline'
 
 export interface EditorSnapshot {
+  /** 現在のページの図形(重なり順) */
   shapes: Shape[]
+  /** 全ページの図形 */
+  allShapes: Shape[]
   byId: ReadonlyMap<string, Shape>
+  pages: PageInfo[]
+  currentPage: string
+  comments: CommentThread[]
+  showResolved: boolean
   selection: string[]
   tool: ToolId
   camera: Camera
@@ -100,6 +120,8 @@ export function newId(): string {
 export class BoardEditor {
   readonly doc = new Y.Doc()
   readonly shapesMap: Y.Map<Y.Map<unknown>>
+  readonly pagesMap: Y.Map<{ name: string; order: number }>
+  readonly commentsMap: Y.Map<Y.Map<unknown>>
   readonly provider: WebsocketProvider
   readonly undo: Y.UndoManager
   readonly userName: string
@@ -114,6 +136,8 @@ export class BoardEditor {
     this.userName = opts.userName
     this.userColor = userColor(opts.userName)
     this.shapesMap = this.doc.getMap('shapes') as Y.Map<Y.Map<unknown>>
+    this.pagesMap = this.doc.getMap('pages') as Y.Map<{ name: string; order: number }>
+    this.commentsMap = this.doc.getMap('comments') as Y.Map<Y.Map<unknown>>
 
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const base = opts.wsBase ?? `${proto}://${window.location.host}/api/connect`
@@ -123,7 +147,12 @@ export class BoardEditor {
 
     this.snapshot = {
       shapes: [],
+      allShapes: [],
       byId: new Map(),
+      pages: [{ id: DEFAULT_PAGE, name: 'ページ 1', order: 0 }],
+      currentPage: DEFAULT_PAGE,
+      comments: [],
+      showResolved: false,
       selection: [],
       tool: 'select',
       camera: { x: 0, y: 0, scale: 1 },
@@ -133,15 +162,18 @@ export class BoardEditor {
       canUndo: false,
       canRedo: false,
       editingId: null,
-      style: { color: COLORS[0], size: 3, noteColor: NOTE_COLORS[0], fill: 'transparent' },
+      style: { color: COLORS[0], size: 3, noteColor: NOTE_COLORS[0], fill: 'transparent', fontSize: 18, bold: false, italic: false, underline: false, align: 'left' },
       version: 0
     }
 
     this.shapesMap.observeDeep(() => this.rebuildShapes())
+    this.pagesMap.observe(() => this.rebuildShapes())
+    this.commentsMap.observeDeep(() => this.rebuildComments())
     this.undo.on('stack-item-added', () => this.patch({}))
     this.undo.on('stack-item-popped', () => this.patch({}))
 
     this.provider.awareness.setLocalStateField('user', { name: this.userName, color: this.userColor })
+    this.provider.awareness.setLocalStateField('page', DEFAULT_PAGE)
     this.provider.awareness.on('change', () => this.rebuildCollaborators())
     this.provider.on('status', ({ status }: { status: string }) => {
       if (status === 'disconnected') this.patch({ status: 'offline' })
@@ -152,6 +184,7 @@ export class BoardEditor {
       if (synced) {
         this.patch({ status: 'online' })
         this.rebuildShapes()
+        this.rebuildComments()
       }
     })
   }
@@ -183,16 +216,106 @@ export class BoardEditor {
   }
 
   private rebuildShapes(): void {
-    const shapes: Shape[] = []
+    const allShapes: Shape[] = []
     this.shapesMap.forEach((m) => {
       const s = normalizeShape(m.toJSON() as Record<string, unknown>)
-      if (s) shapes.push(s)
+      if (s) allShapes.push(s)
     })
-    shapes.sort((a, b) => a.z - b.z)
-    const byId = new Map(shapes.map((s) => [s.id, s]))
-    const selection = this.snapshot.selection.filter((id) => byId.has(id))
+    allShapes.sort((a, b) => a.z - b.z)
+    const byId = new Map(allShapes.map((s) => [s.id, s]))
+    // ページ一覧(未定義なら最初のページだけ)
+    const pages: PageInfo[] = []
+    this.pagesMap.forEach((v, id) => pages.push({ id, name: v.name, order: v.order }))
+    if (!pages.some((p) => p.id === DEFAULT_PAGE)) pages.push({ id: DEFAULT_PAGE, name: 'ページ 1', order: -1 })
+    pages.sort((a, b) => a.order - b.order)
+    const currentPage = pages.some((p) => p.id === this.snapshot.currentPage) ? this.snapshot.currentPage : DEFAULT_PAGE
+    const shapes = allShapes.filter((s) => s.page === currentPage)
+    const selection = this.snapshot.selection.filter((id) => byId.get(id)?.page === currentPage)
     const editingId = this.snapshot.editingId && byId.has(this.snapshot.editingId) ? this.snapshot.editingId : null
-    this.patch({ shapes, byId, selection, editingId })
+    this.patch({ shapes, allShapes, byId, pages, currentPage, selection, editingId })
+  }
+
+  private rebuildComments(): void {
+    const comments: CommentThread[] = []
+    this.commentsMap.forEach((m) => {
+      const c = normalizeComment(m.toJSON() as Record<string, unknown>)
+      if (c) comments.push(c)
+    })
+    comments.sort((a, b) => a.ts - b.ts)
+    this.patch({ comments })
+  }
+
+  // ---- ページ ----------------------------------------------------------
+  setPage(id: string): void {
+    if (!this.snapshot.pages.some((p) => p.id === id) || id === this.snapshot.currentPage) return
+    this.snapshot = { ...this.snapshot, currentPage: id, selection: [], editingId: null }
+    this.provider.awareness.setLocalStateField('page', id)
+    this.provider.awareness.setLocalStateField('selection', [])
+    this.rebuildShapes()
+  }
+  addPage(name?: string): string {
+    if (this.snapshot.readonly) return this.snapshot.currentPage
+    const id = `p_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const order = Math.max(0, ...this.snapshot.pages.map((p) => p.order)) + 1
+    this.doc.transact(() => {
+      if (!this.pagesMap.has(DEFAULT_PAGE)) this.pagesMap.set(DEFAULT_PAGE, { name: 'ページ 1', order: -1 })
+      this.pagesMap.set(id, { name: name ?? `ページ ${this.snapshot.pages.length + 1}`, order })
+    }, LOCAL)
+    this.setPage(id)
+    return id
+  }
+  renamePage(id: string, name: string): void {
+    if (this.snapshot.readonly || !name.trim()) return
+    const cur = this.pagesMap.get(id) ?? { name: 'ページ 1', order: -1 }
+    this.doc.transact(() => this.pagesMap.set(id, { ...cur, name: name.trim() }), LOCAL)
+  }
+  /** 図形が無いページだけ削除できる。成功なら true */
+  deletePage(id: string): boolean {
+    if (this.snapshot.readonly || id === DEFAULT_PAGE) return false
+    if (this.snapshot.allShapes.some((s) => s.page === id)) return false
+    this.doc.transact(() => this.pagesMap.delete(id), LOCAL)
+    if (this.snapshot.currentPage === id) this.setPage(DEFAULT_PAGE)
+    return true
+  }
+
+  // ---- コメント ----------------------------------------------------------
+  addComment(init: { shapeId: string | null; x: number; y: number; text: string }): string {
+    const id = `c_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const c: CommentThread = {
+      id,
+      page: this.snapshot.currentPage,
+      shapeId: init.shapeId,
+      x: init.x,
+      y: init.y,
+      author: this.userName,
+      text: init.text,
+      ts: Date.now(),
+      resolved: false,
+      replies: []
+    }
+    this.doc.transact(() => {
+      const m = new Y.Map<unknown>()
+      for (const [k, v] of Object.entries(c)) m.set(k, v)
+      this.commentsMap.set(id, m)
+    }, 'comment')
+    return id
+  }
+  replyComment(id: string, text: string): void {
+    const m = this.commentsMap.get(id)
+    if (!m || !text.trim()) return
+    const replies = [...((m.get('replies') as CommentThread['replies']) ?? []), { author: this.userName, text: text.trim(), ts: Date.now() }]
+    this.doc.transact(() => m.set('replies', replies), 'comment')
+  }
+  resolveComment(id: string, resolved: boolean): void {
+    const m = this.commentsMap.get(id)
+    if (!m) return
+    this.doc.transact(() => m.set('resolved', resolved), 'comment')
+  }
+  deleteComment(id: string): void {
+    this.doc.transact(() => this.commentsMap.delete(id), 'comment')
+  }
+  setShowResolved(v: boolean): void {
+    this.patch({ showResolved: v })
   }
 
   private rebuildCollaborators(): void {
@@ -207,7 +330,8 @@ export class BoardEditor {
         color: u.color,
         cursor: (state['cursor'] as Point | null) ?? null,
         selection: (state['selection'] as string[]) ?? [],
-        draft: (state['draft'] as Shape | null) ?? null
+        draft: (state['draft'] as Shape | null) ?? null,
+        page: String(state['page'] ?? DEFAULT_PAGE)
       })
     })
     this.patch({ collaborators: list })
@@ -236,6 +360,7 @@ export class BoardEditor {
   createShape<T extends Shape = Shape>(init: { type: ShapeType; x?: number; y?: number } & Partial<T>): T {
     const shape = {
       ...defaultsFor(init.type),
+      page: this.snapshot.currentPage,
       ...init,
       id: (init as { id?: string }).id ?? newId(),
       x: init.x ?? 0,
@@ -277,9 +402,12 @@ export class BoardEditor {
       for (const { id, patch } of updates) {
         const m = this.shapesMap.get(id)
         if (!m) continue
+        const locked = m.get('locked') === true && patch.locked !== false
         let changed = false
         for (const [k, v] of Object.entries(patch)) {
           if (k === 'id' || k === 'type') continue
+          // ロック中は位置・大きさを変えない(内容の編集は可)
+          if (locked && ['x', 'y', 'w', 'h', 'rotation', 'dx', 'dy', 'points'].includes(k)) continue
           const cur = m.get(k)
           if (cur === v || (Array.isArray(v) && JSON.stringify(cur) === JSON.stringify(v))) continue
           m.set(k, v)
@@ -296,6 +424,8 @@ export class BoardEditor {
   /** 削除。依頼カードは記録として残すため物理削除せず「取消」にする */
   deleteShapes(ids: string[]): void {
     if (this.snapshot.readonly || ids.length === 0) return
+    ids = ids.filter((id) => !this.snapshot.byId.get(id)?.locked)
+    if (ids.length === 0) return
     const cards = ids.filter((id) => this.snapshot.byId.get(id)?.type === 'request-card')
     const others = ids.filter((id) => !cards.includes(id))
     if (cards.length) {
@@ -351,9 +481,28 @@ export class BoardEditor {
 
   // ---- 選択 ------------------------------------------------------------
   select(ids: string | string[]): void {
-    const list = (Array.isArray(ids) ? ids : [ids]).filter((id) => this.snapshot.byId.has(id))
+    const base = (Array.isArray(ids) ? ids : [ids]).filter((id) => this.snapshot.byId.has(id))
+    // グループの一員を選ぶとグループ全体が選ばれる
+    const groups = new Set(base.map((id) => this.snapshot.byId.get(id)!.groupId).filter((g): g is string => !!g))
+    const list = [...new Set([...base, ...this.snapshot.shapes.filter((s) => s.groupId && groups.has(s.groupId)).map((s) => s.id)])]
     this.patch({ selection: list })
     this.provider.awareness.setLocalStateField('selection', list)
+  }
+  /** 選択中の図形をグループにする(2 つ以上) */
+  groupSelection(): void {
+    const ids = this.snapshot.selection
+    if (ids.length < 2 || this.snapshot.readonly) return
+    const groupId = `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    this.updateShapes(ids.map((id) => ({ id, patch: { groupId } })))
+  }
+  ungroupSelection(): void {
+    const ids = this.snapshot.selection.filter((id) => this.snapshot.byId.get(id)?.groupId)
+    if (ids.length === 0 || this.snapshot.readonly) return
+    this.updateShapes(ids.map((id) => ({ id, patch: { groupId: null } })))
+  }
+  setLocked(ids: string[], locked: boolean): void {
+    if (this.snapshot.readonly || ids.length === 0) return
+    this.updateShapes(ids.map((id) => ({ id, patch: { locked } })))
   }
   selectNone(): void {
     this.select([])
@@ -377,6 +526,11 @@ export class BoardEditor {
         if (p.size !== undefined && 'size' in s) (patch as { size: number }).size = p.size
         if (p.noteColor !== undefined && s.type === 'note') (patch as { color: string }).color = p.noteColor
         if (p.fill !== undefined && (s.type === 'rect' || s.type === 'ellipse')) (patch as { fill: string }).fill = p.fill
+        if (s.type === 'text' || s.type === 'note') {
+          for (const k of ['fontSize', 'bold', 'italic', 'underline', 'align'] as const) {
+            if (p[k] !== undefined) (patch as Record<string, unknown>)[k] = p[k]
+          }
+        }
         return { id: s.id, patch }
       })
     )
@@ -430,6 +584,7 @@ export class BoardEditor {
   zoomTo(id: string): void {
     const s = this.snapshot.byId.get(id)
     if (!s) return
+    if (s.page !== this.snapshot.currentPage) this.setPage(s.page)
     this.select(id)
     const b = boundsOf([s])!
     this.zoomToBounds(b, 160)

@@ -19,6 +19,9 @@ export function ZoomBar(): JSX.Element {
       <button className="chip" onClick={() => editor.zoomToFit()} title="全体表示 (0)">
         全体
       </button>
+      <button className="chip" data-active={snap.showResolved} onClick={() => editor.setShowResolved(!snap.showResolved)} title="解決済みコメントも表示" data-testid="toggle-resolved">
+        💬
+      </button>
     </div>
   )
 }

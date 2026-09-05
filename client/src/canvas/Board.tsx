@@ -12,6 +12,8 @@ import { QcToolbar } from './QcToolbar'
 import { StylePanel } from './StylePanel'
 import { ZoomBar } from './ZoomBar'
 import { TextEditor } from './TextEditor'
+import { PageBar } from './PageBar'
+import { CommentPins, CommentPopover, type CommentPopoverState } from './Comments'
 import { loadImageSize } from './useImage'
 import { expandFiles } from './pdf'
 
@@ -66,7 +68,8 @@ const KEY_TOOLS: Record<string, ToolId> = {
   a: 'arrow',
   r: 'rect',
   o: 'ellipse',
-  c: 'request-card'
+  c: 'request-card',
+  m: 'comment'
 }
 
 function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: BoardEditor }): JSX.Element {
@@ -80,6 +83,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   const [marquee, setMarquee] = useState<{ a: Point; b: Point } | null>(null)
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
   const [bindTarget, setBindTarget] = useState<string | null>(null)
+  const [commentPop, setCommentPop] = useState<CommentPopoverState | null>(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const gesture = useRef<
     | { kind: 'draw'; points: number[] }
@@ -131,6 +135,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     if (!tr || !layer) return
     const single = snap.selection.length === 1 ? snap.byId.get(snap.selection[0]!) : undefined
     const nodes = snap.selection
+      .filter((id) => !snap.byId.get(id)?.locked)
       .map((id) => layer.findOne(`#${id}`))
       .filter((n): n is Konva.Node => !!n)
     // 矢印 1 本の選択時は端点ハンドルで操作する(Transformer は出さない)
@@ -249,9 +254,17 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     const stage = stageRef.current
     if (!stage) return
     if (snap.editingId) editor.setEditing(null)
+    if (commentPop) setCommentPop(null)
     const onEmpty = e.target === stage
     const p = pointerPage()
     if (!p) return
+    if (snap.tool === 'comment') {
+      if (snap.readonly) return
+      const target = editor.shapeAt(p)
+      setCommentPop({ at: p, shapeId: target?.id ?? null })
+      editor.setTool('select')
+      return
+    }
     if (e.evt.button === 1 || spaceDown || snap.tool === 'hand') return // ステージのドラッグ(パン)に任せる
     if (snap.readonly) {
       if (onEmpty) editor.selectNone()
@@ -385,6 +398,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         const x1 = Math.max(marquee.a.x, marquee.b.x)
         const y1 = Math.max(marquee.a.y, marquee.b.y)
         const hit = snap.shapes
+          .filter((s) => !s.locked)
           .filter((s) => {
             const b = shapeBounds(s)
             return b.x < x1 && b.x + b.w > x0 && b.y < y1 && b.y + b.h > y0
@@ -431,7 +445,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     if (!pos) return
     const node = stage.getIntersection(pos)
     const id = shapeIdOf(node)
-    if (id && id !== 'draft') editor.deleteShapes([id])
+    if (id && id !== 'draft' && !editor.getShape(id)?.locked) editor.deleteShapes([id])
   }
 
   // ---- ホイール: パン / Ctrl+ホイール: ズーム ---------------------------------
@@ -476,6 +490,20 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault()
         if (!s.readonly && s.selection.length) editor.select(editor.duplicate(s.selection))
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        if (e.shiftKey) editor.ungroupSelection()
+        else editor.groupSelection()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        if (!s.readonly && s.selection.length) {
+          const anyLocked = s.selection.some((id) => s.byId.get(id)?.locked)
+          editor.setLocked(s.selection, !anyLocked)
+        }
         return
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
@@ -609,7 +637,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   }
 
   const panning = snap.tool === 'hand' || spaceDown
-  const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : 'crosshair'
+  const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : snap.tool === 'comment' ? 'help' : 'crosshair'
 
   return (
     <div
@@ -646,7 +674,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
           {snap.shapes
             .filter((s) => !(s.type === 'request-card' && s.archived))
             .map((s) => (
-              <ShapeView key={s.id} shape={s} draggable={snap.tool === 'select' && !snap.readonly && !panning} handlers={handlers} />
+              <ShapeView key={s.id} shape={s} draggable={snap.tool === 'select' && !snap.readonly && !panning && !s.locked} handlers={handlers} />
             ))}
           {draft && <ShapeView shape={draft} draft draggable={false} />}
           <Transformer
@@ -674,6 +702,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
           )}
         </Layer>
         <Layer>
+          <CommentPins editor={editor} onOpen={(id) => setCommentPop({ id })} />
           {snap.tool === 'select' && !snap.readonly && snap.selection.length === 1 && snap.byId.get(snap.selection[0]!)?.type === 'arrow' && (
             <ArrowHandles editor={editor} arrow={snap.byId.get(snap.selection[0]!) as ArrowShape} scale={snap.camera.scale} onTarget={setBindTarget} />
           )}
@@ -689,12 +718,14 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
             const b = shapeBounds(snap.byId.get(bindTarget)!)
             return <Rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} stroke="#6a9bcc" strokeWidth={2 / snap.camera.scale} dash={[4, 3]} cornerRadius={6} />
           })()}
-          <Cursors collaborators={snap.collaborators} scale={snap.camera.scale} />
+          <Cursors collaborators={snap.collaborators.filter((c) => c.page === snap.currentPage)} scale={snap.camera.scale} byId={snap.byId} />
         </Layer>
       </Stage>
       {snap.editingId && <TextEditor editor={editor} shapeId={snap.editingId} />}
+      {commentPop && <CommentPopover editor={editor} state={commentPop} onClose={() => setCommentPop(null)} />}
       <QcToolbar />
       <StylePanel />
+      <PageBar />
       <ZoomBar />
       {snap.status !== 'online' && (
         <div className="board-banner" data-status={snap.status}>

@@ -53,7 +53,16 @@ export interface ShapeBase {
   /** 最後に触った人(監査用) */
   by: string
   updatedAt: number
+  /** 所属ページ(省略時は最初のページ) */
+  page: string
+  /** ロック中は移動・変形・削除できない */
+  locked: boolean
+  /** グループ id(同じ id の図形はまとめて選択・移動される) */
+  groupId: string | null
 }
+
+export const DEFAULT_PAGE = 'p1'
+export type TextAlign = 'left' | 'center' | 'right'
 
 export interface DrawShape extends ShapeBase {
   type: 'draw'
@@ -69,11 +78,20 @@ export interface TextShape extends ShapeBase {
   text: string
   color: string
   fontSize: number
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  align: TextAlign
 }
 export interface NoteShape extends ShapeBase {
   type: 'note'
   text: string
   color: string
+  fontSize: number
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  align: TextAlign
 }
 /** 矢印の端点を図形に吸着させる情報。nx/ny は図形内の相対位置(0〜1) */
 export interface ArrowBinding {
@@ -170,14 +188,14 @@ export type ShapeDefaults = DistributiveOmit<Shape, 'id' | 'x' | 'y' | 'z' | 'by
 
 /** 型ごとの既定値(id / 座標 / z / by / updatedAt は作成時に埋める) */
 export function defaultsFor(type: ShapeType): ShapeDefaults {
-  const base = { w: 0, h: 0, rotation: 0 }
+  const base = { w: 0, h: 0, rotation: 0, page: DEFAULT_PAGE, locked: false, groupId: null as string | null }
   switch (type) {
     case 'draw':
       return { ...base, type, points: [], color: DEFAULT_COLOR, size: 3, opacity: 1 }
     case 'text':
-      return { ...base, type, w: 200, h: 28, text: '', color: DEFAULT_COLOR, fontSize: 18 }
+      return { ...base, type, w: 200, h: 28, text: '', color: DEFAULT_COLOR, fontSize: 18, bold: false, italic: false, underline: false, align: 'left' }
     case 'note':
-      return { ...base, type, w: 180, h: 180, text: '', color: NOTE_COLORS[0] }
+      return { ...base, type, w: 180, h: 180, text: '', color: NOTE_COLORS[0], fontSize: 18, bold: false, italic: false, underline: false, align: 'left' }
     case 'arrow':
       return { ...base, type, dx: 100, dy: 0, color: DEFAULT_COLOR, size: 3, startBind: null, endBind: null }
     case 'rect':
@@ -229,7 +247,10 @@ export function normalizeShape(raw: Record<string, unknown>): Shape | null {
       y: Number(raw['y'] ?? 0),
       z: Number(raw['z'] ?? 0),
       by: String(raw['by'] ?? ''),
-      updatedAt: Number(raw['updatedAt'] ?? 0)
+      updatedAt: Number(raw['updatedAt'] ?? 0),
+      page: String(raw['page'] || DEFAULT_PAGE),
+      locked: raw['locked'] === true,
+      groupId: typeof raw['groupId'] === 'string' ? raw['groupId'] : null
     } as Shape
   } catch {
     return null
@@ -449,4 +470,46 @@ export function normalizeDate(v: string): string {
   const m2 = v.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/)
   if (m2) return `${m2[3]}-${m2[1]!.padStart(2, '0')}-${m2[2]!.padStart(2, '0')}`
   return ''
+}
+
+// ---- ページ・コメント ----------------------------------------------------
+export interface PageInfo {
+  id: string
+  name: string
+  order: number
+}
+
+export interface CommentReply {
+  author: string
+  text: string
+  ts: number
+}
+export interface CommentThread {
+  id: string
+  page: string
+  /** 図形に付いたコメントなら図形 id。無ければ座標に置く */
+  shapeId: string | null
+  x: number
+  y: number
+  author: string
+  text: string
+  ts: number
+  resolved: boolean
+  replies: CommentReply[]
+}
+
+export function normalizeComment(raw: Record<string, unknown>): CommentThread | null {
+  if (typeof raw['id'] !== 'string') return null
+  return {
+    id: raw['id'],
+    page: String(raw['page'] || DEFAULT_PAGE),
+    shapeId: typeof raw['shapeId'] === 'string' ? raw['shapeId'] : null,
+    x: Number(raw['x'] ?? 0),
+    y: Number(raw['y'] ?? 0),
+    author: String(raw['author'] ?? ''),
+    text: String(raw['text'] ?? ''),
+    ts: Number(raw['ts'] ?? 0),
+    resolved: raw['resolved'] === true,
+    replies: Array.isArray(raw['replies']) ? (raw['replies'] as CommentReply[]) : []
+  }
 }

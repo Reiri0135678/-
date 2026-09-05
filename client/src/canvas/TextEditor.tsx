@@ -38,7 +38,6 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
   const k = snap.camera.scale
   const isNote = shape.type === 'note'
   const pad = isNote ? 12 * k : 0
-  const fontSize = (isNote ? 18 : shape.fontSize) * k
 
   return (
     <textarea
@@ -63,7 +62,11 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
         top: pos.y + pad,
         width: (shape.w - (isNote ? 24 : 0)) * k,
         height: (shape.h - (isNote ? 24 : 0)) * k,
-        fontSize,
+        fontSize: (isNote ? shape.fontSize : shape.fontSize) * k,
+        fontWeight: shape.bold ? 700 : 400,
+        fontStyle: shape.italic ? 'italic' : 'normal',
+        textDecoration: shape.underline ? 'underline' : 'none',
+        textAlign: shape.align,
         lineHeight: isNote ? 1.35 : 1.3,
         color: isNote ? '#1f2937' : shape.color,
         background: isNote ? shape.color : 'transparent',

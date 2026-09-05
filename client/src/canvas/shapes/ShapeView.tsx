@@ -52,18 +52,21 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
       return (
         <Group {...common}>
           <DrawView shape={shape} />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'text':
       return (
         <Group {...common}>
           <TextView shape={shape} />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'note':
       return (
         <Group {...common}>
           <NoteView shape={shape} />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'arrow':
@@ -79,6 +82,7 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
             hitStrokeWidth={16}
             lineCap="round"
           />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'rect':
@@ -94,6 +98,7 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
             hitStrokeWidth={12}
           />
           {shape.fill === 'transparent' && <Rect width={shape.w} height={shape.h} fill="rgba(0,0,0,0.001)" />}
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'ellipse':
@@ -109,18 +114,21 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
             fill={shape.fill === 'transparent' ? 'rgba(0,0,0,0.001)' : shape.fill}
             hitStrokeWidth={12}
           />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'image':
       return (
         <Group {...common}>
           <ImageView shape={shape} />
+          <LockBadge shape={shape} />
         </Group>
       )
     case 'request-card':
       return (
         <Group {...common}>
           <CardView shape={shape} />
+          <LockBadge shape={shape} />
         </Group>
       )
   }
@@ -154,6 +162,10 @@ function DrawView({ shape }: { shape: DrawShape }): JSX.Element {
   )
 }
 
+function fontStyleOf(s: { bold: boolean; italic: boolean }): string {
+  return [s.bold ? 'bold' : '', s.italic ? 'italic' : ''].filter(Boolean).join(' ') || 'normal'
+}
+
 function TextView({ shape }: { shape: TextShape }): JSX.Element {
   return (
     <Text
@@ -161,6 +173,9 @@ function TextView({ shape }: { shape: TextShape }): JSX.Element {
       width={shape.w}
       fontSize={shape.fontSize}
       fontFamily={FONT}
+      fontStyle={fontStyleOf(shape)}
+      textDecoration={shape.underline ? 'underline' : ''}
+      align={shape.align}
       fill={shape.color}
       lineHeight={1.3}
       wrap="word"
@@ -178,8 +193,11 @@ function NoteView({ shape }: { shape: NoteShape }): JSX.Element {
         y={12}
         width={shape.w - 24}
         height={shape.h - 24}
-        fontSize={18}
+        fontSize={shape.fontSize}
         fontFamily={FONT}
+        fontStyle={fontStyleOf(shape)}
+        textDecoration={shape.underline ? 'underline' : ''}
+        align={shape.align}
         fill="#141413"
         lineHeight={1.35}
         wrap="word"
@@ -187,6 +205,13 @@ function NoteView({ shape }: { shape: NoteShape }): JSX.Element {
       />
     </>
   )
+}
+
+/** ロック中の印(右上の小さな鍵) */
+function LockBadge({ shape }: { shape: Shape }): JSX.Element | null {
+  if (!shape.locked) return null
+  const w = shape.type === 'arrow' ? Math.max(shape.dx, 0) : shape.w
+  return <Text text="🔒" x={w - 18} y={-20} fontSize={14} listening={false} />
 }
 
 function ImageView({ shape }: { shape: ImageShape }): JSX.Element {

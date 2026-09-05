@@ -18,7 +18,8 @@ const ITEMS: Item[] = [
   { id: 'rect', label: '四角', icon: '▭', key: 'R' },
   { id: 'ellipse', label: '楕円', icon: '◯', key: 'O' },
   'sep',
-  { id: 'request-card', label: '依頼', icon: '📋', key: 'C' }
+  { id: 'request-card', label: '依頼', icon: '📋', key: 'C' },
+  { id: 'comment', label: 'コメント', icon: '💬', key: 'M' }
 ]
 
 /** 左側の縦型ツールバー */
