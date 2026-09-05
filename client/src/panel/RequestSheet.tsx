@@ -4,6 +4,8 @@ import {
   CLOSED_STATUSES,
   PRIORITIES,
   REQUEST_STATUSES,
+  RESULTS,
+  canTransition,
   todayString,
   toCsv,
   toRequestRecord,
@@ -20,7 +22,7 @@ interface Column {
   key: SortKey
   label: string
   width: number
-  kind: 'select' | 'priority' | 'text' | 'date' | 'readonly'
+  kind: 'select' | 'priority' | 'result' | 'text' | 'date' | 'readonly'
 }
 
 const COLUMNS: Column[] = [
@@ -36,7 +38,11 @@ const COLUMNS: Column[] = [
   { key: 'requestedAt', label: '依頼日', width: 130, kind: 'date' },
   { key: 'dueDate', label: '希望納期', width: 130, kind: 'date' },
   { key: 'assignee', label: '担当', width: 90, kind: 'text' },
-  { key: 'note', label: '備考', width: 220, kind: 'text' },
+  { key: 'note', label: '備考', width: 200, kind: 'text' },
+  { key: 'result', label: '結果', width: 96, kind: 'result' },
+  { key: 'resultNote', label: '所見', width: 160, kind: 'text' },
+  { key: 'judgedBy', label: '判定者', width: 80, kind: 'readonly' },
+  { key: 'judgedAt', label: '判定日', width: 96, kind: 'readonly' },
   { key: 'kintoneRecordId', label: 'kintone', width: 80, kind: 'readonly' }
 ]
 
@@ -219,7 +225,14 @@ export function RequestSheet({
                       column={c}
                       value={String(rec[c.key] ?? '')}
                       readonly={readonly}
-                      onChange={(v) => updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape>)}
+                      status={rec.status}
+                      onChange={(v) => {
+                        if (c.key === 'result') {
+                          updateCard(editor, card.id, v === '未判定' ? { result: '未判定', judgedBy: '', judgedAt: '' } : { result: v as never, judgedBy: editor.userName, judgedAt: todayString() })
+                          return
+                        }
+                        updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape>)
+                      }}
                     />
                   </td>
                 ))}
@@ -236,18 +249,21 @@ function Cell({
   column,
   value,
   readonly,
+  status,
   onChange
 }: {
   column: Column
   value: string
   readonly: boolean
+  status: RequestStatus
   onChange: (v: string) => void
 }): JSX.Element {
   if (column.kind === 'readonly' || readonly) {
     return <span className="grid__ro">{value || (column.kind === 'readonly' ? '-' : '')}</span>
   }
-  if (column.kind === 'select' || column.kind === 'priority') {
-    const opts = column.kind === 'select' ? REQUEST_STATUSES : PRIORITIES
+  if (column.kind === 'select' || column.kind === 'priority' || column.kind === 'result') {
+    const opts =
+      column.kind === 'select' ? REQUEST_STATUSES.filter((s) => canTransition(status, s)) : column.kind === 'priority' ? PRIORITIES : RESULTS
     return (
       <select value={value} onChange={(e) => onChange(e.target.value)} data-col={column.key}>
         {opts.map((s) => (

@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { Auth, canWrite } from './auth'
 import { Kintone } from './kintone'
+import { backup } from './maintenance'
+import { Notifier } from './notify'
 import { RoomManager } from './rooms'
 
 const PORT = Number(process.env['PORT'] ?? 3000)
@@ -14,6 +16,11 @@ const UPLOAD_DIR = join(DATA_DIR, 'uploads')
 const CLIENT_DIR = resolve('dist/client')
 const USERS_FILE = resolve(process.env['QC_USERS_FILE'] ?? 'config/users.json')
 const KINTONE_CONFIG = resolve(process.env['QC_KINTONE_CONFIG'] ?? 'config/kintone.json')
+const NOTIFY_CONFIG = resolve(process.env['QC_NOTIFY_CONFIG'] ?? 'config/notify.json')
+const BACKUP_DIR = process.env['QC_BACKUP_DIR'] ? resolve(process.env['QC_BACKUP_DIR']) : ''
+const BACKUP_KEEP = Number(process.env['QC_BACKUP_KEEP'] ?? 14)
+const BACKUP_INTERVAL_H = Number(process.env['QC_BACKUP_INTERVAL_HOURS'] ?? 24)
+const AUTO_ARCHIVE_DAYS = Number(process.env['QC_AUTO_ARCHIVE_DAYS'] ?? 0)
 
 await mkdir(UPLOAD_DIR, { recursive: true })
 
@@ -23,6 +30,38 @@ const auth = new Auth(USERS_FILE, join(DATA_DIR, 'secret'), process.env['QC_EMBE
 await auth.init()
 const kintone = new Kintone(KINTONE_CONFIG, process.env['KINTONE_MOCK'] === '1')
 await kintone.init()
+const notifier = new Notifier(NOTIFY_CONFIG)
+await notifier.init()
+if (process.env['QC_NOTIFY_WEBHOOK']) {
+  notifier.configure({ webhookUrl: process.env['QC_NOTIFY_WEBHOOK'], format: 'json' })
+}
+rooms.onHistory = (roomId, entries, room) => {
+  rooms
+    .meta(roomId)
+    .then((meta) => notifier.fromHistory(entries, roomId, meta?.name ?? roomId, (id) => room.getCard(id)))
+    .catch((err) => console.error('[notify] failed', err))
+}
+
+// ---- 定期保守: バックアップ・自動アーカイブ ----------------------------------
+async function runBackup(): Promise<string | null> {
+  if (!BACKUP_DIR) return null
+  const dest = await backup(DATA_DIR, BACKUP_DIR, BACKUP_KEEP)
+  console.log(`[backup] ${dest}`)
+  return dest
+}
+if (BACKUP_DIR && BACKUP_INTERVAL_H > 0) {
+  setInterval(() => runBackup().catch((err) => console.error('[backup] failed', err)), BACKUP_INTERVAL_H * 3600_000).unref()
+  setTimeout(() => runBackup().catch((err) => console.error('[backup] failed', err)), 5000).unref()
+}
+if (AUTO_ARCHIVE_DAYS > 0) {
+  const tick = () =>
+    rooms
+      .autoArchiveAll(AUTO_ARCHIVE_DAYS)
+      .then((n) => n && console.log(`[archive] ${n} 件を自動アーカイブ`))
+      .catch((err) => console.error('[archive] failed', err))
+  setInterval(tick, 3600_000).unref()
+  setTimeout(tick, 3000).unref()
+}
 
 const app = express()
 app.disable('x-powered-by')
@@ -147,6 +186,34 @@ app.get('/api/rooms/:id/history', auth.require('viewer'), async (req, res) => {
   res.json(list)
 })
 
+// ---- 通知・保守(管理者向け) ----------------------------------------------
+app.get('/api/notify/status', auth.require('viewer'), (_req, res) => {
+  res.json(notifier.status())
+})
+app.get('/api/notify/recent', auth.require('admin'), (_req, res) => {
+  res.json(notifier.sent.slice(-50))
+})
+app.post('/api/admin/backup', auth.require('admin'), async (_req, res) => {
+  try {
+    const dest = await runBackup()
+    if (!dest) {
+      res.status(400).json({ error: 'QC_BACKUP_DIR が未設定です' })
+      return
+    }
+    res.json({ dest })
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : String(err) })
+  }
+})
+app.post('/api/admin/archive', auth.require('admin'), express.json(), async (req, res) => {
+  const days = Number(req.body?.days ?? AUTO_ARCHIVE_DAYS)
+  if (!(days >= 0)) {
+    res.status(400).json({ error: 'days が不正です' })
+    return
+  }
+  res.json({ archived: await rooms.autoArchiveAll(days) })
+})
+
 // ---- kintone ----------------------------------------------------------
 app.get('/api/kintone/status', auth.require('viewer'), (_req, res) => {
   res.json(kintone.status())
@@ -254,6 +321,6 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 server.listen(PORT, async () => {
   console.log(
-    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  embed=${auth.embedEnabled() ? 'on' : 'off'}  kintone=${kintone.status().mode}`
+    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  embed=${auth.embedEnabled() ? 'on' : 'off'}  kintone=${kintone.status().mode}  notify=${notifier.status().enabled ? 'on' : 'off'}  backup=${BACKUP_DIR || 'off'}  autoArchive=${AUTO_ARCHIVE_DAYS || 'off'}`
   )
 })

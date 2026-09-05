@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import { listRooms, me, submitRequest, uploadImage, type Me, type RequestInput } from '../api'
 import { loadImageSize } from '../canvas/useImage'
+import { expandFiles } from '../canvas/pdf'
 
 type Attached = { id: string; name: string; w: number; h: number; src: string }
 
@@ -45,8 +46,14 @@ export function RequestForm({ roomId }: { roomId: string }): JSX.Element {
   const attach = async (files: FileList | null) => {
     if (!files) return
     setError('')
-    for (const file of Array.from(files)) {
-      if (!file.type.startsWith('image/')) continue
+    let expanded: File[] = []
+    try {
+      expanded = await expandFiles(Array.from(files))
+    } catch (e) {
+      setError(`PDF の変換に失敗しました: ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
+    for (const file of expanded) {
       try {
         const up = await uploadImage(file)
         let w = 400
@@ -173,8 +180,8 @@ export function RequestForm({ roomId }: { roomId: string }): JSX.Element {
           <textarea rows={4} value={form.note} onChange={(e) => set('note', e.target.value)} placeholder="測ってほしい箇所、判定基準、気になる点など" data-field="note" />
         </label>
         <label className="field">
-          <span>図面・写真(複数可)</span>
-          <input type="file" accept="image/*" multiple onChange={(e) => void attach(e.target.files)} data-testid="form-files" />
+          <span>図面・写真(画像・PDF、複数可)</span>
+          <input type="file" accept="image/*,application/pdf" multiple onChange={(e) => void attach(e.target.files)} data-testid="form-files" />
         </label>
         {images.length > 0 && (
           <ul className="gallery" data-testid="form-gallery">

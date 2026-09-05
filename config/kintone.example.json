@@ -17,6 +17,10 @@
     "requestedAt": "requested_at",
     "dueDate": "due_date",
     "assignee": "assignee",
-    "note": "note"
+    "note": "note",
+    "result": "result",
+    "resultNote": "result_note",
+    "judgedBy": "judged_by",
+    "judgedAt": "judged_at"
   }
 }

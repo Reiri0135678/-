@@ -8,9 +8,11 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WebSocket } from 'ws'
 import { appendFile } from 'node:fs/promises'
+import { rotateLog, rotatedName } from './maintenance'
 import {
   CARD_H,
   CARD_W,
+  CLOSED_STATUSES,
   defaultsFor,
   normalizeShape,
   toRequestRecord,
@@ -55,7 +57,7 @@ const isServerOrigin = (o: unknown): o is ServerOrigin => !!o && typeof o === 'o
  * 閲覧のみ(readonly)の接続からの更新は無視する(サーバー側で権限を強制)。
  * 永続化: 変更の 1 秒後、または最後の接続が切れた時に data/rooms/<id>.yjs へバイナリ更新を保存。
  */
-class Room {
+export class Room {
   readonly doc = new Y.Doc()
   readonly awareness = new awarenessProtocol.Awareness(this.doc)
   readonly conns = new Set<Conn>()
@@ -65,7 +67,8 @@ class Room {
     readonly id: string,
     private readonly file: string,
     private readonly logFile: string,
-    private readonly nextNumber: () => Promise<string>
+    private readonly nextNumber: () => Promise<string>,
+    private readonly onHistory: (entries: HistoryEntry[]) => void
   ) {
     this.awareness.setLocalState(null)
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
@@ -108,7 +111,10 @@ class Room {
           entries.push({ ts, user, shapeId, shapeType: m.get('type') as Shape['type'], action: 'update', fields, no: m.get('no') as string | undefined })
         }
       }
-      if (entries.length) void this.appendLog(entries)
+      if (entries.length) {
+        void this.appendLog(entries)
+        this.onHistory(entries)
+      }
     })
     this.awareness.on(
       'update',
@@ -170,26 +176,64 @@ class Room {
   }
 
   private logQueue: Promise<void> = Promise.resolve()
+  private logWrites = 0
+  static LOG_MAX_BYTES = 5 * 1024 * 1024
+  static LOG_GENERATIONS = 5
   private appendLog(entries: HistoryEntry[]): Promise<void> {
     const text = entries.map((e) => JSON.stringify(e)).join('\n') + '\n'
-    this.logQueue = this.logQueue.then(() => appendFile(this.logFile, text)).catch((err) => console.error('[room] log failed', err))
+    this.logQueue = this.logQueue
+      .then(async () => {
+        await appendFile(this.logFile, text)
+        // 100 回に 1 回だけサイズを確認してローテーション
+        if (++this.logWrites % 100 === 0) await rotateLog(this.logFile, Room.LOG_MAX_BYTES, Room.LOG_GENERATIONS)
+      })
+      .catch((err) => console.error('[room] log failed', err))
     return this.logQueue
   }
 
+  /** 履歴を新しい順に返す。ローテーション済みの世代も遡って読む */
   async history(shapeId?: string, limit = 200): Promise<HistoryEntry[]> {
     await this.logQueue
-    if (!existsSync(this.logFile)) return []
-    const lines = (await readFile(this.logFile, 'utf8')).split('\n').filter(Boolean)
     const out: HistoryEntry[] = []
-    for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
-      try {
-        const e = JSON.parse(lines[i]!) as HistoryEntry
-        if (!shapeId || e.shapeId === shapeId) out.push(e)
-      } catch {
-        /* 壊れた行は飛ばす */
+    const files = [this.logFile, ...Array.from({ length: Room.LOG_GENERATIONS }, (_, i) => rotatedName(this.logFile, i + 1))]
+    for (const f of files) {
+      if (out.length >= limit) break
+      if (!existsSync(f)) continue
+      const lines = (await readFile(f, 'utf8')).split('\n').filter(Boolean)
+      for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
+        try {
+          const e = JSON.parse(lines[i]!) as HistoryEntry
+          if (!shapeId || e.shapeId === shapeId) out.push(e)
+        } catch {
+          /* 壊れた行は飛ばす */
+        }
       }
     }
     return out
+  }
+
+  /** 完了・取消のまま days 日以上経ったカードをアーカイブする。返り値は件数 */
+  autoArchive(days: number): number {
+    const limit = Date.now() - days * 86400_000
+    const targets: string[] = []
+    this.shapes.forEach((m, id) => {
+      if (m.get('type') !== 'request-card' || m.get('archived')) return
+      if (!CLOSED_STATUSES.includes(m.get('status') as never)) return
+      if (Number(m.get('updatedAt') ?? 0) < limit) targets.push(id)
+    })
+    if (targets.length) {
+      this.doc.transact(() => {
+        for (const id of targets) this.shapes.get(id)?.set('archived', true)
+      }, { server: true, user: 'system' } satisfies ServerOrigin)
+    }
+    return targets.length
+  }
+
+  getCard(shapeId: string): RequestCardShape | null {
+    const m = this.shapes.get(shapeId)
+    if (!m || m.get('type') !== 'request-card') return null
+    const s = normalizeShape(m.toJSON() as Record<string, unknown>)
+    return s && s.type === 'request-card' ? s : null
   }
 
   /** サーバー側で図形を作る(依頼フォームなど)。z は最前面 */
@@ -301,6 +345,8 @@ export class RoomManager {
   private readonly live = new Map<string, Room>()
   private counter: Record<string, number> = {}
   private counterQueue: Promise<unknown> = Promise.resolve()
+  /** 履歴が追記されたときに呼ばれる(通知用) */
+  onHistory: ((roomId: string, entries: HistoryEntry[], room: Room) => void) | null = null
 
   constructor(private readonly dir: string) {}
 
@@ -345,7 +391,13 @@ export class RoomManager {
     const existing = this.live.get(id)
     if (existing) return existing
     if (!(await this.meta(id))) return null
-    const room = new Room(id, join(this.dir, `${id}.yjs`), join(this.dir, `${id}.log.jsonl`), () => this.nextNumber())
+    const room = new Room(
+      id,
+      join(this.dir, `${id}.yjs`),
+      join(this.dir, `${id}.log.jsonl`),
+      () => this.nextNumber(),
+      (entries) => this.onHistory?.(id, entries, room)
+    )
     await room.load()
     this.live.set(id, room)
     console.log(`[room] open ${id}`)
@@ -464,6 +516,16 @@ export class RoomManager {
       await new Promise((r) => setTimeout(r, 20))
     }
     return card
+  }
+
+  /** 全ボードの自動アーカイブ。返り値は合計件数 */
+  async autoArchiveAll(days: number): Promise<number> {
+    let n = 0
+    for (const meta of await this.list()) {
+      const room = await this.get(meta.id)
+      if (room) n += room.autoArchive(days)
+    }
+    return n
   }
 
   async closeAll(): Promise<void> {

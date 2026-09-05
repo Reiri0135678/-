@@ -13,6 +13,7 @@ import { StylePanel } from './StylePanel'
 import { ZoomBar } from './ZoomBar'
 import { TextEditor } from './TextEditor'
 import { loadImageSize } from './useImage'
+import { expandFiles } from './pdf'
 
 export type BoardStatus = 'connecting' | 'online' | 'offline'
 
@@ -301,7 +302,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   const onPointerMove = () => {
     const stage = stageRef.current
     const p = pointerPage()
-    if (!stage || !p) return
+    if (!stage || !p || pinch.current) return
     editor.setCursor(p)
     const g = gesture.current
     if (!g) return
@@ -505,29 +506,75 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     [editor]
   )
 
+  const addFiles = useCallback(
+    async (files: File[], at: Point) => {
+      const imgs = await expandFiles(files)
+      for (let i = 0; i < imgs.length; i++) await addImageFile(imgs[i]!, { x: at.x + i * 40, y: at.y + i * 40 })
+    },
+    [addImageFile]
+  )
+
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const el = containerRef.current
     if (!el) return
     const r = el.getBoundingClientRect()
     const at = editor.screenToPage({ x: e.clientX - r.left, y: e.clientY - r.top })
-    const files = Array.from(e.dataTransfer.files)
-    files.forEach((f, i) => void addImageFile(f, { x: at.x + i * 30, y: at.y + i * 30 }))
+    void addFiles(Array.from(e.dataTransfer.files), at)
   }
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target
       if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
-      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/'))
+      const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
       if (files.length === 0) return
       e.preventDefault()
       const center = editor.screenToPage({ x: size.w / 2, y: size.h / 2 })
-      files.forEach((f, i) => void addImageFile(f, { x: center.x + i * 30, y: center.y + i * 30 }))
+      void addFiles(files, center)
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }, [editor, addImageFile, size])
+  }, [editor, addFiles, size])
+
+  // ---- タッチ: 2 本指でピンチズーム・パン ------------------------------------
+  const touches = useRef(new Map<number, Point>())
+  const pinch = useRef<{ dist: number; center: Point; camera: { x: number; y: number; scale: number } } | null>(null)
+  const onTouchPointerDown = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (touches.current.size === 2) {
+      const [p1, p2] = [...touches.current.values()]
+      const el = containerRef.current!.getBoundingClientRect()
+      pinch.current = {
+        dist: Math.hypot(p2!.x - p1!.x, p2!.y - p1!.y),
+        center: { x: (p1!.x + p2!.x) / 2 - el.left, y: (p1!.y + p2!.y) / 2 - el.top },
+        camera: { ...editor.getSnapshot().camera }
+      }
+      gesture.current = null
+      setDraft(null)
+    }
+  }
+  const onTouchPointerMove = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch' || !touches.current.has(e.pointerId)) return
+    touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    const pz = pinch.current
+    if (!pz || touches.current.size < 2) return
+    const [p1, p2] = [...touches.current.values()]
+    const el = containerRef.current!.getBoundingClientRect()
+    const dist = Math.hypot(p2!.x - p1!.x, p2!.y - p1!.y)
+    const center = { x: (p1!.x + p2!.x) / 2 - el.left, y: (p1!.y + p2!.y) / 2 - el.top }
+    const k = dist / Math.max(1, pz.dist)
+    const scale = Math.min(8, Math.max(0.1, pz.camera.scale * k))
+    // 開始時の中心が指す紙面上の点を、現在の中心に合わせる
+    const pageAtStart = { x: (pz.center.x - pz.camera.x) / pz.camera.scale, y: (pz.center.y - pz.camera.y) / pz.camera.scale }
+    editor.setCamera({ scale, x: center.x - pageAtStart.x * scale, y: center.y - pageAtStart.y * scale })
+  }
+  const onTouchPointerUp = (e: React.PointerEvent) => {
+    if (e.pointerType !== 'touch') return
+    touches.current.delete(e.pointerId)
+    if (touches.current.size < 2) pinch.current = null
+  }
 
   const panning = snap.tool === 'hand' || spaceDown
   const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : 'crosshair'
@@ -540,6 +587,10 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       style={{ cursor }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
+      onPointerDownCapture={onTouchPointerDown}
+      onPointerMoveCapture={onTouchPointerMove}
+      onPointerUpCapture={onTouchPointerUp}
+      onPointerCancelCapture={onTouchPointerUp}
     >
       <Stage
         ref={stageRef}

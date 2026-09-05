@@ -8,6 +8,27 @@ export type RequestStatus = (typeof REQUEST_STATUSES)[number]
 export const CLOSED_STATUSES: readonly RequestStatus[] = ['完了', '取消']
 export const PRIORITIES = ['通常', '至急'] as const
 export type Priority = (typeof PRIORITIES)[number]
+export const RESULTS = ['未判定', '合格', '条件付合格', '不合格'] as const
+export type InspectionResult = (typeof RESULTS)[number]
+
+/**
+ * 状態遷移ルール(現在の状態 → 移れる状態)。運用に合わせてここを書き換える。
+ * - 差戻し: 情報不足で依頼者に返す。依頼者が直したら「受付」へ
+ * - 保留: 一時停止。再開は「受付」または「検査中」
+ * - 完了 → 検査中: 不合格の再検査など
+ */
+export const STATUS_TRANSITIONS: Record<RequestStatus, readonly RequestStatus[]> = {
+  未受付: ['受付', '差戻し', '取消'],
+  受付: ['検査中', '保留', '差戻し', '取消'],
+  検査中: ['完了', '保留', '差戻し', '受付'],
+  保留: ['受付', '検査中', '取消'],
+  差戻し: ['受付', '取消'],
+  完了: ['検査中'],
+  取消: ['未受付']
+}
+export function canTransition(from: RequestStatus, to: RequestStatus): boolean {
+  return from === to || (STATUS_TRANSITIONS[from] ?? []).includes(to)
+}
 
 export type ShapeType =
   | 'draw'
@@ -100,6 +121,13 @@ export interface RequestCardShape extends ShapeBase {
   /** 希望納期 YYYY-MM-DD */
   dueDate: string
   priority: Priority
+  /** 検査結果 */
+  result: InspectionResult
+  /** 測定値・所見など */
+  resultNote: string
+  judgedBy: string
+  /** 判定日 YYYY-MM-DD */
+  judgedAt: string
   /** ボードから外した(一覧・kintone には残る) */
   archived: boolean
   /** 紐付けた図面・写真(画像図形)の id */
@@ -165,6 +193,10 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
         assignee: '',
         dueDate: '',
         priority: '通常',
+        result: '未判定',
+        resultNote: '',
+        judgedBy: '',
+        judgedAt: '',
         archived: false,
         linkedShapeIds: [],
         kintoneRecordId: ''
@@ -217,6 +249,10 @@ export interface RequestRecord {
   assignee: string
   dueDate: string
   priority: Priority
+  result: InspectionResult
+  resultNote: string
+  judgedBy: string
+  judgedAt: string
   archived: boolean
   kintoneRecordId: string
 }
@@ -235,6 +271,10 @@ export const REQUEST_RECORD_COLUMNS: Array<{ key: keyof RequestRecord; label: st
   { key: 'dueDate', label: '希望納期' },
   { key: 'assignee', label: '担当' },
   { key: 'note', label: '備考' },
+  { key: 'result', label: '結果' },
+  { key: 'resultNote', label: '所見' },
+  { key: 'judgedBy', label: '判定者' },
+  { key: 'judgedAt', label: '判定日' },
   { key: 'archived', label: 'アーカイブ' },
   { key: 'kintoneRecordId', label: 'kintone' },
   { key: 'boardName', label: 'ボード' },
@@ -258,6 +298,10 @@ export function toRequestRecord(card: RequestCardShape, boardName: string): Requ
     assignee: card.assignee,
     dueDate: card.dueDate,
     priority: card.priority,
+    result: card.result,
+    resultNote: card.resultNote,
+    judgedBy: card.judgedBy,
+    judgedAt: card.judgedAt,
     archived: card.archived,
     kintoneRecordId: card.kintoneRecordId
   }

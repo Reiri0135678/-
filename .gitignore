@@ -5,3 +5,5 @@ data/
 .DS_Store
 config/users.json
 config/kintone.json
+config/notify.json
+backups/

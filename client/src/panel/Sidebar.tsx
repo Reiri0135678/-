@@ -1,6 +1,17 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import { PRIORITIES, REQUEST_STATUSES, type ImageShape, type Priority, type RequestCardShape, type RequestStatus } from '@shared/shapes'
+import {
+  PRIORITIES,
+  REQUEST_STATUSES,
+  RESULTS,
+  canTransition,
+  todayString,
+  type ImageShape,
+  type InspectionResult,
+  type Priority,
+  type RequestCardShape,
+  type RequestStatus
+} from '@shared/shapes'
 import { fetchHistory, type HistoryEntry } from '../api'
 import type { BoardEditor as Editor } from '../canvas/editor'
 import { addCardAtCenter, focusShape, updateCard, useCards, useImages, useSingleSelection } from './useCards'
@@ -190,7 +201,7 @@ function CardEditor({
           onChange={(e) => update({ status: e.target.value as RequestStatus })}
           data-field="status"
         >
-          {REQUEST_STATUSES.map((s) => (
+          {REQUEST_STATUSES.filter((s) => canTransition(p.status, s)).map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
@@ -233,6 +244,39 @@ function CardEditor({
           onChange={(e) => update({ note: e.target.value })}
           data-field="note"
         />
+      </label>
+
+      <div className="panel__head">
+        <h3>検査結果</h3>
+        {p.judgedAt && (
+          <span className="muted">
+            {p.judgedBy} · {p.judgedAt}
+          </span>
+        )}
+      </div>
+      <div className="result-row" data-testid="result-row">
+        {RESULTS.map((r) => (
+          <button
+            key={r}
+            className="chip"
+            data-active={p.result === r}
+            data-result={r}
+            disabled={readonly}
+            onClick={() =>
+              update(
+                r === '未判定'
+                  ? { result: r, judgedBy: '', judgedAt: '' }
+                  : { result: r as InspectionResult, judgedBy: editor.userName, judgedAt: todayString() }
+              )
+            }
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+      <label className="field">
+        <span>測定値・所見</span>
+        <textarea rows={2} value={p.resultNote} disabled={readonly} onChange={(e) => update({ resultNote: e.target.value })} data-field="resultNote" />
       </label>
 
       <div className="panel__head">

@@ -228,3 +228,25 @@ button { font: inherit; }
 .rooms__row > button:first-child { flex: 1; }
 .rooms__form { white-space: nowrap; }
 @media (max-width: 600px) { .form__row { grid-template-columns: 1fr; } }
+
+/* ---- 検査結果 ---- */
+.result-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.chip[data-result='合格'][data-active='true'] { background: #16a34a; border-color: #16a34a; }
+.chip[data-result='条件付合格'][data-active='true'] { background: #d97706; border-color: #d97706; }
+.chip[data-result='不合格'][data-active='true'] { background: #dc2626; border-color: #dc2626; }
+.chip[data-result='未判定'][data-active='true'] { background: #6b7280; border-color: #6b7280; }
+
+/* ---- タブレット・狭い画面 ---- */
+.sidebar-toggle { display: none; }
+@media (max-width: 900px) {
+  .app { grid-template-columns: 0 1fr; }
+  .app[data-sidebar='true'] { grid-template-columns: 280px 1fr; }
+  .app[data-drawer='true'] { grid-template-rows: 44px 1fr 200px; }
+  .app__sidebar { overflow: auto; }
+  .sidebar-toggle { display: inline-block; }
+  .app__meta { gap: 4px; }
+  .qc-toolbar { left: 6px; }
+  .qc-toolbar__btn { width: 44px; }
+  .style-panel { right: 6px; top: 6px; }
+  .zoom-bar { right: 6px; bottom: 6px; }
+}

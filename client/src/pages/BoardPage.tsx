@@ -18,6 +18,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const [status, setStatus] = useState<BoardStatus>('connecting')
   const [peers, setPeers] = useState(0)
   const [editor, setEditor] = useState<Editor | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900)
   const [drawerOpen, setDrawerOpen] = useState(() => {
     try {
       return localStorage.getItem(DRAWER_KEY) !== '0'
@@ -63,11 +64,14 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const readonly = user.role === 'viewer'
 
   return (
-    <div className="app" data-drawer={drawerOpen} data-embed={isEmbed()}>
+    <div className="app" data-drawer={drawerOpen} data-sidebar={sidebarOpen} data-embed={isEmbed()}>
       {editor && <SelectionNotifier editor={editor} roomId={roomId} />}
       <header className="app__header">
         <button className="link" onClick={() => navigate('/')}>
           ← ボード一覧
+        </button>
+        <button className="link sidebar-toggle" onClick={() => setSidebarOpen((v) => !v)} data-testid="toggle-sidebar">
+          {sidebarOpen ? '☰ 閉じる' : '☰'}
         </button>
         <span className="app__title">{title}</span>
         {readonly && <span className="badge badge--warn">閲覧のみ</span>}

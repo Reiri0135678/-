@@ -12,13 +12,36 @@ const dataDir = mkdtempSync(join(process.env.SCRATCH_DIR ?? tmpdir(), 'qc-e2e-')
 const shotDir = process.env.SHOT_DIR ?? dataDir
 const usersFile = join(dataDir, 'users.json')
 
-for (const [name, pw, role] of [['山田', 'pw-yamada', 'member'], ['佐藤', 'pw-sato', 'member'], ['閲覧者', 'pw-view', 'viewer']]) {
+for (const [name, pw, role] of [['山田', 'pw-yamada', 'member'], ['佐藤', 'pw-sato', 'member'], ['閲覧者', 'pw-view', 'viewer'], ['管理者', 'pw-admin', 'admin']]) {
   const r = spawnSync('node', ['scripts/add-user.mjs', name, pw, role], { env: { ...process.env, QC_USERS_FILE: usersFile } })
   if (r.status !== 0) throw new Error(`add-user failed: ${r.stderr}`)
 }
 
+// 通知の受け口(Teams/Slack の Incoming Webhook の代わり)
+import { createServer } from 'node:http'
+const received = []
+const hookServer = createServer((req, res) => {
+  let body = ''
+  req.on('data', (d) => (body += d))
+  req.on('end', () => {
+    try { received.push(JSON.parse(body)) } catch {}
+    res.end('ok')
+  })
+})
+await new Promise((r) => hookServer.listen(3124, r))
+
 const server = spawn('npx', ['tsx', 'server/src/index.ts'], {
-  env: { ...process.env, PORT: String(PORT), QC_DATA_DIR: dataDir, QC_USERS_FILE: usersFile, KINTONE_MOCK: '1', QC_EMBED_KEY: 'e2e-embed-key-0123456789' },
+  env: {
+    ...process.env,
+    PORT: String(PORT),
+    QC_DATA_DIR: dataDir,
+    QC_USERS_FILE: usersFile,
+    KINTONE_MOCK: '1',
+    QC_EMBED_KEY: 'e2e-embed-key-0123456789',
+    QC_NOTIFY_WEBHOOK: 'http://localhost:3124/hook',
+    QC_BACKUP_DIR: `${dataDir}-backups`,
+    QC_BACKUP_INTERVAL_HOURS: '0'
+  },
   stdio: ['ignore', 'pipe', 'inherit'],
   detached: true
 })
@@ -34,6 +57,11 @@ const waitFor = async (fn, ms = 20000) => {
     if (Date.now() - t0 > ms) throw new Error('timeout')
     await new Promise((r) => setTimeout(r, 200))
   }
+}
+const loginCookie = async (name, password) => {
+  const r = await fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password }) })
+  if (!r.ok) throw new Error(`login ${name} failed`)
+  return r.headers.get('set-cookie').split(';')[0]
 }
 const cookieOf = async (page) => (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join('; ')
 const ok = (label, cond) => {
@@ -221,8 +249,11 @@ try {
     await b.click('[data-testid="form-submit"]')
     const no = await (await b.waitForSelector('[data-testid="form-no"]')).textContent()
     ok(`依頼フォーム送信 → 受付番号 (${no})`, /^QC-\d{4}-\d{4}$/.test(no))
-    const card = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777') || null))
-    ok('フォームのカードが A のボードに現れる(至急・図面 1 枚・依頼者=佐藤)', card.priority === '至急' && card.linkedShapeIds.length === 1 && card.requester === '佐藤' && card.dueDate === '2026-09-30' && card.no === no)
+    const card = await waitFor(() => a.evaluate((no) => {
+      const c = window.__qcEditor.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777')
+      return c && c.no === no ? c : null
+    }, no))
+    ok('フォームのカードが A のボードに現れる(至急・図面 1 枚・依頼者=佐藤・受付番号一致)', card.priority === '至急' && card.linkedShapeIds.length === 1 && card.requester === '佐藤' && card.dueDate === '2026-09-30')
     const img = await a.evaluate((id) => window.__qcEditor.getShape(id), card.linkedShapeIds[0])
     ok('添付画像が元サイズ比で置かれる', img && img.type === 'image' && img.w === 200 && img.h === 100)
     await b.screenshot({ path: join(shotDir, 'e2e-form-done.png') })
@@ -285,6 +316,105 @@ try {
     ok('「アーカイブも表示」で一覧に戻る', await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === rowsBefore ? true : null)))
     await a.uncheck('[data-testid="sheet-archived"]')
     ok('一覧に受付番号列がある', (await a.locator('[data-testid="sheet-row"] td[data-col="no"]').first().textContent()).startsWith('QC-'))
+  }
+
+  // 検査結果と状態遷移ルール
+  {
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.select(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'E2E-001').id)
+    })
+    await a.waitForSelector('[data-testid="card-editor"]')
+    const opts = await a.locator('[data-testid="card-editor"] [data-field="status"] option').allTextContents()
+    ok(`検査中から移れる状態だけが選べる (${opts.join('/')})`, opts.includes('検査中') && opts.includes('完了') && opts.includes('保留') && !opts.includes('未受付') && !opts.includes('取消'))
+    await a.click('[data-testid="result-row"] [data-result="合格"]')
+    ok('検査結果「合格」で判定者・判定日が自動記録され B に届く', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.partNo === 'E2E-001' && s.result === '合格' && s.judgedBy === '山田' && /^\d{4}-\d{2}-\d{2}$/.test(s.judgedAt)))))
+    await a.fill('[data-testid="card-editor"] [data-field="resultNote"]', 'φ20.02')
+    ok('所見が同期される', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.resultNote === 'φ20.02'))))
+  }
+
+  // 通知: Webhook に新規依頼・状態変更・検査結果が届く
+  {
+    const kinds = await waitFor(() => {
+      const ev = new Set(received.map((r) => r.event))
+      return ev.has('created') && ev.has('status') && ev.has('result') ? [...ev] : null
+    })
+    ok(`Webhook 通知 ${received.length} 件 (${kinds.join(',')})`, true)
+    const created = received.find((r) => r.event === 'created' && /FORM-777/.test(r.title))
+    ok('フォーム依頼の通知に受付番号・至急・依頼者が入る', created && /^QC-/.test(created.no) && /至急/.test(created.detail) && /佐藤/.test(created.detail))
+    const admin = await loginCookie('管理者', 'pw-admin')
+    const recent = await (await fetch(`${BASE}/api/notify/recent`, { headers: { cookie: admin } })).json()
+    ok('管理者は最近の通知を API で確認できる', Array.isArray(recent) && recent.length === received.length)
+    ok('メンバーは管理者 API を呼べない', (await fetch(`${BASE}/api/notify/recent`, { headers: { cookie: await cookieOf(a) } })).status === 403)
+  }
+
+  // バックアップと自動アーカイブ(管理者 API)
+  {
+    const admin = await loginCookie('管理者', 'pw-admin')
+    const r = await (await fetch(`${BASE}/api/admin/backup`, { method: 'POST', headers: { cookie: admin } })).json()
+    const { existsSync: ex, readdirSync: rd } = await import('node:fs')
+    ok(`バックアップ作成 ${r.dest}`, r.dest && ex(join(r.dest, 'rooms')) && rd(join(r.dest, 'rooms')).some((f) => f.endsWith('.yjs')) && !ex(join(r.dest, 'secret')))
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.updateShape(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'E2E-001').id, { status: '完了' })
+    })
+    await a.waitForTimeout(300)
+    const ar = await (await fetch(`${BASE}/api/admin/archive`, { method: 'POST', headers: { cookie: admin, 'content-type': 'application/json' }, body: JSON.stringify({ days: 0 }) })).json()
+    ok(`自動アーカイブ(0 日)で完了カードが外れる (${ar.archived} 件)`, ar.archived === 1)
+    ok('自動アーカイブは全員に同期される', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.partNo === 'E2E-001' && s.archived))))
+  }
+
+  // PDF 図面: ページを画像にしてボードへ
+  {
+    const pdf = `%PDF-1.4
+1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj
+3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R >> endobj
+4 0 obj << /Length 30 >> stream
+0 0 1 rg 10 10 180 80 re f
+endstream
+endobj
+trailer << /Root 1 0 R >>
+%%EOF`
+    await b.evaluate(async (pdfText) => {
+      const dt = new DataTransfer()
+      dt.items.add(new File([pdfText], 'zumen-A.pdf', { type: 'application/pdf' }))
+      document.querySelector('.board').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 700, clientY: 400 }))
+    }, pdf)
+    const img = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'image' && s.name === 'zumen-A.png') || null), 30000)
+    ok(`PDF がページ画像として取り込まれる (${img.w}x${img.h})`, img.w === 600 && img.h === 300)
+  }
+
+  // タブレット幅: サイドバーが折りたたまれ、2 本指でピンチズームできる
+  {
+    const ctx = await browser.newContext({ viewport: { width: 800, height: 700 }, hasTouch: true })
+    const page = await ctx.newPage()
+    await page.goto(`${BASE}/`)
+    await page.fill('input[placeholder="例: 山田"]', '山田')
+    await page.fill('input[type="password"]', 'pw-yamada')
+    await page.click('button[type="submit"]')
+    await page.waitForSelector('.rooms button')
+    await page.click('.rooms button >> nth=0')
+    await page.waitForFunction(() => !!window.__qcEditor && document.querySelector('.dot--online'))
+    ok('狭い画面ではサイドバーが閉じている', (await page.locator('.app[data-sidebar="false"]').count()) === 1)
+    await page.click('[data-testid="toggle-sidebar"]')
+    ok('☰ でサイドバーが開く', (await page.locator('.app[data-sidebar="true"]').count()) === 1)
+    const before = await page.evaluate(() => window.__qcEditor.getSnapshot().camera.scale)
+    await page.evaluate(() => {
+      const el = document.querySelector('.board')
+      const r = el.getBoundingClientRect()
+      const fire = (type, id, x, y) => el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', clientX: r.left + x, clientY: r.top + y, bubbles: true, isPrimary: id === 1 }))
+      fire('pointerdown', 1, 300, 300)
+      fire('pointerdown', 2, 400, 300)
+      fire('pointermove', 1, 250, 300)
+      fire('pointermove', 2, 450, 300)
+      fire('pointerup', 1, 250, 300)
+      fire('pointerup', 2, 450, 300)
+    })
+    const after = await page.evaluate(() => window.__qcEditor.getSnapshot().camera.scale)
+    ok(`ピンチで拡大 (${before.toFixed(2)} → ${after.toFixed(2)})`, after > before * 1.5)
+    await page.screenshot({ path: join(shotDir, 'e2e-tablet.png') })
+    await ctx.close()
   }
 
   // 埋め込み連携(Mission Bridge 想定)
@@ -371,5 +501,6 @@ try {
   } catch {
     server.kill()
   }
+  hookServer.close()
 }
 process.exit(exitCode)

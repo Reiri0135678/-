@@ -24,7 +24,14 @@ scripts/  E2E テスト(2ブラウザで同期を検証)
 - 状態: 未受付 / 受付 / 検査中 / 保留 / 差戻し / 完了 / 取消。優先度: 通常 / 至急(カードに赤帯)
 - 取消: 依頼カードは物理削除せず「取消」状態にする(Delete キーも同じ)。記録として残る
 - アーカイブ: 完了・取消のカードを一覧の「アーカイブ」でボードから外す。一覧(チェックで表示)と kintone には残る
-- 変更履歴: 誰がいつ何を変えたかをサーバーが `data/rooms/<id>.log.jsonl` に追記。カード編集画面の「変更履歴」と `GET /api/rooms/:id/history` で参照
+- 変更履歴: 誰がいつ何を変えたかをサーバーが `data/rooms/<id>.log.jsonl` に追記(5MB で 5 世代ローテーション)。カード編集画面の「変更履歴」と `GET /api/rooms/:id/history` で参照
+- 検査結果: 合格 / 条件付合格 / 不合格 を記録。判定者・判定日は自動記録。所見(測定値)欄あり
+- 状態遷移ルール: 現在の状態から移れる状態だけが選べる。ルールは `shared/shapes.ts` の `STATUS_TRANSITIONS` 1 箇所で変更
+- 通知: `config/notify.json`(または `QC_NOTIFY_WEBHOOK`)を設定すると、新規依頼・状態変更・検査結果・担当割当を Teams / Slack / 汎用 JSON の Webhook へ送る
+- バックアップ: `QC_BACKUP_DIR` を設定すると起動 5 秒後と `QC_BACKUP_INTERVAL_HOURS`(既定 24)ごとに `data/` をコピー(`QC_BACKUP_KEEP` 世代保持)。手動は `npm run backup`、管理者 API `POST /api/admin/backup`
+- 自動アーカイブ: `QC_AUTO_ARCHIVE_DAYS=N` で完了・取消のまま N 日経ったカードを毎時アーカイブ。手動は `POST /api/admin/archive {days}`
+- PDF 図面: ドロップ・貼り付け・依頼フォーム添付で PDF をページごとに画像化して取り込む(ブラウザ側で変換、最大 10 ページ)
+- タブレット: 900px 以下でサイドバーを折りたたみ(☰)、2 本指でピンチズーム
 - 依頼一覧: 下部ドロワーのスプレッドシート(セル直接編集・並べ替え・検索・状態フィルタ・CSV 出力)
 - 図面の紐付け: 依頼カードから「図面を紐付け」→ ギャラリーかキャンバスの画像をクリック
 - kintone: `config/kintone.json` を置くと「kintone へ送信」が有効になる。カードの shape id を外部キーに作成/更新し、
@@ -40,7 +47,23 @@ scripts/  E2E テスト(2ブラウザで同期を検証)
 npm install
 npm run dev          # server(3000) と Vite(5173) を同時起動。http://localhost:5173 を開く
 npm run typecheck
+npm run backup       # data/ を backups/<日時>/ にコピー(14 世代保持)
 ```
+
+### 環境変数一覧
+
+| 変数 | 既定 | 意味 |
+|---|---|---|
+| `PORT` | 3000 | 待ち受けポート |
+| `QC_DATA_DIR` | data | ボード・画像・履歴・採番カウンタの保存先 |
+| `QC_USERS_FILE` | config/users.json | ユーザー定義(無ければオープンモード) |
+| `QC_KINTONE_CONFIG` | config/kintone.json | kintone 連携設定 |
+| `KINTONE_MOCK` | | `1` で kintone に接続せずモック動作 |
+| `QC_NOTIFY_CONFIG` | config/notify.json | 通知設定 |
+| `QC_NOTIFY_WEBHOOK` | | 設定ファイルの代わりに Webhook URL を直接指定(JSON 形式で送信) |
+| `QC_EMBED_KEY` | | Mission Bridge 埋め込み用の共有鍵(16 文字以上) |
+| `QC_BACKUP_DIR` / `QC_BACKUP_KEEP` / `QC_BACKUP_INTERVAL_HOURS` | 無効 / 14 / 24 | 定期バックアップ |
+| `QC_AUTO_ARCHIVE_DAYS` | 0(無効) | 完了・取消カードの自動アーカイブまでの日数 |
 
 ## 本番相当で動かす(社内 LAN のサーバー 1 台)
 
@@ -86,11 +109,13 @@ npm run build
 CHROMIUM_PATH=/path/to/chrome npm run test:e2e
 ```
 
-パスワード認証 + kintone モック + 埋め込み鍵でサーバーを起動し、2 つのブラウザで同じボードを開いて次を確認する(51 項目):
+パスワード認証 + kintone モック + 埋め込み鍵 + 通知 Webhook(ローカル受け口)+ バックアップ先を指定してサーバーを起動し、
+2 つのブラウザで同じボードを開いて次を確認する(65 項目):
 同期(カード・ペン)、受付番号の採番、取り消し/やり直し、サイドバーと一覧セルの編集、検索・フィルタ、CSV、画像アップロードとギャラリー、
 図面の紐付け、kintone 送信(新規→更新)とレコード番号の書き戻し、閲覧者の読み取り専用(サーバーで拒否)、未ログイン時の 401、
 依頼フォーム(画像添付・至急・受付番号表示)、変更履歴(操作者名)、取消(Delete キー含む)、アーカイブと再表示、
-埋め込み連携(トークン・ホスト通知・1 回限り)、永続化と再接続時の復元。
+検査結果(判定者・判定日の自動記録)、状態遷移の制限、Webhook 通知の内容、管理者 API の権限、バックアップ作成、自動アーカイブ、
+PDF の画像化、タブレット幅のサイドバーとピンチズーム、埋め込み連携(トークン・ホスト通知・1 回限り)、永続化と再接続時の復元。
 `SHOT_DIR` を指定すると両画面のスクリーンショットを保存する。
 
 ## ライセンス
