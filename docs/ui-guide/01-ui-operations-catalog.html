@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI操作カタログ（第1弾：分類リスト）</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d1f23; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb;
+    --tierA: #16a34a; --tierB: #d97706; --tierC: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+  header { position: sticky; top: 0; background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 20px; z-index: 10; }
+  header h1 { font-size: 18px; margin: 0 0 8px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .controls input { flex: 1 1 240px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; font-size: 14px; }
+  .chip { padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); cursor: pointer; font-size: 13px; user-select: none; }
+  .chip.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+  .count { color: var(--muted); font-size: 13px; margin-left: auto; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; }
+  .intro { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; font-size: 14px; }
+  .intro table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+  .intro th, .intro td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; font-size: 13px; }
+  section h2 { font-size: 16px; margin: 28px 0 10px; padding-left: 10px; border-left: 4px solid; }
+  section[data-tier="A"] h2 { border-color: var(--tierA); }
+  section[data-tier="B"] h2 { border-color: var(--tierB); }
+  section[data-tier="C"] h2 { border-color: var(--tierC); }
+  .item { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: grid; grid-template-columns: 56px 1fr; gap: 4px 12px; }
+  .item.hidden { display: none; }
+  .num { font-weight: 700; color: var(--muted); font-size: 14px; grid-row: 1 / span 3; padding-top: 2px; }
+  .name { font-weight: 600; font-size: 15px; }
+  .name small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+  .desc { font-size: 14px; }
+  .api { font-size: 12.5px; color: var(--muted); }
+  .api code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; color: #fff; }
+  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); }
+  footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
+  @media (max-width: 600px) { .item { grid-template-columns: 40px 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>UI操作カタログ（第1弾：分類リスト）</h1>
+  <div class="controls">
+    <input id="q" type="search" placeholder="検索：名称 / 英語名 / API（例: pan, scroll, fade, Pointer）">
+    <span class="chip active" data-tier="all">すべて</span>
+    <span class="chip" data-tier="A">A: 一般</span>
+    <span class="chip" data-tier="B">B: カスタマイズ</span>
+    <span class="chip" data-tier="C">C: プロ志向</span>
+    <span class="count" id="count"></span>
+  </div>
+</header>
+
+<main>
+  <div class="intro">
+    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。第2弾以降で各項目をバニラJSの動くデモとして展開する。
+    <table>
+      <tr><th style="width:120px">層</th><th>意味</th><th>実装の主な手段</th></tr>
+      <tr><td><span class="tag tag-A">A</span> 一般</td><td>ほぼ全てのアプリで使う基本操作・演出。ブラウザ標準で大半が賄える</td><td>CSS / 標準DOM API</td></tr>
+      <tr><td><span class="tag tag-B">B</span> カスタマイズ</td><td>標準挙動を自前で制御・拡張するもの。業務アプリの「使いやすさ」はここで決まる</td><td>Pointer Events / Observer系 / rAF</td></tr>
+      <tr><td><span class="tag tag-C">C</span> プロ志向</td><td>エディタ・キャンバス・グリッド等、ツール系アプリに必要な高度操作</td><td>座標変換 / 状態機械 / Canvas / Electron連携</td></tr>
+    </table>
+  </div>
+  <div id="list"></div>
+</main>
+<footer>docs/ui-guide/01-ui-operations-catalog.html ・ バニラJS / 依存なし</footer>
+
+<script>
+// データ定義：{ tier, ja, en, desc, api }
+const ITEMS = [
+  // ===== A: 一般的なUI操作 =====
+  { tier:'A', ja:'スクロール', en:'Scroll', desc:'コンテンツが表示領域より大きい時に、表示位置を縦横に移動する。ホイール・タッチ・キーボードで発生。', api:'<code>overflow</code>, <code>scrollTo()</code>, <code>scroll-behavior: smooth</code>, <code>scroll</code> イベント' },
+  { tier:'A', ja:'パン', en:'Pan', desc:'ドラッグで「視点」を平行移動する。スクロールと違い、コンテンツ自体を掴んで動かす感覚（地図・図面・キャンバス）。', api:'<code>pointerdown/move/up</code> で差分を <code>transform: translate()</code> に反映' },
+  { tier:'A', ja:'ズーム', en:'Zoom', desc:'表示倍率を変える。ホイール、ピンチ、＋−ボタン。「どこを中心に拡大するか」が実装の要。', api:'<code>wheel</code> イベント（<code>ctrlKey</code>でピンチ判定）, <code>transform: scale()</code>' },
+  { tier:'A', ja:'クリック / タップ', en:'Click / Tap', desc:'最も基本の操作。マウスとタッチで発火順序が異なる点に注意（touch→mouse合成イベント）。', api:'<code>click</code>, <code>pointerup</code>' },
+  { tier:'A', ja:'ダブルクリック / 長押し', en:'Double click / Long press', desc:'同じ位置での連続操作、または一定時間押し続ける操作。長押しは標準イベントがなくタイマーで判定する。', api:'<code>dblclick</code>, <code>setTimeout</code> + <code>pointerdown/up</code>' },
+  { tier:'A', ja:'ホバー', en:'Hover', desc:'ポインタが要素上にある状態。タッチ端末には存在しないため、ホバー依存の情報提示は避ける。', api:'<code>:hover</code>, <code>pointerenter/leave</code>, <code>@media (hover: hover)</code>' },
+  { tier:'A', ja:'フォーカス', en:'Focus', desc:'キーボード入力の受け先。Tabで移動。可視化（focus ring）はアクセシビリティ上必須。', api:'<code>:focus-visible</code>, <code>tabindex</code>, <code>element.focus()</code>' },
+  { tier:'A', ja:'ドラッグ&ドロップ', en:'Drag and Drop', desc:'要素を掴んで別の場所へ移す。HTML標準DnD APIと、Pointer Eventsで自作する方式の2系統がある。', api:'<code>draggable</code>, <code>dragstart/dragover/drop</code> / または Pointer Events 自作' },
+  { tier:'A', ja:'スワイプ / フリック', en:'Swipe / Flick', desc:'指を素早く払う操作。移動量と速度で判定する。カルーセル、ページ送り、削除UIなどで使う。', api:'<code>touchstart/end</code> または <code>pointer*</code> の座標差と経過時間' },
+  { tier:'A', ja:'リサイズ', en:'Resize', desc:'パネルやウィンドウ、テキストエリアの大きさを変える。ハンドル（つまみ）をドラッグする方式が一般的。', api:'<code>resize: both</code>, <code>ResizeObserver</code>, ハンドル＋Pointer Events' },
+  { tier:'A', ja:'選択', en:'Select', desc:'項目を1つ／複数選ぶ。Shift（範囲）、Ctrl/Cmd（追加）の修飾キー慣習を守ると業務ユーザーに馴染む。', api:'<code>aria-selected</code>, <code>shiftKey / ctrlKey / metaKey</code>' },
+  { tier:'A', ja:'フェードイン / フェードアウト', en:'Fade in / out', desc:'不透明度を徐々に変えて出現・消失させる。最も安価で違和感の少ない演出。', api:'<code>opacity</code> + <code>transition</code>, <code>animation</code>, <code>transitionend</code>' },
+  { tier:'A', ja:'スライドイン / スライドアウト', en:'Slide in / out', desc:'画面端から滑り込む／出ていく。サイドパネル、ドロワー、通知で多用。', api:'<code>transform: translateX()</code> + <code>transition</code>' },
+  { tier:'A', ja:'トランジション / イージング', en:'Transition / Easing', desc:'状態変化を時間で補間する仕組みと、その速度カーブ。ease-out は「素早く出て静かに止まる」ためUI向き。', api:'<code>transition</code>, <code>transition-timing-function</code>, <code>cubic-bezier()</code>' },
+  { tier:'A', ja:'モーダル / ダイアログ', en:'Modal / Dialog', desc:'背後の操作を止めて前面で確認・入力させる。フォーカス閉じ込め（focus trap）とEscで閉じるのが作法。', api:'<code>&lt;dialog&gt;</code>, <code>showModal()</code>, <code>::backdrop</code>' },
+  { tier:'A', ja:'トースト / スナックバー', en:'Toast / Snackbar', desc:'操作結果を短時間だけ隅に表示し自動で消える通知。操作を妨げない。', api:'<code>position: fixed</code> + フェード/スライド + <code>setTimeout</code>, <code>aria-live</code>' },
+  { tier:'A', ja:'ツールチップ / ポップオーバー', en:'Tooltip / Popover', desc:'ホバーやクリックで補足情報を小さく浮かせて表示。位置計算（画面端での反転）が地味に難しい。', api:'<code>title</code>, <code>popover</code> 属性, <code>getBoundingClientRect()</code>' },
+  { tier:'A', ja:'アコーディオン / 折りたたみ', en:'Accordion / Collapse', desc:'セクションの開閉。高さ auto へのアニメーションはCSSだけでは効かない点が定番の落とし穴。', api:'<code>&lt;details&gt;</code>, <code>grid-template-rows: 0fr→1fr</code>, <code>scrollHeight</code>' },
+  { tier:'A', ja:'タブ', en:'Tabs', desc:'同じ領域を複数のビューで切り替える。矢印キー移動と aria 属性でキーボード操作に対応する。', api:'<code>role="tablist/tab/tabpanel"</code>, <code>aria-selected</code>' },
+  { tier:'A', ja:'ドロップダウン / メニュー', en:'Dropdown / Menu', desc:'ボタン押下で選択肢一覧を展開する。外側クリックで閉じる処理が必要。', api:'<code>&lt;select&gt;</code>, <code>popover</code>, <code>document</code> の <code>click</code> で外側判定' },
+  { tier:'A', ja:'ページネーション / 無限スクロール', en:'Pagination / Infinite scroll', desc:'大量データを分割表示する2方式。kintoneのレコード取得（offset/cursor）と直結する概念。', api:'<code>IntersectionObserver</code> で末尾検知, offset/limit' },
+  { tier:'A', ja:'ローディング表示', en:'Loading / Skeleton / Spinner', desc:'待ち時間を可視化する。内容の形を先に出すスケルトンは体感速度が上がる。', api:'<code>@keyframes</code>, <code>aria-busy</code>' },
+
+  // ===== B: カスタマイズ性の高いUI =====
+  { tier:'B', ja:'仮想スクロール', en:'Virtual scroll / Windowing', desc:'数万行でも表示中の行だけDOMを生成する。スクロール位置から表示範囲を計算し、上下に余白を置く。', api:'<code>scrollTop</code> ÷ 行高で開始行を算出, <code>transform</code> でオフセット' },
+  { tier:'B', ja:'スティッキー（固定ヘッダー / 固定列）', en:'Sticky header / column', desc:'スクロールしても見出しが留まる。表の固定列は行・列両方向で sticky を組み合わせる。', api:'<code>position: sticky</code>, <code>top/left</code>, <code>z-index</code>' },
+  { tier:'B', ja:'スクロールスナップ', en:'Scroll snap', desc:'スクロール終了時に区切り位置へ吸着させる。カルーセルやページ単位の閲覧に。', api:'<code>scroll-snap-type</code>, <code>scroll-snap-align</code>' },
+  { tier:'B', ja:'パララックス', en:'Parallax', desc:'前景と背景を異なる速度で動かし奥行きを出す。業務アプリでは控えめに。', api:'<code>scroll</code> + <code>transform</code>, <code>animation-timeline: scroll()</code>' },
+  { tier:'B', ja:'スクロール連動アニメーション', en:'Scroll-driven animation / Reveal', desc:'要素が画面に入ったタイミングで出現させる等、スクロール位置をトリガーにする。', api:'<code>IntersectionObserver</code>, <code>animation-timeline: view()</code>' },
+  { tier:'B', ja:'慣性 / モーメンタム', en:'Inertia / Momentum', desc:'指を離した後も速度を保ちながら減速して止まる。パンやスワイプの「気持ちよさ」の正体。', api:'速度を保持し <code>requestAnimationFrame</code> で毎フレーム減衰（×0.95 等）' },
+  { tier:'B', ja:'スプリング物理', en:'Spring animation', desc:'バネのように少し行き過ぎて戻る動き。時間固定のイージングより中断・再開に強い。', api:'rAF で位置・速度を更新（剛性・減衰係数）' },
+  { tier:'B', ja:'FLIPアニメーション', en:'FLIP (First-Last-Invert-Play)', desc:'レイアウト変化前後の位置差を測り、transform で逆に置いてから戻す。並べ替えや展開の滑らかな動きに。', api:'<code>getBoundingClientRect()</code> ×2, <code>transform</code>, <code>transition</code>' },
+  { tier:'B', ja:'ビュー遷移', en:'View Transitions', desc:'DOM更新の前後をブラウザがスナップショットしてクロスフェードする。画面切替を1行で滑らかにできる。', api:'<code>document.startViewTransition()</code>, <code>view-transition-name</code>' },
+  { tier:'B', ja:'ドラッグ並べ替え', en:'Sortable / Reorder', desc:'リストやカードをドラッグで並び替える。挿入位置のプレースホルダ表示と自動スクロールが要点。', api:'Pointer Events + <code>elementFromPoint()</code> + FLIP' },
+  { tier:'B', ja:'分割パネル / ドッキング', en:'Split pane / Dock layout', desc:'境界をドラッグして領域比率を変える。IDE風レイアウトの基礎。最小幅とダブルクリックで初期化の慣習。', api:'<code>grid-template-columns</code> を動的更新, Pointer Events' },
+  { tier:'B', ja:'キーボードナビゲーション', en:'Keyboard navigation / Roving tabindex', desc:'矢印キーで項目間を移動し、Tabはグループ単位で抜ける。業務入力の速度に直結。', api:'<code>keydown</code>, <code>tabindex="-1/0"</code> の切替' },
+  { tier:'B', ja:'ショートカットキー', en:'Hotkeys', desc:'Ctrl+S 等のキー組合せで機能を呼ぶ。入力欄内では無効化する等の文脈判定が必要。', api:'<code>keydown</code> + <code>ctrlKey/metaKey</code>, <code>preventDefault()</code>' },
+  { tier:'B', ja:'コマンドパレット', en:'Command palette', desc:'Ctrl+K で検索窓を開き、機能を文字で呼び出す。あいまい検索と矢印キー選択の組み合わせ。', api:'<code>&lt;dialog&gt;</code> + フィルタ + キーボード操作' },
+  { tier:'B', ja:'アンドゥ / リドゥ', en:'Undo / Redo', desc:'操作履歴を積んで巻き戻す。「状態のスナップショット」か「逆操作コマンド」のどちらで持つかが設計判断。', api:'履歴スタック（配列）, Ctrl+Z / Ctrl+Shift+Z' },
+  { tier:'B', ja:'インライン編集', en:'Inline editing', desc:'表示中のテキストをその場で編集状態に切り替える。Enter確定・Esc取消・blur確定の3経路を揃える。', api:'<code>contenteditable</code> または input への差し替え' },
+  { tier:'B', ja:'カスタムコンテキストメニュー', en:'Custom context menu', desc:'右クリックで独自メニューを出す。画面端での位置補正とEsc/外側クリックで閉じる処理。', api:'<code>contextmenu</code> イベント + <code>preventDefault()</code>' },
+  { tier:'B', ja:'進捗表示', en:'Progress (determinate / indeterminate)', desc:'完了率が分かる場合はバー、不明ならループ表示。長時間処理はキャンセル手段も併せて。', api:'<code>&lt;progress&gt;</code>, <code>aria-valuenow</code>' },
+  { tier:'B', ja:'ジェスチャー競合の解決', en:'Gesture conflict / touch-action', desc:'「縦スクロールしたいのか横スワイプしたいのか」をブラウザと取り合わない設計。初動の方向で確定する。', api:'<code>touch-action: pan-y</code>, <code>preventDefault()</code>, <code>{ passive:false }</code>' },
+  { tier:'B', ja:'モーション低減対応', en:'Reduced motion', desc:'OS設定で動きを減らしたいユーザーにはアニメーションを短縮・省略する。', api:'<code>@media (prefers-reduced-motion: reduce)</code>' },
+
+  // ===== C: プロ志向のUI =====
+  { tier:'C', ja:'無限キャンバス', en:'Infinite canvas', desc:'パン＋ズームを統合し、画面座標とワールド座標を相互変換する。図面・フロー図・ホワイトボードの土台。', api:'<code>transform: translate(tx,ty) scale(s)</code> の行列管理, 逆変換関数' },
+  { tier:'C', ja:'ズーム中心の維持', en:'Zoom-to-cursor', desc:'ホイール位置を不動点として拡大縮小する。無限キャンバスで「ズームがズレる」問題の解。', api:'<code>tx = mx - (mx - tx) * (newS / oldS)</code>' },
+  { tier:'C', ja:'ミニマップ', en:'Minimap', desc:'全体像の縮小図に現在の表示範囲を枠で示し、枠のドラッグでも移動できる。', api:'同じ座標変換をスケール違いで描画, Canvas または SVG' },
+  { tier:'C', ja:'ノードエディタ', en:'Node graph / Wiring', desc:'ノード同士をベジェ曲線の線で結ぶ。ポートからドラッグ→ドロップで接続する。', api:'SVG <code>&lt;path d="M … C …"&gt;</code>, Pointer Events' },
+  { tier:'C', ja:'スナップ / スマートガイド', en:'Snapping / Smart guides', desc:'ドラッグ中に他要素の端や中心へ吸着し、ガイド線を表示する。しきい値（px）で判定。', api:'候補座標との差が閾値内なら置換, ガイド線を都度描画' },
+  { tier:'C', ja:'矩形選択 / 投げ縄選択', en:'Rubber band / Lasso selection', desc:'空白からドラッグして範囲内の要素をまとめて選ぶ。Shift併用で追加選択。', api:'矩形の交差判定, <code>Path2D.isPointInPath()</code>（投げ縄）' },
+  { tier:'C', ja:'ポインタキャプチャ', en:'Pointer capture', desc:'ドラッグ中にポインタが要素外に出てもイベントを受け続ける。高精度ドラッグの必須テクニック。', api:'<code>setPointerCapture(pointerId)</code>' },
+  { tier:'C', ja:'マルチタッチジェスチャー', en:'Multi-touch (pinch / rotate / 2-finger pan)', desc:'2本指の距離・角度・中点の変化からズーム・回転・移動を同時に算出する。', api:'<code>pointerId</code> ごとに座標を保持し差分計算' },
+  { tier:'C', ja:'修飾キーによる制約', en:'Constrained drag (Shift / Alt)', desc:'Shiftで軸固定・等比、Altで中心基準、Ctrlでスナップ無効など、ツール系の共通作法。', api:'<code>event.shiftKey / altKey / ctrlKey</code> を移動計算に反映' },
+  { tier:'C', ja:'状態機械駆動UI', en:'State-machine driven interaction', desc:'idle → pressed → dragging → released のように状態を明示し、イベント処理を状態ごとに分ける。バグの温床を断つ。', api:'<code>state</code> 変数と <code>switch</code>、または遷移表オブジェクト' },
+  { tier:'C', ja:'Web Animations API', en:'WAAPI', desc:'JSからアニメーションを生成・一時停止・逆再生・完了待ちできる。CSSより制御性が高い。', api:'<code>element.animate()</code>, <code>.finished</code>, <code>.reverse()</code>' },
+  { tier:'C', ja:'描画ループ最適化', en:'rAF loop / Batching', desc:'pointermove の度に描画せず、1フレーム1回にまとめる。レイアウト読み書きの分離でスラッシング回避。', api:'<code>requestAnimationFrame</code>, フラグで多重呼出し抑止' },
+  { tier:'C', ja:'Canvas / WebGL 描画', en:'Canvas / WebGL rendering', desc:'DOMでは重すぎる大量要素をビットマップ描画する。ヒットテストは自前で実装する。', api:'<code>CanvasRenderingContext2D</code>, <code>devicePixelRatio</code> 対応' },
+  { tier:'C', ja:'データグリッド操作', en:'Data grid interactions', desc:'セル選択・フィルハンドル・列幅変更・列並べ替え・固定列・Excel貼り付け対応など、業務アプリの中核。', api:'仮想スクロール + 選択 + 修飾キー + <code>paste</code> イベント' },
+  { tier:'C', ja:'楽観的更新', en:'Optimistic UI', desc:'サーバ応答を待たずに画面を先に更新し、失敗時に巻き戻す。kintone API 連携で体感を上げる。', api:'ローカル状態更新 → <code>fetch</code> → 失敗時ロールバック' },
+  { tier:'C', ja:'フォーカス管理 / ライブリージョン', en:'Focus management / Live region', desc:'モーダル内へのフォーカス閉じ込め、閉じた後の復帰、非同期結果の読み上げ通知。', api:'<code>inert</code>, <code>aria-live</code>, <code>aria-modal</code>' },
+  { tier:'C', ja:'ファイルドロップ / 外部連携', en:'File drop / DataTransfer', desc:'OSからファイルをドラッグして受け取る。ドロップ領域のハイライトと種別検証。', api:'<code>dragover</code> + <code>preventDefault()</code>, <code>dataTransfer.files</code>' },
+  { tier:'C', ja:'コンテナクエリ / レスポンシブ', en:'Container queries', desc:'画面幅ではなく「置かれた枠の幅」でレイアウトを切り替える。ドッキングパネル内のUIに必須。', api:'<code>container-type</code>, <code>@container (min-width: …)</code>' },
+  { tier:'C', ja:'Electron: フレームレスウィンドウ操作', en:'Electron frameless window drag', desc:'自前タイトルバーでウィンドウをドラッグ移動させる領域と、ボタン等の除外領域を指定する。', api:'<code>-webkit-app-region: drag / no-drag</code>' },
+  { tier:'C', ja:'Electron: ネイティブメニュー / ショートカット', en:'Electron native menu / accelerators', desc:'OSのメニューバーやグローバルショートカットを Renderer のUIと連動させる。', api:'<code>Menu</code>, <code>accelerator</code>, IPC（<code>ipcRenderer</code>）' },
+];
+
+const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）' };
+
+const listEl = document.getElementById('list');
+const qEl = document.getElementById('q');
+const countEl = document.getElementById('count');
+let tierFilter = 'all';
+
+function render() {
+  listEl.innerHTML = '';
+  let n = 0;
+  for (const t of ['A','B','C']) {
+    const sec = document.createElement('section');
+    sec.dataset.tier = t;
+    sec.innerHTML = `<h2>${TIER_NAME[t]}</h2>`;
+    ITEMS.forEach((it, i) => {
+      if (it.tier !== t) return;
+      n++;
+      const el = document.createElement('div');
+      el.className = 'item';
+      el.dataset.tier = t;
+      el.dataset.text = (it.ja + ' ' + it.en + ' ' + it.desc + ' ' + it.api).toLowerCase();
+      el.innerHTML = `
+        <div class="num">${String(i + 1).padStart(2, '0')}</div>
+        <div class="name">${it.ja}<small>${it.en}</small><span class="tag tag-${t}">${t}</span></div>
+        <div class="desc">${it.desc}</div>
+        <div class="api">実装手段：${it.api}</div>`;
+      sec.appendChild(el);
+    });
+    listEl.appendChild(sec);
+  }
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = qEl.value.trim().toLowerCase();
+  let visible = 0;
+  document.querySelectorAll('.item').forEach(el => {
+    const okTier = tierFilter === 'all' || el.dataset.tier === tierFilter;
+    const okQ = !q || el.dataset.text.includes(q);
+    el.classList.toggle('hidden', !(okTier && okQ));
+    if (okTier && okQ) visible++;
+  });
+  document.querySelectorAll('section').forEach(sec => {
+    const any = sec.querySelector('.item:not(.hidden)');
+    sec.style.display = any ? '' : 'none';
+  });
+  countEl.textContent = `${visible} / ${ITEMS.length} 件`;
+}
+
+qEl.addEventListener('input', applyFilter);
+document.querySelectorAll('.chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    tierFilter = chip.dataset.tier;
+    applyFilter();
+  });
+});
+
+render();
+</script>
+</body>
+</html>
