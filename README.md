@@ -20,6 +20,7 @@ client/src/canvas/
   types.ts              エディタの公開型(Snapshot, Collaborator, Style, ToolId など)
   geometry.ts           矢印の吸着、外接矩形、スナップの計算(純粋関数)
   clone.ts / ids.ts     図形の複製(貼り付け・雛形の挿入で共用)と id 採番
+  tableOps.ts / imageCrop.ts / laser.ts   表の編集、画像の切り抜き、レーザー配信(editor から呼ぶ純粋関数・小クラス)
   tools.ts              ツール定義、ドラッグ中の仮図形、ペン軌跡、雛形化
   Board.tsx             Konva ステージ。ポインタ操作を図形の作成・選択・移動に変換
   useKeyboardShortcuts.ts / useImageImport.ts / usePinchZoom.ts   キーボード、画像の取り込み、ピンチズーム

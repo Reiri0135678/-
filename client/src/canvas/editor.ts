@@ -6,7 +6,6 @@ import {
   DEFAULT_PAGE,
   NOTE_COLORS,
   defaultsFor,
-  tableSize,
   normalizeComment,
   normalizeShape,
   shapeTexts,
@@ -31,7 +30,10 @@ import {
  */
 
 import type { Camera, Collaborator, EditorOptions, EditorSnapshot, Point, Style, ToolId } from './types'
-import { boundsOf, resolveArrow, shapeBounds } from './geometry'
+import { boundsOf, resolveArrow, shapeBounds, type Rect } from './geometry'
+import { deleteColPatch, deleteRowPatch, insertColPatch, insertRowPatch, setCellPatch } from './tableOps'
+import { cropPatch, uncropPatch } from './imageCrop'
+import { LaserPublisher } from './laser'
 import { remapShapes } from './clone'
 import { newGroupId, newId } from './ids'
 
@@ -76,6 +78,7 @@ export class BoardEditor {
     const proto = window.location.protocol === 'https:' ? 'wss' : 'ws'
     const base = opts.wsBase ?? `${proto}://${window.location.host}/api/connect`
     this.provider = new WebsocketProvider(base, encodeURIComponent(opts.roomId), this.doc, { disableBc: true })
+    this.laser = new LaserPublisher(this.provider.awareness)
 
     this.undo = new Y.UndoManager(this.shapesMap, { trackedOrigins: new Set([LOCAL]), captureTimeout: 300 })
 
@@ -667,92 +670,53 @@ export class BoardEditor {
   }
 
   // ---- 表 ----------------------------------------------------------------
-  setCell(id: string, r: number, c: number, text: string): void {
+  private table(id: string): TableShape | null {
     const t = this.snapshot.byId.get(id)
-    if (!t || t.type !== 'table') return
-    const cells = t.cells.map((row) => [...row])
-    if (!cells[r] || cells[r]![c] === undefined) return
-    cells[r]![c] = text
-    this.updateShape<TableShape>(id, { cells })
+    return t && t.type === 'table' ? t : null
+  }
+  private applyTable(id: string, patch: Partial<TableShape> | null): void {
+    if (patch) this.updateShape<TableShape>(id, patch)
+  }
+  setCell(id: string, r: number, c: number, text: string): void {
+    const t = this.table(id)
+    if (t) this.applyTable(id, setCellPatch(t, r, c, text))
   }
   tableInsertRow(id: string, at?: number): void {
-    const t = this.snapshot.byId.get(id)
-    if (!t || t.type !== 'table') return
-    const i = at ?? t.cells.length
-    const cells = [...t.cells]
-    cells.splice(i, 0, new Array(t.colWidths.length).fill(''))
-    const rowHeights = [...t.rowHeights]
-    rowHeights.splice(i, 0, t.rowHeights[t.rowHeights.length - 1] ?? 40)
-    this.updateShape<TableShape>(id, { cells, rowHeights, ...tableSize({ colWidths: t.colWidths, rowHeights }) })
+    const t = this.table(id)
+    if (t) this.applyTable(id, insertRowPatch(t, at))
   }
   tableDeleteRow(id: string, at?: number): void {
-    const t = this.snapshot.byId.get(id)
-    if (!t || t.type !== 'table' || t.cells.length <= 1) return
-    const i = at ?? t.cells.length - 1
-    const cells = t.cells.filter((_, r) => r !== i)
-    const rowHeights = t.rowHeights.filter((_, r) => r !== i)
-    this.updateShape<TableShape>(id, { cells, rowHeights, ...tableSize({ colWidths: t.colWidths, rowHeights }) })
+    const t = this.table(id)
+    if (t) this.applyTable(id, deleteRowPatch(t, at))
   }
   tableInsertCol(id: string, at?: number): void {
-    const t = this.snapshot.byId.get(id)
-    if (!t || t.type !== 'table') return
-    const i = at ?? t.colWidths.length
-    const cells = t.cells.map((row) => {
-      const r = [...row]
-      r.splice(i, 0, '')
-      return r
-    })
-    const colWidths = [...t.colWidths]
-    colWidths.splice(i, 0, t.colWidths[t.colWidths.length - 1] ?? 120)
-    this.updateShape<TableShape>(id, { cells, colWidths, ...tableSize({ colWidths, rowHeights: t.rowHeights }) })
+    const t = this.table(id)
+    if (t) this.applyTable(id, insertColPatch(t, at))
   }
   tableDeleteCol(id: string, at?: number): void {
-    const t = this.snapshot.byId.get(id)
-    if (!t || t.type !== 'table' || t.colWidths.length <= 1) return
-    const i = at ?? t.colWidths.length - 1
-    const cells = t.cells.map((row) => row.filter((_, c) => c !== i))
-    const colWidths = t.colWidths.filter((_, c) => c !== i)
-    this.updateShape<TableShape>(id, { cells, colWidths, ...tableSize({ colWidths, rowHeights: t.rowHeights }) })
+    const t = this.table(id)
+    if (t) this.applyTable(id, deleteColPatch(t, at))
   }
 
   // ---- 画像のトリミング --------------------------------------------------
   /** 表示上の矩形(ページ座標)で切り抜く。natural は元画像のピクセル寸法 */
-  cropImage(id: string, rect: { x: number; y: number; w: number; h: number }, natural: { w: number; h: number }): void {
+  cropImage(id: string, rect: Rect, natural: { w: number; h: number }): void {
     const img = this.snapshot.byId.get(id)
     if (!img || img.type !== 'image') return
-    const cur = img.crop ?? { x: 0, y: 0, w: natural.w, h: natural.h }
-    const rx = Math.max(0, Math.min(1, (rect.x - img.x) / img.w))
-    const ry = Math.max(0, Math.min(1, (rect.y - img.y) / img.h))
-    const rw = Math.max(0.02, Math.min(1 - rx, rect.w / img.w))
-    const rh = Math.max(0.02, Math.min(1 - ry, rect.h / img.h))
-    const crop = { x: Math.round(cur.x + cur.w * rx), y: Math.round(cur.y + cur.h * ry), w: Math.round(cur.w * rw), h: Math.round(cur.h * rh) }
-    this.updateShape<ImageShape>(id, { crop, x: img.x + img.w * rx, y: img.y + img.h * ry, w: img.w * rw, h: img.h * rh })
+    this.updateShape<ImageShape>(id, cropPatch(img, rect, natural))
     this.patch({ cropping: null })
   }
   uncropImage(id: string, natural: { w: number; h: number }): void {
     const img = this.snapshot.byId.get(id)
-    if (!img || img.type !== 'image' || !img.crop) return
-    // 表示倍率を保ったまま全体に戻す
-    const k = img.w / img.crop.w
-    this.updateShape<ImageShape>(id, { crop: null, x: img.x - img.crop.x * k, y: img.y - img.crop.y * k, w: natural.w * k, h: natural.h * k })
+    if (!img || img.type !== 'image') return
+    const patch = uncropPatch(img, natural)
+    if (patch) this.updateShape<ImageShape>(id, patch)
   }
 
   // ---- レーザーポインター ----------------------------------------------------
-  private laserPts: number[] = []
-  private laserTimer: number | null = null
+  private readonly laser: LaserPublisher
   laserMove(p: Point | null): void {
-    if (!p) {
-      this.laserPts = []
-      this.provider.awareness.setLocalStateField('laser', null)
-      return
-    }
-    this.laserPts.push(p.x, p.y)
-    if (this.laserPts.length > 60) this.laserPts.splice(0, this.laserPts.length - 60)
-    if (this.laserTimer !== null) return
-    this.laserTimer = window.setTimeout(() => {
-      this.laserTimer = null
-      this.provider.awareness.setLocalStateField('laser', { points: [...this.laserPts], ts: Date.now() })
-    }, 30)
+    this.laser.move(p)
   }
 
   // ---- 取り消し ----------------------------------------------------------
