@@ -4,11 +4,14 @@
 
 ## 現在のフェーズ
 
-**Phase 0: 構想決定**（未完了）
+**Phase 2: MVP 実装**（構想: 改善提案・困りごとボード = Kaizen Board）
 
 - 候補と評価: [docs/00_concept-candidates.md](docs/00_concept-candidates.md)
 - ロードマップ: [docs/01_roadmap.md](docs/01_roadmap.md)
 - 技術選定の比較: [docs/02_tech-stack-options.md](docs/02_tech-stack-options.md)
+- 要件: [docs/03_requirements.md](docs/03_requirements.md)
+- kintone アプリ設計: [docs/04_kintone-app-design.md](docs/04_kintone-app-design.md)
+- 画面と API: [docs/05_screens-and-api.md](docs/05_screens-and-api.md)
 - 決定記録 (ADR): [docs/adr/](docs/adr/)
 
 ## 進め方のルール
