@@ -46,7 +46,7 @@ document.addEventListener('DOMContentLoaded', function () {
     codes.forEach(el => {
       const label = document.createElement('span');
       label.className = 'label';
-      label.textContent = el.tagName === 'STYLE' ? 'CSS' : (el.tagName === 'TEMPLATE' ? 'HTML' : 'JavaScript');
+      label.textContent = el.dataset.code || (el.tagName === 'STYLE' ? 'CSS' : (el.tagName === 'TEMPLATE' ? 'HTML' : 'JavaScript')); // data-code="任意ラベル" で上書き可
       const pre = document.createElement('pre');
       pre.textContent = dedent(el.tagName === 'TEMPLATE' ? el.innerHTML : el.textContent);
       det.appendChild(label);

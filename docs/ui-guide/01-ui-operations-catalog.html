@@ -36,6 +36,7 @@
   .api { font-size: 12.5px; color: var(--muted); }
   .api code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; color: #fff; }
+  .demo-link { margin-left: 8px; font-size: 12px; text-decoration: none; color: var(--accent); font-weight: 600; }
   .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); }
   footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
   @media (max-width: 600px) { .item { grid-template-columns: 40px 1fr; } }
@@ -56,7 +57,7 @@
 
 <main>
   <div class="intro">
-    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。第2弾以降で各項目をバニラJSの動くデモとして展開する。
+    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a>）へ飛べる。
     <table>
       <tr><th style="width:120px">層</th><th>意味</th><th>実装の主な手段</th></tr>
       <tr><td><span class="tag tag-A">A</span> 一般</td><td>ほぼ全てのアプリで使う基本操作・演出。ブラウザ標準で大半が賄える</td><td>CSS / 標準DOM API</td></tr>
@@ -140,6 +141,7 @@ const ITEMS = [
   { tier:'C', ja:'Electron: ネイティブメニュー / ショートカット', en:'Electron native menu / accelerators', desc:'OSのメニューバーやグローバルショートカットを Renderer のUIと連動させる。', api:'<code>Menu</code>, <code>accelerator</code>, IPC（<code>ipcRenderer</code>）' },
 ];
 
+const TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html' };
 const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）' };
 
 const listEl = document.getElementById('list');
@@ -165,7 +167,7 @@ function render() {
         <div class="num">${String(i + 1).padStart(2, '0')}</div>
         <div class="name">${it.ja}<small>${it.en}</small><span class="tag tag-${t}">${t}</span></div>
         <div class="desc">${it.desc}</div>
-        <div class="api">実装手段：${it.api}</div>`;
+        <div class="api">実装手段：${it.api} <a class="demo-link" href="${TIER_FILE[t]}#n${String(i + 1).padStart(2, '0')}">▶ デモ</a></div>`;
       sec.appendChild(el);
     });
     listEl.appendChild(sec);
