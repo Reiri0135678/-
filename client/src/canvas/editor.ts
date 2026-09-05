@@ -823,8 +823,9 @@ export class BoardEditor {
     this.setCamera({ scale, x: w / 2 - (b.x + b.w / 2) * scale, y: h / 2 - (b.y + b.h / 2) * scale })
   }
   zoomToFit(): void {
-    const b = boundsOf(this.snapshot.shapes)
-    if (b) this.zoomToBounds(b)
+    const b = boundsOf(this.snapshot.shapes.filter((s) => !(s.type === 'request-card' && s.archived)))
+    // 左のツールバー・右のパネル分を余白に含める
+    if (b) this.zoomToBounds(b, 140)
   }
   zoomTo(id: string): void {
     const s = this.snapshot.byId.get(id)

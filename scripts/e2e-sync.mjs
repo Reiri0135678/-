@@ -183,10 +183,10 @@ try {
     // B がペンで描いている途中の線が A に見える
     const boardB = await b.locator('.board').boundingBox()
     await b.evaluate(() => { window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }); window.__qcEditor.setTool('draw') })
-    await b.mouse.move(boardB.x + 100, boardB.y + 300)
+    await b.mouse.move(boardB.x + 200, boardB.y + 300)
     await b.mouse.down()
-    await b.mouse.move(boardB.x + 200, boardB.y + 350, { steps: 10 })
-    await b.mouse.move(boardB.x + 300, boardB.y + 300, { steps: 10 })
+    await b.mouse.move(boardB.x + 300, boardB.y + 350, { steps: 10 })
+    await b.mouse.move(boardB.x + 400, boardB.y + 300, { steps: 10 })
     const live = await waitFor(() => a.evaluate(() => window.__qcEditor.getCollaborators().find((c) => c.draft && c.draft.type === 'draw')?.draft || null))
     ok(`描画途中の線が相手に見える (${live.points.length / 2} 点)`, live.points.length >= 8)
     await b.mouse.up()
@@ -388,7 +388,7 @@ try {
     const board = await a.locator('.board').boundingBox()
     const pt = (x, y) => [board.x + x, board.y + y]
     await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.setTool('frame') })
-    await a.mouse.move(...pt(120, 60))
+    await a.mouse.move(...pt(160, 60))
     await a.mouse.down()
     await a.mouse.move(...pt(700, 560), { steps: 5 })
     await a.mouse.up()
