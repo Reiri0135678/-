@@ -9,6 +9,7 @@ import {
   tableSize,
   normalizeComment,
   normalizeShape,
+  shapeTexts,
   type ArrowBinding,
   type ArrowShape,
   type CommentThread,
@@ -31,6 +32,10 @@ import {
 
 import type { Camera, Collaborator, EditorOptions, EditorSnapshot, Point, Style, ToolId } from './types'
 import { boundsOf, resolveArrow, shapeBounds } from './geometry'
+import { remapShapes } from './clone'
+import { newGroupId, newId } from './ids'
+
+export { newId } from './ids'
 
 export type { Camera, Collaborator, ConnectionStatus, EditorOptions, EditorSnapshot, Point, Style, ToolId } from './types'
 
@@ -45,9 +50,6 @@ function userColor(name: string): string {
   return palette[h % palette.length]!
 }
 
-export function newId(): string {
-  return `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-}
 
 export class BoardEditor {
   readonly doc = new Y.Doc()
@@ -544,29 +546,9 @@ export class BoardEditor {
     if (shapes.length === 0) return []
     const all = boundsOf(shapes)!
     const off = at ? { x: at.x - (all.x + all.w / 2), y: at.y - (all.y + all.h / 2) } : { x: 24, y: 24 }
-    const idMap = new Map(shapes.map((s) => [s.id, newId()]))
     const created: string[] = []
-    const groupMap = new Map<string, string>()
-    for (const s of shapes) {
-      const copy = { ...s, id: idMap.get(s.id)!, x: s.x + off.x, y: s.y + off.y, locked: false } as Shape
-      // ページ・重なり順・作成者は貼り付け先で付け直す
-      delete (copy as Partial<Shape>).page
-      delete (copy as Partial<Shape>).z
-      if (s.groupId) {
-        if (!groupMap.has(s.groupId)) groupMap.set(s.groupId, `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
-        copy.groupId = groupMap.get(s.groupId)!
-      }
-      if (copy.type === 'arrow') {
-        // 吸着先も一緒に貼る場合だけ吸着を保つ
-        copy.startBind = copy.startBind && idMap.has(copy.startBind.id) ? { ...copy.startBind, id: idMap.get(copy.startBind.id)! } : null
-        copy.endBind = copy.endBind && idMap.has(copy.endBind.id) ? { ...copy.endBind, id: idMap.get(copy.endBind.id)! } : null
-      }
-      if (copy.type === 'request-card') {
-        copy.no = ''
-        copy.kintoneRecordId = ''
-        copy.linkedShapeIds = copy.linkedShapeIds.map((x) => idMap.get(x) ?? x).filter((x) => idMap.has(x) || this.snapshot.byId.has(x))
-      }
-      this.createShape(copy as unknown as Parameters<typeof this.createShape>[0])
+    for (const copy of remapShapes(shapes, off, { resetCards: true, exists: (id) => this.snapshot.byId.has(id) })) {
+      this.createShape(copy as Parameters<typeof this.createShape>[0])
       created.push(copy.id)
     }
     this.select(created)
@@ -576,23 +558,18 @@ export class BoardEditor {
   /** 図形の組(雛形・貼り付け以外)を現在のページに入れる。frame は背面、それ以外は前面へ。返り値は作成した id */
   insertShapes(list: Array<Partial<Shape> & { type: ShapeType }>, at: Point): string[] {
     if (this.snapshot.readonly || list.length === 0) return []
-    const idMap = new Map<string, string>()
-    for (const s of list) if (s.id) idMap.set(s.id, newId())
-    const bounds = boundsOf(list.map((s) => ({ ...defaultsFor(s.type), ...s }) as Shape))!
+    const full = list.map((s) => ({ ...defaultsFor(s.type), ...s, id: s.id ?? newId() }) as Shape)
+    const bounds = boundsOf(full)!
     const off = { x: at.x - (bounds.x + bounds.w / 2), y: at.y - (bounds.y + bounds.h / 2) }
     const created: string[] = []
-    const frames = list.filter((s) => s.type === 'frame')
-    const others = list.filter((s) => s.type !== 'frame')
+    // 区画は背面へ(既存の最背面よりさらに後ろ)、それ以外は前面へ
+    const frames = full.filter((s) => s.type === 'frame')
+    const others = full.filter((s) => s.type !== 'frame')
     const minZ = this.snapshot.shapes.length ? this.snapshot.shapes[0]!.z : 0
     let backZ = minZ - frames.length
-    for (const s of [...frames, ...others]) {
-      const copy = { ...s, id: s.id ? idMap.get(s.id)! : newId(), x: (s.x ?? 0) + off.x, y: (s.y ?? 0) + off.y } as Shape & { z?: number }
-      if (copy.type === 'arrow') {
-        if (copy.startBind) copy.startBind = idMap.has(copy.startBind.id) ? { ...copy.startBind, id: idMap.get(copy.startBind.id)! } : null
-        if (copy.endBind) copy.endBind = idMap.has(copy.endBind.id) ? { ...copy.endBind, id: idMap.get(copy.endBind.id)! } : null
-      }
-      if (copy.type === 'frame') copy.z = backZ++
-      this.createShape(copy as unknown as Parameters<typeof this.createShape>[0])
+    for (const copy of remapShapes([...frames, ...others], off, { resetCards: false, exists: () => false })) {
+      if (copy.type === 'frame') (copy as Shape & { z: number }).z = backZ++
+      this.createShape(copy as Parameters<typeof this.createShape>[0])
       created.push(copy.id)
     }
     // 吸着矢印の端点を確定
@@ -606,16 +583,7 @@ export class BoardEditor {
   find(query: string): Shape[] {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    return this.snapshot.allShapes.filter((s) => {
-      const texts: string[] = []
-      if (s.type === 'text' || s.type === 'note') texts.push(s.text)
-      if (s.type === 'rect' || s.type === 'ellipse') texts.push(s.label)
-      if (s.type === 'frame') texts.push(s.title)
-      if (s.type === 'table') texts.push(...s.cells.flat())
-      if (s.type === 'image') texts.push(s.name)
-      if (s.type === 'request-card') texts.push(s.no, s.title, s.dept, s.partNo, s.lot, s.requester, s.note, s.assignee)
-      return texts.some((t) => t && t.toLowerCase().includes(q))
-    })
+    return this.snapshot.allShapes.filter((s) => shapeTexts(s).some((t) => t && t.toLowerCase().includes(q)))
   }
 
   duplicate(ids: string[]): string[] {
@@ -645,7 +613,7 @@ export class BoardEditor {
   groupSelection(): void {
     const ids = this.snapshot.selection
     if (ids.length < 2 || this.snapshot.readonly) return
-    const groupId = `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
+    const groupId = newGroupId()
     this.updateShapes(ids.map((id) => ({ id, patch: { groupId } })))
   }
   ungroupSelection(): void {

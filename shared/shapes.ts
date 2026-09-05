@@ -376,6 +376,28 @@ export const REQUEST_RECORD_COLUMNS: Array<{ key: keyof RequestRecord; label: st
   { key: 'shapeId', label: 'ID' }
 ]
 
+/** 検索対象になる文字列(文字・付箋・ラベル・区画名・表のセル・画像名・依頼カードの各欄) */
+export function shapeTexts(s: Shape): string[] {
+  switch (s.type) {
+    case 'text':
+    case 'note':
+      return [s.text]
+    case 'rect':
+    case 'ellipse':
+      return [s.label]
+    case 'frame':
+      return [s.title]
+    case 'table':
+      return s.cells.flat()
+    case 'image':
+      return [s.name]
+    case 'request-card':
+      return [s.no, s.title, s.dept, s.partNo, s.lot, s.requester, s.note, s.assignee]
+    default:
+      return []
+  }
+}
+
 export function toRequestRecord(card: RequestCardShape, boardName: string): RequestRecord {
   return {
     shapeId: card.id,

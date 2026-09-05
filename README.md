@@ -12,6 +12,32 @@ shared/   両者で共有する図形定義(ペン・文字・付箋・矢印・
 scripts/  E2E テスト(2ブラウザで同期を検証)
 ```
 
+主なファイル(どこを直せばよいか):
+
+```
+client/src/canvas/
+  editor.ts             BoardEditor: Yjs 文書・スナップショット・選択・ツール・表・トリミング・レーザー・在席
+  types.ts              エディタの公開型(Snapshot, Collaborator, Style, ToolId など)
+  geometry.ts           矢印の吸着、外接矩形、スナップの計算(純粋関数)
+  clone.ts / ids.ts     図形の複製(貼り付け・雛形の挿入で共用)と id 採番
+  tools.ts              ツール定義、ドラッグ中の仮図形、ペン軌跡、雛形化
+  Board.tsx             Konva ステージ。ポインタ操作を図形の作成・選択・移動に変換
+  useKeyboardShortcuts.ts / useImageImport.ts / usePinchZoom.ts   キーボード、画像の取り込み、ピンチズーム
+  exportPng.ts          PNG 書き出し
+  shapes/ShapeView.tsx  図形ごとの描画
+  その他 *.tsx          ツールバー、スタイルパネル、ページバー、コメント、検索、ミニマップ、版、雛形、トリミング、レーザー
+client/src/panel/
+  Sidebar.tsx / CardEditor.tsx        サイドバー(ギャラリー・紐付け)とカード編集フォーム(履歴つき)
+  RequestSheet.tsx / sheetColumns.ts / SheetCell.tsx / Summary.tsx   一覧、列定義、セル、集計ビュー
+server/src/
+  index.ts              起動・定期保守・ルーターの組み立て
+  config.ts             環境変数の読み取り
+  routes/*.ts           auth / rooms(依頼・履歴・kintone)/ templates / versions / admin / uploads
+  ws.ts                 WebSocket 接続(閲覧者は読み取り専用)
+  rooms.ts              ルーム(Yjs 文書、採番、履歴、版、アーカイブ)
+  auth.ts / kintone.ts / notify.ts / maintenance.ts
+```
+
 - 同時編集: Yjs(CRDT)+ y-websocket 互換の自前サーバー。競合解決は Yjs、取り消しは自分の変更のみ対象
 - キャンバス: 自作。選択・移動・拡縮・回転、ペン(perfect-freehand)、蛍光、消しゴム、文字、付箋、矢印、四角、楕円、画像、依頼カード、
   範囲選択、複製、ズーム・パン、他の人のカーソルと選択範囲の表示。移動時のスナップ(端・中心、Alt で無効)、矢印の端点を図形に吸着(図形を動かすと追従)、

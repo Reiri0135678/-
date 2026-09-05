@@ -6,7 +6,6 @@ import {
   CLOSED_STATUSES,
   PRIORITIES,
   REQUEST_STATUSES,
-  RESULTS,
   canTransition,
   csvToRequests,
   parseCsv,
@@ -16,70 +15,15 @@ import {
   type ImportedRow,
   type Priority,
   type RequestCardShape,
-  type RequestRecord,
   type RequestStatus
 } from '@shared/shapes'
 import { kintoneStatus, kintoneSync, type KintoneStatus } from '../api'
 import type { BoardEditor as Editor } from '../canvas/editor'
 import { addCardAtCenter, focusShape, updateCard, useCards, useSingleSelection } from './useCards'
 
-type SortKey = keyof RequestRecord
-interface Column {
-  key: SortKey
-  label: string
-  width: number
-  kind: 'select' | 'priority' | 'result' | 'text' | 'date' | 'readonly'
-}
-
-const COLUMNS: Column[] = [
-  { key: 'no', label: '受付番号', width: 118, kind: 'readonly' },
-  { key: 'status', label: '状態', width: 100, kind: 'select' },
-  { key: 'priority', label: '優先度', width: 84, kind: 'priority' },
-  { key: 'title', label: '件名', width: 120, kind: 'text' },
-  { key: 'dept', label: '依頼部門', width: 100, kind: 'text' },
-  { key: 'partNo', label: '品番', width: 110, kind: 'text' },
-  { key: 'lot', label: 'ロット', width: 100, kind: 'text' },
-  { key: 'qty', label: '数量', width: 64, kind: 'text' },
-  { key: 'requester', label: '依頼者', width: 90, kind: 'text' },
-  { key: 'requestedAt', label: '依頼日', width: 130, kind: 'date' },
-  { key: 'dueDate', label: '希望納期', width: 130, kind: 'date' },
-  { key: 'assignee', label: '担当', width: 90, kind: 'text' },
-  { key: 'note', label: '備考', width: 200, kind: 'text' },
-  { key: 'result', label: '結果', width: 110, kind: 'result' },
-  { key: 'resultNote', label: '所見', width: 160, kind: 'text' },
-  { key: 'judgedBy', label: '判定者', width: 80, kind: 'readonly' },
-  { key: 'judgedAt', label: '判定日', width: 96, kind: 'readonly' },
-  { key: 'kintoneRecordId', label: 'kintone', width: 80, kind: 'readonly' }
-]
-
-const DAY = 86400_000
-const COLS_KEY = 'qc.sheet.cols'
-const WIDTHS_KEY = 'qc.sheet.widths'
-
-function loadJson<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(key)
-    return v ? (JSON.parse(v) as T) : fallback
-  } catch {
-    return fallback
-  }
-}
-function saveJson(key: string, v: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(v))
-  } catch {
-    /* ignore */
-  }
-}
-
-/** 納期の状態: 超過 / 2 日以内 / 余裕 / 納期なし・終了済み */
-export function dueState(rec: Pick<RequestRecord, 'dueDate' | 'status'>, today = todayString()): 'overdue' | 'soon' | 'ok' | 'none' {
-  if (!rec.dueDate || CLOSED_STATUSES.includes(rec.status)) return 'none'
-  const diff = Math.round((Date.parse(rec.dueDate) - Date.parse(today)) / DAY)
-  if (diff < 0) return 'overdue'
-  if (diff <= 2) return 'soon'
-  return 'ok'
-}
+import { COLUMNS, COLS_KEY, WIDTHS_KEY, dueState, loadJson, saveJson, type Column, type SortKey } from './sheetColumns'
+import { Summary } from './Summary'
+import { Cell } from './SheetCell'
 
 /** 下部ドロワー: 依頼カードのスプレッドシート(セル直接編集・キーボード移動・一括変更・並べ替え・絞り込み・集計・CSV・kintone 送信) */
 export function RequestSheet({
@@ -586,159 +530,3 @@ export function RequestSheet({
     </div>
   )
 }
-
-/** 集計ビュー: 状態別・部門別の件数、リードタイム、納期、担当別の持ち件数 */
-function Summary({ cards, today }: { cards: RequestCardShape[]; today: string }): JSX.Element {
-  const open = cards.filter((c) => !CLOSED_STATUSES.includes(c.status))
-  const done = cards.filter((c) => c.status === '完了')
-  const leadDays = done
-    .map((c) => {
-      const end = c.judgedAt || new Date(c.updatedAt).toISOString().slice(0, 10)
-      return c.requestedAt ? (Date.parse(end) - Date.parse(c.requestedAt)) / DAY : NaN
-    })
-    .filter((d) => Number.isFinite(d) && d >= 0)
-  const avgLead = leadDays.length ? leadDays.reduce((a, b) => a + b, 0) / leadDays.length : null
-  const overdue = open.filter((c) => dueState(c, today) === 'overdue')
-  const soon = open.filter((c) => dueState(c, today) === 'soon')
-  const urgent = open.filter((c) => c.priority === '至急')
-
-  const byDept = groupCount(cards, (c) => c.dept || '(部門未設定)')
-  const byAssignee = groupCount(open, (c) => c.assignee || '(未割当)')
-  const results = RESULTS.map((r) => [r, cards.filter((c) => c.result === r).length] as const)
-
-  return (
-    <div className="summary" data-testid="summary">
-      <div className="tiles">
-        <Tile label="対応中" value={open.length} sub={`全 ${cards.length} 件中`} />
-        <Tile label="納期超過" value={overdue.length} tone={overdue.length ? 'bad' : 'ok'} sub={soon.length ? `2 日以内 ${soon.length} 件` : ''} />
-        <Tile label="至急(対応中)" value={urgent.length} tone={urgent.length ? 'warn' : 'ok'} />
-        <Tile label="平均リードタイム" value={avgLead === null ? '-' : `${avgLead.toFixed(1)} 日`} sub={`完了 ${leadDays.length} 件から`} />
-        <Tile label="不合格" value={results.find(([r]) => r === '不合格')?.[1] ?? 0} tone="warn" sub={`合格 ${results.find(([r]) => r === '合格')?.[1] ?? 0} / 条件付 ${results.find(([r]) => r === '条件付合格')?.[1] ?? 0}`} />
-      </div>
-      <div className="summary__tables">
-        <BreakdownTable title="部門別" rows={byDept} cards={cards} data-testid="by-dept" />
-        <BreakdownTable title="担当別(対応中)" rows={byAssignee} cards={open} />
-        <div className="breakdown">
-          <h3>納期超過</h3>
-          {overdue.length === 0 ? (
-            <p className="muted">ありません</p>
-          ) : (
-            <table className="mini">
-              <tbody>
-                {overdue
-                  .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-                  .map((c) => (
-                    <tr key={c.id}>
-                      <td>{c.no}</td>
-                      <td>{c.partNo || c.title}</td>
-                      <td>{c.dept}</td>
-                      <td className="num">{c.dueDate}</td>
-                      <td className="num bad">{Math.round((Date.parse(today) - Date.parse(c.dueDate)) / DAY)} 日超過</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function groupCount(cards: RequestCardShape[], key: (c: RequestCardShape) => string): Array<[string, RequestCardShape[]]> {
-  const m = new Map<string, RequestCardShape[]>()
-  for (const c of cards) {
-    const k = key(c)
-    m.set(k, [...(m.get(k) ?? []), c])
-  }
-  return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
-}
-
-function BreakdownTable({ title, rows, cards, ...rest }: { title: string; rows: Array<[string, RequestCardShape[]]>; cards: RequestCardShape[]; 'data-testid'?: string }): JSX.Element {
-  const statuses = REQUEST_STATUSES.filter((s) => cards.some((c) => c.status === s))
-  return (
-    <div className="breakdown" data-testid={rest['data-testid']}>
-      <h3>{title}</h3>
-      {rows.length === 0 ? (
-        <p className="muted">データがありません</p>
-      ) : (
-        <table className="mini">
-          <thead>
-            <tr>
-              <th></th>
-              <th className="num">件数</th>
-              {statuses.map((s) => (
-                <th key={s} className="num">
-                  {s}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(([name, list]) => (
-              <tr key={name}>
-                <td>{name}</td>
-                <td className="num">
-                  <b>{list.length}</b>
-                </td>
-                {statuses.map((s) => (
-                  <td key={s} className="num">
-                    {list.filter((c) => c.status === s).length || ''}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
-  )
-}
-
-function Tile({ label, value, sub, tone }: { label: string; value: number | string; sub?: string; tone?: 'ok' | 'warn' | 'bad' }): JSX.Element {
-  return (
-    <div className="tile" data-tone={tone}>
-      <span className="tile__label">{label}</span>
-      <span className="tile__value">{value}</span>
-      {sub && <span className="tile__sub">{sub}</span>}
-    </div>
-  )
-}
-
-function Cell({
-  column,
-  value,
-  readonly,
-  status,
-  onChange
-}: {
-  column: Column
-  value: string
-  readonly: boolean
-  status: RequestStatus
-  onChange: (v: string) => void
-}): JSX.Element {
-  if (column.kind === 'readonly' || readonly) {
-    return <span className="grid__ro">{value || (column.kind === 'readonly' ? '-' : '')}</span>
-  }
-  if (column.kind === 'select' || column.kind === 'priority' || column.kind === 'result') {
-    const opts = column.kind === 'select' ? REQUEST_STATUSES.filter((s) => canTransition(status, s)) : column.kind === 'priority' ? PRIORITIES : RESULTS
-    return (
-      <select value={value} onChange={(e) => onChange(e.target.value)} data-col={column.key}>
-        {opts.map((s) => (
-          <option key={s}>{s}</option>
-        ))}
-      </select>
-    )
-  }
-  return (
-    <input
-      type={column.kind === 'date' ? 'date' : 'text'}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onFocus={(e) => e.target.select()}
-      data-col={column.key}
-    />
-  )
-}
-
