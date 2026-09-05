@@ -24,6 +24,7 @@ import { addCardAtCenter, focusShape, updateCard, useCards, useSingleSelection }
 import { COLUMNS, COLS_KEY, WIDTHS_KEY, dueState, loadJson, saveJson, type Column, type SortKey } from './sheetColumns'
 import { Summary } from './Summary'
 import { Cell } from './SheetCell'
+import { isMulti, parseTsv, pastePatches, rectOf, toTsv, type CellPos, type CellRange } from './sheetRange'
 
 /** 下部ドロワー: 依頼カードのスプレッドシート(セル直接編集・キーボード移動・一括変更・並べ替え・絞り込み・集計・CSV・kintone 送信) */
 export function RequestSheet({
@@ -59,6 +60,7 @@ export function RequestSheet({
   const [syncMsg, setSyncMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
   const tableRef = useRef<HTMLTableElement>(null)
+  const [range, setRange] = useState<CellRange | null>(null)
   const today = todayString()
 
   useEffect(() => {
@@ -121,6 +123,46 @@ export function RequestSheet({
     }
   }
 
+  // ---- セル範囲(Shift+クリック / Shift+矢印で広げ、Ctrl+C / Ctrl+V で表としてやり取り) ------
+  const cellPosOf = (el: EventTarget | null): CellPos | null => {
+    if (!(el instanceof HTMLElement)) return null
+    const td = el.closest('td')
+    const tr = el.closest('tr')
+    if (!td || !tr || !td.dataset['col']) return null
+    const c = visible.findIndex((x) => x.key === td.dataset['col'])
+    const r = (tr as HTMLTableRowElement).sectionRowIndex
+    return c >= 0 && r >= 0 && r < rows.length ? { r, c } : null
+  }
+  const rect = rectOf(range)
+  const onGridFocus = (e: React.FocusEvent) => {
+    const pos = cellPosOf(e.target)
+    if (pos) setRange({ anchor: pos, focus: pos })
+  }
+  const onGridMouseDown = (e: React.MouseEvent) => {
+    if (!e.shiftKey || !range) return
+    const pos = cellPosOf(e.target)
+    if (!pos) return
+    e.preventDefault()
+    setRange({ anchor: range.anchor, focus: pos })
+  }
+  const onGridCopy = (e: React.ClipboardEvent) => {
+    if (!isMulti(rect)) return
+    e.clipboardData.setData('text/plain', toTsv(rect, rows.map((r) => r.rec), visible))
+    e.preventDefault()
+  }
+  const onGridPaste = (e: React.ClipboardEvent) => {
+    if (readonly) return
+    const text = e.clipboardData.getData('text/plain')
+    const grid = parseTsv(text)
+    const single = grid.length === 1 && grid[0]!.length === 1
+    if (single && !isMulti(rect)) return // 1 セルへの通常の貼り付けはブラウザに任せる
+    const start = rect ? { r: rect.r0, c: rect.c0 } : cellPosOf(e.target)
+    if (!start) return
+    e.preventDefault()
+    const patches = pastePatches(grid, start, rect, rows.map((r) => r.card), visible, { by: editor.userName, at: today })
+    if (patches.length) editor.updateShapes(patches)
+  }
+
   // ---- キーボード移動: ↑↓ Enter で同じ列の隣の行へ、Esc でフォーカスを外す ----------
   const onGridKeyDown = (e: React.KeyboardEvent) => {
     const t = e.target as HTMLElement
@@ -128,6 +170,17 @@ export function RequestSheet({
     const col = t.dataset['col']
     const tr = t.closest('tr')
     if (!col || !tr) return
+    if (e.shiftKey && range && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+      // Shift+矢印: 入力欄の中は動かさず、選択範囲を広げる
+      e.preventDefault()
+      const f = range.focus
+      const next = {
+        r: Math.max(0, Math.min(rows.length - 1, f.r + (e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0))),
+        c: Math.max(0, Math.min(visible.length - 1, f.c + (e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0)))
+      }
+      setRange({ anchor: range.anchor, focus: next })
+      return
+    }
     let dir = 0
     if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey && !(t instanceof HTMLSelectElement))) dir = 1
     else if (e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey)) dir = -1
@@ -436,6 +489,11 @@ export function RequestSheet({
             className="grid"
             ref={tableRef}
             onKeyDown={onGridKeyDown}
+            onFocusCapture={onGridFocus}
+            onMouseDownCapture={onGridMouseDown}
+            onCopy={onGridCopy}
+            onPaste={onGridPaste}
+            data-testid="sheet-grid"
             style={{ width: visible.reduce((w, c) => w + widthOf(c), readonly ? 0 : 32) }}
           >
             <colgroup>
@@ -474,7 +532,7 @@ export function RequestSheet({
                   </td>
                 </tr>
               )}
-              {rows.map(({ card, rec, due }) => (
+              {rows.map(({ card, rec, due }, ri) => (
                 <tr
                   key={card.id}
                   data-selected={selected?.id === card.id}
@@ -504,8 +562,14 @@ export function RequestSheet({
                       />
                     </td>
                   )}
-                  {visible.map((c) => (
-                    <td key={c.key} data-col={c.key} data-priority={c.key === 'priority' ? rec.priority : undefined} data-due={c.key === 'dueDate' ? due : undefined}>
+                  {visible.map((c, ci) => (
+                    <td
+                      key={c.key}
+                      data-col={c.key}
+                      data-priority={c.key === 'priority' ? rec.priority : undefined}
+                      data-due={c.key === 'dueDate' ? due : undefined}
+                      data-range={isMulti(rect) && ri >= rect.r0 && ri <= rect.r1 && ci >= rect.c0 && ci <= rect.c1 ? true : undefined}
+                    >
                       <Cell
                         column={c}
                         value={String(rec[c.key] ?? '')}

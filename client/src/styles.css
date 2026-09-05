@@ -198,6 +198,7 @@ button { font: inherit; }
 .grid tbody tr[data-selected='true'] td { background: var(--qc-accent-soft); }
 .grid td input, .grid td select { width: 100%; box-sizing: border-box; font: inherit; font-size: 12px; padding: 5px 6px; border: 1px solid transparent; background: transparent; border-radius: 0; }
 .grid td input:focus, .grid td select:focus { outline: none; border-color: var(--qc-accent); background: #fff; }
+.grid td[data-range='true'] { background: rgba(217,119,87,0.14); box-shadow: inset 0 0 0 1px rgba(217,119,87,0.45); }
 .grid__ro { display: block; padding: 5px 6px; color: var(--qc-muted); }
 .grid td.muted { padding: 10px; }
 
