@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>名称当てクイズ</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/catalog-data.js"></script>
+<style>
+  .tierF { background: #475569; }
+  main.single { max-width: 760px; margin: 0 auto; padding: 24px; }
+  .q { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .q .desc { font-size: 15px; line-height: 1.7; margin: 0 0 14px; min-height: 3em; }
+  .q .api { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
+  .choices { display: grid; gap: 8px; }
+  .choice { text-align: left; padding: 10px 14px; font-size: 14px; border-radius: 8px; }
+  .choice.ok { background: #dcfce7; border-color: #16a34a; } .choice.ng { background: #fee2e2; border-color: #dc2626; }
+  .choice:disabled { cursor: default; }
+  .result { margin-top: 12px; font-size: 13.5px; }
+  .bar { height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; margin: 10px 0; } .bar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .weak { font-size: 13px; } .weak li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>名称当てクイズ <span class="tier tierF">説明 → 名称</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
+</header>
+<main class="single">
+  <div class="lead">「動作の説明」を読んで、その操作の<b>名称</b>を4択から選ぶ。間違えた項目はカタログとデモへのリンクが残るので、そこを読み直す。出題範囲は層で絞れる。</div>
+  <div class="row">
+    <label><input type="checkbox" class="tier-cb" value="A" checked> A</label>
+    <label><input type="checkbox" class="tier-cb" value="B" checked> B</label>
+    <label><input type="checkbox" class="tier-cb" value="C" checked> C</label>
+    <label><input type="checkbox" class="tier-cb" value="D"> D</label>
+    <label><input type="checkbox" class="tier-cb" value="E"> E</label>
+    <label>問題数 <select id="count"><option>10</option><option selected>20</option><option>40</option></select></label>
+    <label><input type="checkbox" id="mode-en"> 英語名を答える</label>
+    <button id="start" class="primary">開始</button>
+  </div>
+  <div class="bar"><i id="prog"></i></div>
+  <div class="q" id="q" hidden>
+    <div class="readout" id="meta"></div>
+    <p class="desc" id="desc"></p>
+    <div class="api" id="api"></div>
+    <div class="choices" id="choices"></div>
+    <div class="result" id="result"></div>
+  </div>
+  <div id="summary" hidden></div>
+</main>
+<script>
+(() => {
+  const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+  const strip = s => s.replace(/<[^>]+>/g, '');
+  let pool = [], qi = 0, score = 0, wrong = [], current = null;
+  const label = it => $('#mode-en').checked ? it.en : it.ja;
+  const shuffle = a => a.map(x => [Math.random(), x]).sort((p, q) => p[0] - q[0]).map(p => p[1]);
+  // 説明文から名称そのものを隠す（答えが書いてあることがあるため）
+  const mask = (desc, it) => { let d = desc; [it.ja, it.en].forEach(n => { n.split(/\s*[\/／(（]\s*/)[0].split(/\s+/).filter(w => w.length >= 2).forEach(w => { d = d.split(w).join('◯◯'); }); }); return d; };
+  const start = () => {
+    const tiers = $$('.tier-cb').filter(c => c.checked).map(c => c.value);
+    const all = ITEMS.map((it, i) => ({ ...it, n: itemNo(it, i) })).filter(it => tiers.includes(it.tier));
+    if (all.length < 4) { alert('層を1つ以上選んでください'); return; }
+    pool = shuffle(all).slice(0, +$('#count').value); qi = 0; score = 0; wrong = [];
+    $('#summary').hidden = true; $('#q').hidden = false; next(all);
+  };
+  const next = (all) => {
+    if (qi >= pool.length) return finish();
+    current = pool[qi];
+    const others = shuffle((all || ITEMS.map((it, i) => ({ ...it, n: itemNo(it, i) }))).filter(x => x.n !== current.n && x.tier === current.tier)).slice(0, 3);
+    const choices = shuffle([current, ...others]);
+    $('#meta').textContent = `第 ${qi + 1} / ${pool.length} 問　層 ${current.tier}`;
+    $('#desc').textContent = mask(strip(current.desc), current);
+    $('#api').textContent = '実装手段：' + strip(current.api);
+    $('#result').innerHTML = '';
+    $('#choices').innerHTML = choices.map(c => `<button class="choice" data-n="${c.n}">${label(c)}</button>`).join('');
+    $('#prog').style.width = (qi / pool.length * 100) + '%';
+    $$('.choice').forEach(b => b.onclick = () => answer(+b.dataset.n, all));
+  };
+  const answer = (n, all) => {
+    const ok = n === current.n; if (ok) score++; else wrong.push(current);
+    $$('.choice').forEach(b => { b.disabled = true; if (+b.dataset.n === current.n) b.classList.add('ok'); else if (+b.dataset.n === n) b.classList.add('ng'); });
+    $('#result').innerHTML = `${ok ? '正解' : '不正解'}：<b>${String(current.n).padStart(2, '0')} ${current.ja}</b>（${current.en}）　<a href="01-ui-operations-catalog.html">カタログ</a> / <a href="${TIER_FILE[current.tier]}#n${String(current.n).padStart(2, '0')}">デモ</a>　<button id="nextBtn" class="primary">次へ</button>`;
+    $('#nextBtn').onclick = () => { qi++; next(all); }; $('#nextBtn').focus();
+  };
+  const finish = () => {
+    $('#q').hidden = true; $('#prog').style.width = '100%';
+    const s = $('#summary'); s.hidden = false;
+    s.innerHTML = `<div class="q"><b>結果：${score} / ${pool.length}</b>` + (wrong.length ? `<p style="font-size:13px">読み直す項目：</p><ul class="weak">${wrong.map(w => `<li>${String(w.n).padStart(2, '0')} ${w.ja}（${w.en}）　<a href="${TIER_FILE[w.tier]}#n${String(w.n).padStart(2, '0')}">デモへ</a></li>`).join('')}</ul>` : '<p style="font-size:13px">全問正解。</p>') + `<button id="again">もう一度</button></div>`;
+    $('#again').onclick = start;
+  };
+  $('#start').onclick = start;
+  document.addEventListener('keydown', e => { if (/^[1-4]$/.test(e.key) && !$('#q').hidden) $$('.choice')[+e.key - 1]?.click(); if (e.key === 'Enter' && $('#nextBtn')) $('#nextBtn').click(); });
+})();
+</script>
+</body>
+</html>

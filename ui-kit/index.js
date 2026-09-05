@@ -9,3 +9,8 @@ export { createOfflineQueue } from './offline-queue.js';
 export { threeWayMerge, wordDiff, diffToHtml } from './merge.js';
 export { createPersistentStore } from './store.js';
 export { createSyncChannel } from './sync.js';
+export { activateFocusTrap } from './focus-trap.js';
+export { computePosition, positionAtPoint } from './position.js';
+export { createToaster } from './toast.js';
+export { createSortable } from './sortable.js';
+export { createSplit } from './split.js';

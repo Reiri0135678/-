@@ -5,6 +5,10 @@
 <h3>ui-kit tests</h3><div id="out"></div>
 <div id="view"></div><div id="pad">drag pad</div><div id="cam"><div id="world" style="position:absolute;left:0;top:0;transform-origin:0 0;width:50px;height:50px;background:#36c"></div></div>
 <input id="inp" placeholder="input">
+<div id="main2"><button id="outside">outside</button></div>
+<div id="modal" hidden><input id="m1"><button id="m2">ok</button></div>
+<ul id="sortable"><li>a</li><li>b</li><li>c</li></ul>
+<div id="split" style="width:400px;height:60px"><div>L</div><div>R</div></div>
 <script type="module">
 import * as K from '../index.js';
 const results = []; const out = document.getElementById('out');
@@ -27,6 +31,48 @@ await test('virtual-list: flattenTree', () => { const t = [{ id: 1, open: true, 
 await test('hotkeys: mod+s / 入力中の単独キー無視', async () => { let saved = 0, created = 0; const dispose = K.registerHotkeys({ 'mod+s': () => saved++, 'n': () => created++ }); const isMac = /Mac/.test(navigator.platform); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: !isMac, metaKey: isMac, bubbles: true })); eq(saved, 1); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1); const inp = document.getElementById('inp'); inp.focus(); inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1, '入力中は無視'); inp.blur(); dispose(); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1, 'dispose 後は発火しない'); });
 await test('drag: constrain', () => { eq(K.constrain({ dx: 30, dy: 10, shift: true }), { dx: 30, dy: 0 }); eq(K.constrain({ dx: 33, dy: -27, alt: true }, { grid: 20 }), { dx: 40, dy: -20 }); });
 await test('sync: hello で状態を受け取る（同一ページ内2チャンネル）', async () => { let got = null; const a = K.createSyncChannel('t1', {}); a.hello(() => ({ v: 42 })); const b = K.createSyncChannel('t1', { onState: s => got = s }); b.hello(() => null); await new Promise(r => setTimeout(r, 50)); eq(got, { v: 42 }); a.publish({ v: 7 }); await new Promise(r => setTimeout(r, 50)); eq(got, { v: 7 }); a.dispose(); b.dispose(); });
+
+await test('position: 上に余白なし → 下へ反転、枠内に押し込む', () => {
+  const b = { left: 0, top: 0, right: 400, bottom: 300 };
+  let r = K.computePosition({ left: 10, top: 5, right: 60, bottom: 25, width: 50, height: 20 }, { width: 100, height: 40 }, { placement: 'top', bounds: b });
+  eq(r.placement, 'bottom'); eq(r.top, 25 + 6); eq(r.left, 0, '左端で押し込み');
+  r = K.computePosition({ left: 300, top: 100, right: 350, bottom: 120, width: 50, height: 20 }, { width: 100, height: 40 }, { placement: 'top', bounds: b });
+  eq(r.placement, 'top'); eq(r.top, 100 - 6 - 40); eq(r.left, 300 - 25, '中央揃え');
+  r = K.computePosition({ left: 380, top: 100, right: 400, bottom: 120, width: 20, height: 20 }, { width: 100, height: 40 }, { placement: 'right', bounds: b });
+  eq(r.placement, 'left');
+  eq(K.positionAtPoint({ x: 390, y: 290 }, { width: 50, height: 30 }, b), { left: 340, top: 260 });
+});
+await test('toast: 上限で古いものから消える、aria-live', () => {
+  const t = K.createToaster({ host: document.body, max: 2, duration: 0 });
+  t.show('1'); t.show('2'); t.show('3');
+  const host = document.querySelector('.uk-toast-host');
+  eq(host.getAttribute('aria-live'), 'polite');
+  const live = [...host.children].filter(c => !c.classList.contains('leaving')).map(c => c.textContent);
+  eq(live, ['2', '3']); t.dispose(); ok(!document.querySelector('.uk-toast-host'));
+});
+await test('focus-trap: 初期フォーカス・inert・Tab 循環・release で復帰', () => {
+  const outside = document.getElementById('outside'), modal = document.getElementById('modal'), main2 = document.getElementById('main2');
+  outside.focus(); modal.hidden = false;
+  const trap = K.activateFocusTrap(modal, { inertTargets: [main2] });
+  eq(document.activeElement.id, 'm1'); ok(main2.inert);
+  document.getElementById('m2').focus();
+  modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  eq(document.activeElement.id, 'm1', '末尾で Tab → 先頭');
+  modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  eq(document.activeElement.id, 'm2', '先頭で Shift+Tab → 末尾');
+  trap.release(); modal.hidden = true;
+  ok(!main2.inert); eq(document.activeElement.id, 'outside', '開く前の要素へ復帰');
+});
+await test('split: grid 化・setSizes・最小幅', () => {
+  const el = document.getElementById('split'); const sizes = [];
+  const sp = K.createSplit(el, { sizes: [150, null], min: 50, gutter: 6, onChange: s => sizes.push(s) });
+  ok(el.style.gridTemplateColumns.startsWith('150px 6px'), el.style.gridTemplateColumns);
+  eq(el.querySelectorAll('.uk-gutter').length, 1);
+  sp.setSizes([200, null]); eq(sp.getSizes(), [200, null]); ok(sizes.length >= 2);
+  window.__split = sp;
+});
+window.__sortableOrder = null;
+K.createSortable(document.getElementById('sortable'), { onChange: items => window.__sortableOrder = items.map(i => i.textContent) });
 
 // ブラウザ操作が必要なもの（drag / attachPanZoom）は runner 側から実行し、結果をここに書き戻す
 window.__kit = K; window.__results = results;

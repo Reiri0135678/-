@@ -17,7 +17,7 @@
 <body>
 <header class="top">
   <h1>基礎知識 <span class="tier tierF">全デモの土台</span></h1>
-  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a><a href="05-advanced.html">D</a><a href="06-effects.html">E</a><a href="09-exercises.html">課題</a></nav>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a><a href="05-advanced.html">D</a><a href="06-effects.html">E</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
 </header>
 <div class="layout">
 <aside class="toc"></aside>
@@ -228,6 +228,64 @@
   </style>
   <script data-code>
     (() => { $('#f7-tf').onchange = e => $('#f7-parent').classList.toggle('ctx', e.target.checked); })();
+  </script>
+</section>
+
+<!-- ===================== F9 ===================== -->
+<section class="demo" id="f9">
+  <h2><span class="no">F9</span>レイアウトスラッシング <small>読み取りと書き込みを交互にすると遅くなる</small></h2>
+  <p class="what">DOM の「幅を読む（<code>offsetWidth</code>, <code>getBoundingClientRect</code>）」と「スタイルを書く」を1要素ずつ交互にやると、ブラウザは書くたびにレイアウトをやり直してから読む（強制同期レイアウト）。<b>先に全部読んでから、全部書く</b>だけで桁違いに速くなる。FLIP（30）の「First を全部測ってから DOM を変える」もこの原則。</p>
+  <p class="how"><b>操作：</b>500要素で2つの方式を実行し、時間を比べる。</p>
+  <div class="stage">
+    <div class="row"><button id="f9-bad">交互（読→書→読→書…）</button><button id="f9-good">分離（全部読む→全部書く）</button><span class="readout" id="f9-out">-</span></div>
+    <div id="f9-field" class="f9-field"></div>
+  </div>
+  <style data-code>
+    .f9-field { display: flex; flex-wrap: wrap; gap: 2px; background: #fff; border: 1px solid #cbd5e1; padding: 4px; max-height: 90px; overflow: hidden; }
+    .f9-field i { display: block; width: 12px; height: 12px; background: var(--accent); }
+  </style>
+  <script data-code>
+    (() => {
+      const field = $('#f9-field'), out = $('#f9-out');
+      field.innerHTML = Array.from({ length: 500 }, () => '<i></i>').join('');
+      const items = $$('i', field);
+      $('#f9-bad').onclick = () => {
+        const t0 = performance.now();
+        items.forEach(el => { const w = el.offsetWidth; el.style.width = (w % 2 ? 12 : 13) + 'px'; });   // 読→書 を交互：毎回レイアウト
+        out.textContent = `交互: ${(performance.now() - t0).toFixed(1)} ms`;
+      };
+      $('#f9-good').onclick = () => {
+        const t0 = performance.now();
+        const widths = items.map(el => el.offsetWidth);                                              // 全部読む（レイアウト1回）
+        items.forEach((el, i) => el.style.width = (widths[i] % 2 ? 12 : 13) + 'px');                // 全部書く
+        out.textContent = `分離: ${(performance.now() - t0).toFixed(1)} ms`;
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== F10 ===================== -->
+<section class="demo" id="f10">
+  <h2><span class="no">F10</span>計測の道具 <small>performance.now / PerformanceObserver(longtask) / rAF フレーム時間</small></h2>
+  <p class="what">「重い気がする」を数字にする3つの道具。①<code>performance.now()</code> で区間時間 ②<code>PerformanceObserver</code> の <code>longtask</code> で 50ms を超えてメインスレッドを塞いだ処理を検出 ③rAF の間隔でフレーム落ちを見る。開発者ツールの Performance タブが本命だが、実機で常時出しておくならこれ。</p>
+  <p class="how"><b>操作：</b>「重い処理を実行」で意図的に 120ms ブロックする。longtask が検出され、フレーム時間が跳ねる。</p>
+  <div class="stage">
+    <div class="row"><button id="f10-heavy">重い処理を実行（120ms ブロック）</button><span class="readout" id="f10-frame">frame: -</span><span class="readout" id="f10-long">longtask: 0 件</span></div>
+    <div class="log" id="f10-log" style="height:80px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = $('#f10-log'); let n = 0;
+      // ② longtask 監視（対応ブラウザのみ）
+      try { new PerformanceObserver(list => list.getEntries().forEach(e => { $('#f10-long').textContent = `longtask: ${++n} 件`; logTo(log, `longtask ${e.duration.toFixed(0)}ms @ ${e.startTime.toFixed(0)}`); })).observe({ type: 'longtask', buffered: true }); }
+      catch { logTo(log, 'longtask 非対応のブラウザ'); }
+      // ③ フレーム時間（最大値を1秒ごとに表示）
+      let last = performance.now(), worst = 0, t = last;
+      const tick = now => { worst = Math.max(worst, now - last); last = now; if (now - t > 1000) { $('#f10-frame').textContent = `frame 最悪: ${worst.toFixed(1)} ms`; worst = 0; t = now; } requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+      // ① 区間計測
+      $('#f10-heavy').onclick = () => { const t0 = performance.now(); while (performance.now() - t0 < 120) {} logTo(log, `区間: ${(performance.now() - t0).toFixed(1)}ms（同期ブロック）`); };
+    })();
   </script>
 </section>
 

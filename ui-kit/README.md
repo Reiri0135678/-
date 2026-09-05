@@ -18,6 +18,11 @@ import { createVirtualList, registerHotkeys, createPersistentStore } from './ui-
 | `merge.js` | `threeWayMerge(base, mine, theirs)`, `wordDiff(a, b)`, `diffToHtml(parts)` |
 | `store.js` | `createPersistentStore(key, defaults, {debounceMs})` |
 | `sync.js` | `createSyncChannel(name, {onState})` |
+| `focus-trap.js` | `activateFocusTrap(container, {inertTargets, onEscape, initialFocus})` → `release()` |
+| `position.js` | `computePosition(anchorRect, popRect, {placement, align, gap, bounds})`, `positionAtPoint(point, popRect, bounds)` |
+| `toast.js` | `createToaster({host, max, duration, position})` → `show(msg, {kind, duration})` |
+| `sortable.js` | `createSortable(listEl, {handle, onChange})` |
+| `split.js` | `createSplit(container, {sizes, min, gutter, direction, onChange})` |
 
 各ファイル冒頭に使い方・副作用・元デモ番号を記載。
 
