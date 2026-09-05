@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from 'react'
-import type { BoardEditor, EditorSnapshot } from './editor'
+import type { BoardEditor } from './editor'
+import type { EditorSnapshot } from './types'
 
 export const EditorContext = createContext<BoardEditor | null>(null)
 

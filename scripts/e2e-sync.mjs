@@ -64,6 +64,8 @@ const loginCookie = async (name, password) => {
   return r.headers.get('set-cookie').split(';')[0]
 }
 const cookieOf = async (page) => (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join('; ')
+// Konva の当たり判定用キャンバスは次の描画フレームで更新されるので、evaluate で図形を変えた直後のマウス操作の前に待つ
+const settle = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
 const ok = (label, cond) => {
   console.log(`[e2e] ${cond ? 'ok ' : 'NG '} ${label}`)
   if (!cond) throw new Error(`failed: ${label}`)
@@ -164,6 +166,7 @@ try {
 
     // 矢印ツールで A の中から B の中へドラッグ → 両端が吸着し、外周まで引かれる
     await a.evaluate(() => window.__qcEditor.setTool('arrow'))
+    await settle(a)
     await a.mouse.move(...pt(460, 460))
     await a.mouse.down()
     await a.mouse.move(...pt(760, 485), { steps: 8 })
@@ -183,6 +186,7 @@ try {
     // B がペンで描いている途中の線が A に見える
     const boardB = await b.locator('.board').boundingBox()
     await b.evaluate(() => { window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }); window.__qcEditor.setTool('draw') })
+    await settle(b)
     await b.mouse.move(boardB.x + 200, boardB.y + 300)
     await b.mouse.down()
     await b.mouse.move(boardB.x + 300, boardB.y + 350, { steps: 10 })
@@ -262,6 +266,7 @@ try {
     const board = await a.locator('.board').boundingBox()
     const pt = (x, y) => [board.x + x, board.y + y]
     await a.evaluate(() => { const ed = window.__qcEditor; ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.setTool('comment') })
+    await settle(a)
     await a.mouse.click(...pt(460, 460))
     await a.waitForSelector('[data-testid="comment-pop"]')
     await a.fill('[data-testid="comment-input"]', 'この寸法を確認してください')
@@ -272,6 +277,7 @@ try {
     ok('返信が届く', await waitFor(() => a.evaluate((id) => window.__qcEditor.getSnapshot().comments.find((c) => c.id === id)?.replies.length === 1, cm.id)))
     // ピンをクリックしてスレッドを開く
     const pin = await a.evaluate(() => { const ed = window.__qcEditor; const s = ed.getShape('s_rectA'); return ed.pageToScreen({ x: s.x + s.w, y: s.y }) })
+    await settle(a)
     await a.mouse.click(board.x + pin.x, board.y + pin.y)
     await a.waitForSelector('[data-testid="comment-list"]')
     ok('ピンをクリックするとスレッドが開く(2 件)', (await a.locator('[data-testid="comment-list"] li').count()) === 2)
@@ -286,6 +292,7 @@ try {
     const pt = (x, y) => [board.x + x, board.y + y]
     await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }) })
     const rectsBefore = await a.evaluate(() => window.__qcEditor.getShapes().filter((s) => s.type === 'rect').length)
+    await settle(a)
     // 右クリック → コピー、空き地で右クリック → 貼り付け
     await a.mouse.click(...pt(460, 460), { button: 'right' })
     await a.waitForSelector('[data-testid="context-menu"]')
@@ -326,6 +333,7 @@ try {
 
     // 直線ツール・線種・矢頭・図形の種類
     await a.evaluate(() => window.__qcEditor.setTool('line'))
+    await settle(a)
     await a.mouse.move(...pt(600, 300))
     await a.mouse.down()
     await a.mouse.move(...pt(800, 380), { steps: 5 })
@@ -345,6 +353,7 @@ try {
     // ラベル(ダブルクリックで編集)
     const al2 = await a.evaluate(() => window.__qcEditor.getShape('s_al2'))
     await a.evaluate(() => window.__qcEditor.selectNone())
+    await settle(a)
     await a.mouse.dblclick(...pt(al2.x + al2.w / 2, al2.y + al2.h / 2))
     await a.waitForSelector('[data-testid="text-editor"]')
     await a.keyboard.type('判定')
@@ -376,6 +385,7 @@ try {
     await a.waitForSelector('[data-testid="follow-banner"]')
     await b.evaluate(() => window.__qcEditor.setCamera({ x: 0, y: 0, scale: 0.8 }))
     ok('相手が動くと追従して変わる', await waitFor(() => a.evaluate(() => Math.abs(window.__qcEditor.getSnapshot().camera.scale - 0.8) < 0.01)))
+    await settle(a)
     await a.mouse.move(...pt(700, 400))
     await a.mouse.wheel(0, 100)
     ok('自分で操作すると追従が解除される', await waitFor(() => a.evaluate(() => window.__qcEditor.getSnapshot().following === null)))
@@ -388,6 +398,7 @@ try {
     const board = await a.locator('.board').boundingBox()
     const pt = (x, y) => [board.x + x, board.y + y]
     await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.setTool('frame') })
+    await settle(a)
     await a.mouse.move(...pt(160, 60))
     await a.mouse.down()
     await a.mouse.move(...pt(700, 560), { steps: 5 })
@@ -400,6 +411,7 @@ try {
     const outside = await a.evaluate((f) => window.__qcEditor.getShapes().filter((s) => s.type === 'rect' && !(s.x >= f.x && s.y >= f.y && s.x + s.w <= f.x + f.w && s.y + s.h <= f.y + f.h)).map((s) => [s.id, s.x, s.y]), frame)
     await a.evaluate(() => window.__qcEditor.setTool('select'))
     // 見出し帯をドラッグ(区画の左上 -30px の帯)
+    await settle(a)
     await a.mouse.move(...pt(frame.x + 30, frame.y - 15))
     await a.mouse.down()
     await a.mouse.move(...pt(frame.x + 130, frame.y + 35), { steps: 6 })
@@ -414,6 +426,7 @@ try {
     await a.waitForSelector('[data-testid="minimap"]')
     const cam0 = await a.evaluate(() => window.__qcEditor.getSnapshot().camera)
     const mm = await a.locator('[data-testid="minimap"]').boundingBox()
+    await settle(a)
     await a.mouse.click(mm.x + 20, mm.y + 20)
     const cam1 = await a.evaluate(() => window.__qcEditor.getSnapshot().camera)
     ok('ミニマップのクリックで表示位置が変わる', cam1.x !== cam0.x || cam1.y !== cam0.y)
@@ -458,11 +471,13 @@ try {
     await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }) })
     // 表ツールでクリック → 3x3 の表ができ、選択された状態で select ツールに戻る
     await a.keyboard.press('b')
+    await settle(a)
     await a.mouse.click(...pt(850, 300))
     const table = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'table') || null))
     ok(`表ツールで表を作成 (${table.cells.length}x${table.colWidths.length})`, table.cells.length === 3 && table.colWidths.length === 3 && table.w === table.colWidths.reduce((x, y) => x + y, 0))
     ok('表の作成後は選択ツールに戻り表が選ばれている', await a.evaluate((id) => { const s = window.__qcEditor.getSnapshot(); return s.tool === 'select' && s.selection.length === 1 && s.selection[0] === id }, table.id))
     // 左上セルをダブルクリック → 入力 → Tab で隣のセルへ
+    await settle(a)
     await a.mouse.dblclick(...pt(table.x + 20, table.y + 15))
     await a.waitForFunction(() => { const t = document.querySelector('[data-testid="text-editor"]'); return !!t && document.activeElement === t && t.value === '項目' })
     ok('セルのダブルクリックで編集が始まる(既存の文字が全選択される)', await a.evaluate(() => { const c = window.__qcEditor.getSnapshot().editingCell; const t = document.querySelector('[data-testid="text-editor"]'); return !!c && c.r === 0 && c.c === 0 && t.selectionStart === 0 && t.selectionEnd === 2 }))
@@ -488,6 +503,7 @@ try {
     // レーザーポインター: A がなぞると B の awareness に軌跡が届き、図形は増えない
     const nBefore = await a.evaluate(() => window.__qcEditor.getSnapshot().allShapes.length)
     await a.keyboard.press('p')
+    await settle(a)
     await a.mouse.move(...pt(500, 300))
     await a.mouse.down()
     await a.mouse.move(...pt(600, 350), { steps: 8 })
@@ -502,6 +518,7 @@ try {
     // 自作の雛形: 付箋 2 枚を選んで右クリック → 名前を付けて保存 → 雛形メニューから挿入 → 削除
     await a.evaluate(() => { const ed = window.__qcEditor; ed.createShape({ id: 's_tp1', type: 'note', x: 450, y: 80, text: '受入' }); ed.createShape({ id: 's_tp2', type: 'note', x: 640, y: 80, text: '判定' }); ed.select(['s_tp1', 's_tp2']) })
     a.once('dialog', (d) => d.accept('受入手順'))
+    await settle(a)
     await a.mouse.move(...pt(470, 100))
     await a.mouse.down({ button: 'right' })
     await a.mouse.up({ button: 'right' })
@@ -593,6 +610,7 @@ try {
     // ドロワーの高さをドラッグで変更
     const h0 = await a.evaluate(() => document.querySelector('.app__drawer').getBoundingClientRect().height)
     const handle = await a.locator('[data-testid="drawer-handle"]').boundingBox()
+    await settle(a)
     await a.mouse.move(handle.x + 300, handle.y + 4)
     await a.mouse.down()
     await a.mouse.move(handle.x + 300, handle.y - 120, { steps: 5 })
@@ -616,6 +634,7 @@ try {
     await a.click('[data-testid="sheet-cols"]')
     const wBefore = await a.evaluate(() => document.querySelector('.grid thead th[data-th="partNo"]').getBoundingClientRect().width)
     const rz = await a.locator('[data-resizer="partNo"]').boundingBox()
+    await settle(a)
     await a.mouse.move(rz.x + 3, rz.y + 8)
     await a.mouse.down()
     await a.mouse.move(rz.x + 83, rz.y + 8, { steps: 4 })

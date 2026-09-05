@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import { Circle, Group, Line } from 'react-konva'
-import type { Collaborator } from './editor'
+import type { Collaborator } from './types'
 
 /** レーザーポインターの軌跡(自分と相手)。古い点から薄くなり、1 秒で消える */
 export function LaserTrails({ collaborators, mine, myColor, scale }: { collaborators: Collaborator[]; mine: number[]; myColor: string; scale: number }): JSX.Element {

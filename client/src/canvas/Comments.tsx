@@ -2,7 +2,9 @@ import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { Circle, Group, Text } from 'react-konva'
 import type { CommentThread } from '@shared/shapes'
-import { shapeBounds, type BoardEditor, type Point } from './editor'
+import type { BoardEditor } from './editor'
+import type { Point } from './types'
+import { shapeBounds } from './geometry'
 import { useEditorSnapshot } from './hooks'
 
 /** コメントのピン位置(図形付きなら図形の右上、無ければ座標) */

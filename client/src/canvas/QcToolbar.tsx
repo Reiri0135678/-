@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEditor, useEditorSnapshot } from './hooks'
-import type { ToolId } from './editor'
+import type { ToolId } from './types'
 import { TemplateMenu } from './TemplateMenu'
 
 type Item = { id: ToolId; label: string; icon: string; key: string } | 'sep'

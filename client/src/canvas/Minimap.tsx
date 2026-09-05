@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useRef } from 'react'
-import { shapeBounds, type BoardEditor } from './editor'
+import type { BoardEditor } from './editor'
+import { shapeBounds } from './geometry'
 import { useEditorSnapshot } from './hooks'
 
 const W = 180

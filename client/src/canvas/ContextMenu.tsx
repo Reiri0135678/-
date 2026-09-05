@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect } from 'react'
-import type { BoardEditor, Point } from './editor'
+import type { BoardEditor } from './editor'
+import type { Point } from './types'
 import { useEditorSnapshot } from './hooks'
 
 export interface MenuState {

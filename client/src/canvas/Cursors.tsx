@@ -1,7 +1,8 @@
 import type { JSX } from 'react'
 import { Group, Line, Rect, Text } from 'react-konva'
 import type { Shape } from '@shared/shapes'
-import { shapeBounds, type Collaborator } from './editor'
+import type { Collaborator } from './types'
+import { shapeBounds } from './geometry'
 import { ShapeView } from './shapes/ShapeView'
 
 /** 他の参加者のカーソルと名前。ズームに関係なく同じ大きさで表示する */
