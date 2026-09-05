@@ -74,3 +74,14 @@ export async function kintoneStatus(): Promise<KintoneStatus> {
 export async function kintoneSync(roomId: string): Promise<{ created: number; updated: number; total: number }> {
   return json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/kintone/sync`, { method: 'POST' }))
 }
+
+/** 埋め込み用ワンタイムトークンをセッションに交換する */
+export async function redeemToken(token: string): Promise<Me> {
+  return json(
+    await fetch('/api/auth/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token })
+    })
+  )
+}

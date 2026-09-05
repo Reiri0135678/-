@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import { authMode, createRoom, listRooms, login, logout, me, type Me, type RoomMeta } from '../api'
 import { getUserName, setUserName } from '../user'
+import { isEmbed } from '../embed'
 
 export function Landing(): JSX.Element {
   const [mode, setMode] = useState<'open' | 'password' | null>(null)
@@ -98,9 +99,11 @@ export function Landing(): JSX.Element {
               <span>
                 <b>{user.name}</b> <span className="role">{roleLabel(user.role)}</span>
               </span>
-              <button className="link" onClick={doLogout}>
-                ログアウト
-              </button>
+              {!isEmbed() && (
+                <button className="link" onClick={doLogout}>
+                  ログアウト
+                </button>
+              )}
             </div>
             <h2>ボード</h2>
             <ul className="rooms">

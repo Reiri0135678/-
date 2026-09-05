@@ -19,7 +19,7 @@ await mkdir(UPLOAD_DIR, { recursive: true })
 
 const rooms = new RoomManager(join(DATA_DIR, 'rooms'))
 await rooms.init()
-const auth = new Auth(USERS_FILE, join(DATA_DIR, 'secret'))
+const auth = new Auth(USERS_FILE, join(DATA_DIR, 'secret'), process.env['QC_EMBED_KEY'])
 await auth.init()
 const kintone = new Kintone(KINTONE_CONFIG, process.env['KINTONE_MOCK'] === '1')
 await kintone.init()
@@ -49,6 +49,35 @@ app.post('/api/auth/logout', (_req, res) => {
 
 app.get('/api/auth/me', auth.require('viewer'), (req, res) => {
   res.json(req.user)
+})
+
+// 外部アプリ(Mission Bridge 等)からの代理ログイン。
+// 1) ホスト側が共有鍵でトークンを取得 → 2) /embed?token=... を開く → 3) クライアントがトークンをセッションに交換
+app.post('/api/auth/embed', express.json(), (req, res) => {
+  if (!auth.embedEnabled()) {
+    res.status(404).json({ error: '埋め込み連携が無効です(QC_EMBED_KEY 未設定)' })
+    return
+  }
+  const token = auth.issueEmbedToken(
+    String(req.body?.key ?? ''),
+    String(req.body?.name ?? ''),
+    (req.body?.role ?? 'member') as 'admin' | 'member' | 'viewer'
+  )
+  if (!token) {
+    res.status(401).json({ error: '鍵が違うか、name/role が不正です' })
+    return
+  }
+  res.json({ token, expiresIn: 60 })
+})
+
+app.post('/api/auth/token', express.json(), (req, res) => {
+  const user = auth.redeemEmbedToken(String(req.body?.token ?? ''))
+  if (!user) {
+    res.status(401).json({ error: 'トークンが無効または期限切れです' })
+    return
+  }
+  res.setHeader('Set-Cookie', auth.issueCookie(user))
+  res.json(user)
 })
 
 // ---- ボード一覧 -------------------------------------------------------
@@ -177,6 +206,6 @@ server.on('upgrade', (req, socket, head) => {
 
 server.listen(PORT, async () => {
   console.log(
-    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  kintone=${kintone.status().mode}`
+    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  embed=${auth.embedEnabled() ? 'on' : 'off'}  kintone=${kintone.status().mode}`
   )
 })

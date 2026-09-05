@@ -20,6 +20,9 @@ scripts/  E2E テスト(2ブラウザで同期を検証)
 - 図面の紐付け: 依頼カードから「図面を紐付け」→ ギャラリーかキャンバスの画像をクリック
 - kintone: `config/kintone.json` を置くと「kintone へ送信」が有効になる。カードの shape id を外部キーに作成/更新し、
   レコード番号をカードへ書き戻す。`KINTONE_MOCK=1` で接続せずに動作確認できる
+- Mission Bridge への埋め込み: `QC_EMBED_KEY` を設定すると、ホストアプリが共有鍵でワンタイムトークンを取得し
+  `/embed?token=...&board=<id>` を `WebContentsView` / `<webview>` で開くだけで自動ログインできる。
+  カード選択などのイベントは `postMessage` でホストへ通知。実装例は `examples/mission-bridge-host/`
 - データ保存先: `data/rooms/<id>.snapshot.json`(環境変数 `QC_DATA_DIR` で変更可)
 
 ## 開発
@@ -51,6 +54,16 @@ node scripts/add-user.mjs 見学者 <パスワード> viewer
 
 `config/users.json` にハッシュ化して保存される(Git 管理外)。ファイルを削除するとオープンモードに戻る。
 社内アカウント(Microsoft 365 等)でのログインは `server/src/auth.ts` を OIDC に差し替えて対応する想定。
+
+### Mission Bridge から埋め込む
+
+```bash
+QC_EMBED_KEY=<16文字以上の秘密> PORT=3000 npm start
+```
+
+Mission Bridge 側の手順とコードは `examples/mission-bridge-host/README.md`。
+注意: ブラウザの `<iframe>` で別サイトに埋め込む形は Cookie の SameSite 制約で動かない(HTTPS + SameSite=None が必要)。
+Electron の `WebContentsView` / `<webview>` はトップレベル扱いなので問題ない。
 
 ### kintone 連携の設定
 

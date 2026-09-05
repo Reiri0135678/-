@@ -175,3 +175,8 @@ button { font: inherit; }
 /* ---- カード内バッジ ---- */
 .qc-card__clip, .qc-card__k { font-size: 10px; font-weight: 400; margin-left: 6px; color: #6b7280; }
 .qc-card__k { color: #166534; }
+
+/* ---- 埋め込みモード(ホストアプリ内)---- */
+.app[data-embed='true'] .app__header { height: 36px; }
+.app[data-embed='true'] { grid-template-rows: 36px 1fr; }
+.app[data-embed='true'][data-drawer='true'] { grid-template-rows: 36px 1fr 240px; }

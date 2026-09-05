@@ -18,7 +18,7 @@ for (const [name, pw, role] of [['山田', 'pw-yamada', 'member'], ['佐藤', 'p
 }
 
 const server = spawn('npx', ['tsx', 'server/src/index.ts'], {
-  env: { ...process.env, PORT: String(PORT), QC_DATA_DIR: dataDir, QC_USERS_FILE: usersFile, KINTONE_MOCK: '1' },
+  env: { ...process.env, PORT: String(PORT), QC_DATA_DIR: dataDir, QC_USERS_FILE: usersFile, KINTONE_MOCK: '1', QC_EMBED_KEY: 'e2e-embed-key-0123456789' },
   stdio: ['ignore', 'pipe', 'inherit'],
   detached: true
 })
@@ -35,6 +35,7 @@ const waitFor = async (fn, ms = 20000) => {
     await new Promise((r) => setTimeout(r, 200))
   }
 }
+const cookieOf = async (page) => (await page.context().cookies()).map((c) => `${c.name}=${c.value}`).join('; ')
 const ok = (label, cond) => {
   console.log(`[e2e] ${cond ? 'ok ' : 'NG '} ${label}`)
   if (!cond) throw new Error(`failed: ${label}`)
@@ -172,6 +173,47 @@ try {
   ok('閲覧者のヘッダーに「閲覧のみ」', (await v.locator('.badge--warn').count()) === 1)
   ok('閲覧者には + 依頼 が無い', (await v.locator('[data-testid="sheet-add"]').count()) === 0)
   await v.context().close()
+
+  // 埋め込み連携(Mission Bridge 想定)
+  {
+    const rooms = await (await fetch(`${BASE}/api/rooms`, { headers: { cookie: await cookieOf(a) } })).json()
+    const boardId = rooms[0].id
+    const bad = await fetch(`${BASE}/api/auth/embed`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'wrong', name: '田中' }) })
+    ok('埋め込み: 鍵違いは 401', bad.status === 401)
+    const good = await fetch(`${BASE}/api/auth/embed`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: 'e2e-embed-key-0123456789', name: '田中', role: 'member' }) })
+    ok('埋め込み: トークン発行', good.ok)
+    const { token } = await good.json()
+
+    // Electron の WebContentsView / <webview> と同じくトップレベルで開き、preload 相当の initScript で postMessage を受け取る
+    const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } })
+    await ctx.addInitScript(() => {
+      window.__events = window.__events ?? []
+      addEventListener('message', (e) => {
+        if (e.data && e.data.source === 'qc-board') window.__events.push(e.data)
+      })
+    })
+    const host = await ctx.newPage()
+    await host.goto(`${BASE}/embed?token=${token}&board=${boardId}`)
+    await host.waitForFunction(() => !!window.__qcEditor && document.querySelector('.dot--online'))
+    ok('埋め込み: トークンでボードに入れる', (await host.locator('.app__meta').textContent()).includes('田中'))
+    ok('埋め込み: 縮小ヘッダー(埋め込みモード)', (await host.locator('.app[data-embed="true"]').count()) === 1)
+    const events = await waitFor(async () => {
+      const ev = await host.evaluate(() => window.__events.map((e) => e.event))
+      return ev.includes('ready') && ev.includes('board-opened') ? ev : null
+    })
+    ok(`埋め込み: ホストがイベント受信 (${[...new Set(events)].join(',')})`, true)
+    await host.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.select(ed.getCurrentPageShapes().find((s) => s.type === 'request-card').id)
+    })
+    ok('埋め込み: カード選択がホストへ通知', await waitFor(() => host.evaluate(() => window.__events.some((e) => e.event === 'card-selected' && e.shapeId))))
+    await host.goto(`${BASE}/`)
+    await host.waitForSelector('.rooms button')
+    ok('埋め込み: 一覧画面でもログアウトが出ない', (await host.locator('.who .link').count()) === 0)
+    const reuse = await fetch(`${BASE}/api/auth/token`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token }) })
+    ok('埋め込み: トークンは 1 回限り', reuse.status === 401)
+    await ctx.close()
+  }
 
   for (const p of [a, b]) {
     await p.evaluate(() => {

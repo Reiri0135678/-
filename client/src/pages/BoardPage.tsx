@@ -7,6 +7,8 @@ import { Board, type BoardStatus } from '../canvas/Board'
 import { Sidebar } from '../panel/Sidebar'
 import { RequestSheet } from '../panel/RequestSheet'
 import { roleLabel } from './Landing'
+import { isEmbed, notifyHost } from '../embed'
+import { useSingleSelection } from '../panel/useCards'
 
 const DRAWER_KEY = 'qc.drawerOpen'
 
@@ -51,13 +53,18 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
     })
   }
 
+  useEffect(() => {
+    if (user) notifyHost({ event: 'board-opened', roomId, title })
+  }, [user, roomId, title])
+
   if (!user) return <p className="muted center">読み込み中…</p>
 
   const demo = new URLSearchParams(window.location.search).get('demo') === '1'
   const readonly = user.role === 'viewer'
 
   return (
-    <div className="app" data-drawer={drawerOpen}>
+    <div className="app" data-drawer={drawerOpen} data-embed={isEmbed()}>
+      {editor && <SelectionNotifier editor={editor} roomId={roomId} />}
       <header className="app__header">
         <button className="link" onClick={() => navigate('/')}>
           ← ボード一覧
@@ -96,4 +103,17 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
       )}
     </div>
   )
+}
+
+/** 埋め込み時: 選択中の依頼カードをホストへ通知する */
+function SelectionNotifier({ editor, roomId }: { editor: Editor; roomId: string }): null {
+  const sel = useSingleSelection(editor)
+  const card = sel?.type === 'request-card' ? sel : null
+  const shapeId = card?.id ?? null
+  const partNo = card ? (card.props as { partNo: string }).partNo : undefined
+  const status = card ? (card.props as { status: string }).status : undefined
+  useEffect(() => {
+    notifyHost({ event: 'card-selected', roomId, shapeId, partNo, status })
+  }, [roomId, shapeId, partNo, status])
+  return null
 }

@@ -47,11 +47,17 @@ function verifyPassword(password: string, stored: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
+const EMBED_TOKEN_TTL_MS = 60_000
+
 export class Auth {
   private secret = ''
+  /** 埋め込み用ワンタイムトークン(token → user, 期限) */
+  private readonly embedTokens = new Map<string, { user: SessionUser; exp: number }>()
   constructor(
     private readonly usersFile: string,
-    private readonly secretFile: string
+    private readonly secretFile: string,
+    /** 外部アプリ(Mission Bridge 等)がユーザーを代理でログインさせるための共有鍵。未設定なら無効 */
+    private readonly embedKey: string | undefined
   ) {}
 
   async init(): Promise<void> {
@@ -87,6 +93,35 @@ export class Auth {
     const u = users.find((x) => x.name === name)
     if (!u || !password || !verifyPassword(password, u.hash)) return null
     return { name: u.name, role: u.role ?? 'member' }
+  }
+
+  // ---- 埋め込み連携(外部アプリからの代理ログイン) -------------------
+  embedEnabled(): boolean {
+    return !!this.embedKey && this.embedKey.length >= 16
+  }
+
+  /** 共有鍵を検証し、60 秒有効・1 回限りのトークンを発行する */
+  issueEmbedToken(key: string, name: string, role: Role): string | null {
+    if (!this.embedEnabled()) return null
+    const a = Buffer.from(key)
+    const b = Buffer.from(this.embedKey!)
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
+    name = name.trim()
+    if (!name || name.length > 40 || !(role in ROLE_RANK)) return null
+    // 期限切れを掃除
+    const now = Date.now()
+    for (const [t, v] of this.embedTokens) if (v.exp < now) this.embedTokens.delete(t)
+    const token = randomBytes(24).toString('base64url')
+    this.embedTokens.set(token, { user: { name, role }, exp: now + EMBED_TOKEN_TTL_MS })
+    return token
+  }
+
+  /** トークンをセッションに交換する(1 回限り) */
+  redeemEmbedToken(token: string): SessionUser | null {
+    const v = this.embedTokens.get(token)
+    this.embedTokens.delete(token)
+    if (!v || v.exp < Date.now()) return null
+    return v.user
   }
 
   // ---- セッション Cookie --------------------------------------------
