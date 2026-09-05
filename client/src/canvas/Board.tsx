@@ -2,9 +2,9 @@ import type { JSX } from 'react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { Layer, Rect, Stage, Transformer } from 'react-konva'
-import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, todayString, type DrawShape, type Shape } from '@shared/shapes'
-import { BoardEditor, newId, shapeBounds, type Point, type ToolId } from './editor'
+import { Circle, Layer, Line, Rect, Stage, Transformer } from 'react-konva'
+import { CARD_H, CARD_W, HIGHLIGHT_COLOR, defaultsFor, todayString, type ArrowShape, type DrawShape, type Shape } from '@shared/shapes'
+import { BoardEditor, bindingFor, newId, resolveArrow, shapeBounds, type Point, type ToolId } from './editor'
 import { EditorContext, useEditorSnapshot } from './hooks'
 import { ShapeView, shapeIdOf, type ShapeHandlers } from './shapes/ShapeView'
 import { Cursors } from './Cursors'
@@ -78,6 +78,8 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   const [size, setSize] = useState({ w: 800, h: 600 })
   const [draft, setDraft] = useState<Shape | null>(null)
   const [marquee, setMarquee] = useState<{ a: Point; b: Point } | null>(null)
+  const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
+  const [bindTarget, setBindTarget] = useState<string | null>(null)
   const [spaceDown, setSpaceDown] = useState(false)
   const gesture = useRef<
     | { kind: 'draw'; points: number[] }
@@ -88,6 +90,11 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   >(null)
   const dragStart = useRef<Map<string, Point> | null>(null)
   const demoSeeded = useRef(false)
+
+  // ---- 描画途中の図形を相手にも見せる -----------------------------------------
+  useEffect(() => {
+    editor.setDraft(draft)
+  }, [draft, editor])
 
   // ---- 外部通知 --------------------------------------------------------
   useEffect(() => onStatus?.(snap.status), [snap.status, onStatus])
@@ -122,10 +129,12 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     const tr = trRef.current
     const layer = layerRef.current
     if (!tr || !layer) return
+    const single = snap.selection.length === 1 ? snap.byId.get(snap.selection[0]!) : undefined
     const nodes = snap.selection
       .map((id) => layer.findOne(`#${id}`))
       .filter((n): n is Konva.Node => !!n)
-    tr.nodes(snap.tool === 'select' && !snap.readonly ? nodes : [])
+    // 矢印 1 本の選択時は端点ハンドルで操作する(Transformer は出さない)
+    tr.nodes(snap.tool === 'select' && !snap.readonly && single?.type !== 'arrow' ? nodes : [])
     tr.getLayer()?.batchDraw()
   }, [snap.selection, snap.tool, snap.readonly, snap.version])
 
@@ -175,13 +184,27 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         const s0 = start.get(shape.id)
         if (!s0) return
         const node = e.target
-        const dx = node.x() - s0.x
-        const dy = node.y() - s0.y
+        let dx = node.x() - s0.x
+        let dy = node.y() - s0.y
+        // スナップ: 他の図形の端・中心に揃える(画面上 8px 以内)
+        if (!e.evt.altKey) {
+          const cur = editor.getShape(shape.id)
+          if (cur) {
+            const moving = shapeBounds({ ...cur, x: s0.x + dx, y: s0.y + dy } as Shape)
+            const snapR = snapTo(moving, editor.getShapes().filter((o) => !start.has(o.id) && !(o.type === 'request-card' && o.archived)), 8 / editor.getSnapshot().camera.scale)
+            dx += snapR.dx
+            dy += snapR.dy
+            node.x(s0.x + dx)
+            node.y(s0.y + dy)
+            setGuides(snapR.guides)
+          }
+        } else setGuides({ x: [], y: [] })
         editor.updateShapes([...start].map(([id, p]) => ({ id, patch: { x: p.x + dx, y: p.y + dy } })))
       },
       onDragEnd(shape, e) {
         const start = dragStart.current
         dragStart.current = null
+        setGuides({ x: [], y: [] })
         const node = e.target
         if (!start) {
           editor.updateShape(shape.id, { x: node.x(), y: node.y() })
@@ -338,6 +361,15 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
           d.w = 120
           d.h = 80
         }
+      }
+      if (d.type === 'arrow') {
+        // 端点が図形の上なら吸着させる
+        const sShape = editor.shapeAt(g.start)
+        const eShape = editor.shapeAt(end)
+        const a = d as ArrowShape
+        a.startBind = sShape ? bindingFor(sShape, g.start) : null
+        a.endBind = eShape && eShape.id !== sShape?.id ? bindingFor(eShape, end) : null
+        if (a.startBind || a.endBind) Object.assign(a, resolveArrow(a, (id) => editor.getShape(id)))
       }
       const { id, z: _z, by: _b, updatedAt: _u, ...rest } = d
       void _z
@@ -641,7 +673,22 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
             />
           )}
         </Layer>
+        <Layer>
+          {snap.tool === 'select' && !snap.readonly && snap.selection.length === 1 && snap.byId.get(snap.selection[0]!)?.type === 'arrow' && (
+            <ArrowHandles editor={editor} arrow={snap.byId.get(snap.selection[0]!) as ArrowShape} scale={snap.camera.scale} onTarget={setBindTarget} />
+          )}
+        </Layer>
         <Layer listening={false}>
+          {guides.x.map((x) => (
+            <Line key={`gx${x}`} points={[x, -1e5, x, 1e5]} stroke="#d97757" strokeWidth={1 / snap.camera.scale} dash={[6 / snap.camera.scale, 4 / snap.camera.scale]} />
+          ))}
+          {guides.y.map((y) => (
+            <Line key={`gy${y}`} points={[-1e5, y, 1e5, y]} stroke="#d97757" strokeWidth={1 / snap.camera.scale} dash={[6 / snap.camera.scale, 4 / snap.camera.scale]} />
+          ))}
+          {bindTarget && snap.byId.get(bindTarget) && (() => {
+            const b = shapeBounds(snap.byId.get(bindTarget)!)
+            return <Rect x={b.x - 4} y={b.y - 4} width={b.w + 8} height={b.h + 8} stroke="#6a9bcc" strokeWidth={2 / snap.camera.scale} dash={[4, 3]} cornerRadius={6} />
+          })()}
           <Cursors collaborators={snap.collaborators} scale={snap.camera.scale} />
         </Layer>
       </Stage>
@@ -655,5 +702,92 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         </div>
       )}
     </div>
+  )
+}
+
+
+/** 移動中の矩形を、他の図形の端・中心に揃える。返り値は補正量とガイド線の位置 */
+function snapTo(
+  moving: { x: number; y: number; w: number; h: number },
+  others: Shape[],
+  threshold: number
+): { dx: number; dy: number; guides: { x: number[]; y: number[] } } {
+  const mx = [moving.x, moving.x + moving.w / 2, moving.x + moving.w]
+  const my = [moving.y, moving.y + moving.h / 2, moving.y + moving.h]
+  let bestX: { d: number; at: number } | null = null
+  let bestY: { d: number; at: number } | null = null
+  for (const o of others) {
+    const b = shapeBounds(o)
+    const ox = [b.x, b.x + b.w / 2, b.x + b.w]
+    const oy = [b.y, b.y + b.h / 2, b.y + b.h]
+    for (const a of mx) for (const t of ox) {
+      const d = t - a
+      if (Math.abs(d) <= threshold && (!bestX || Math.abs(d) < Math.abs(bestX.d))) bestX = { d, at: t }
+    }
+    for (const a of my) for (const t of oy) {
+      const d = t - a
+      if (Math.abs(d) <= threshold && (!bestY || Math.abs(d) < Math.abs(bestY.d))) bestY = { d, at: t }
+    }
+  }
+  return { dx: bestX?.d ?? 0, dy: bestY?.d ?? 0, guides: { x: bestX ? [bestX.at] : [], y: bestY ? [bestY.at] : [] } }
+}
+
+/** 矢印の端点ハンドル。ドラッグで端点を動かし、図形の上で離すと吸着する */
+function ArrowHandles({ editor, arrow, scale, onTarget }: { editor: BoardEditor; arrow: ArrowShape; scale: number; onTarget: (id: string | null) => void }): JSX.Element {
+  const r = 7 / scale
+  const start = { x: arrow.x, y: arrow.y }
+  const end = { x: arrow.x + arrow.dx, y: arrow.y + arrow.dy }
+  const move = (which: 'start' | 'end', p: Point, commit: boolean) => {
+    const target = editor.shapeAt(p, [arrow.id])
+    onTarget(commit ? null : target?.id ?? null)
+    const cur = editor.getShape<ArrowShape>(arrow.id)
+    if (!cur) return
+    const next: ArrowShape = { ...cur }
+    if (which === 'start') {
+      next.startBind = target ? bindingFor(target, p) : null
+      if (!target) {
+        next.dx = cur.x + cur.dx - p.x
+        next.dy = cur.y + cur.dy - p.y
+        next.x = p.x
+        next.y = p.y
+      }
+    } else {
+      next.endBind = target ? bindingFor(target, p) : null
+      if (!target) {
+        next.dx = p.x - cur.x
+        next.dy = p.y - cur.y
+      }
+    }
+    const pos = resolveArrow(next, (id) => editor.getShape(id))
+    editor.updateShape<ArrowShape>(arrow.id, { ...pos, startBind: next.startBind, endBind: next.endBind })
+  }
+  const handle = (which: 'start' | 'end', p: Point) => (
+    <Circle
+      key={which}
+      x={p.x}
+      y={p.y}
+      radius={r}
+      fill="#fffefb"
+      stroke="#d97757"
+      strokeWidth={2 / scale}
+      draggable
+      shapeId={arrow.id}
+      data-handle={which}
+      onDragMove={(e) => move(which, { x: e.target.x(), y: e.target.y() }, false)}
+      onDragEnd={(e) => {
+        move(which, { x: e.target.x(), y: e.target.y() }, true)
+        // 位置は図形データから描き直すのでノード位置は戻す
+        e.target.position(which === 'start' ? { x: arrow.x, y: arrow.y } : { x: arrow.x + arrow.dx, y: arrow.y + arrow.dy })
+      }}
+      onPointerDown={(e) => {
+        e.cancelBubble = true
+      }}
+    />
+  )
+  return (
+    <>
+      {handle('start', start)}
+      {handle('end', end)}
+    </>
   )
 }

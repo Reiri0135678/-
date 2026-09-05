@@ -140,6 +140,60 @@ try {
   await a.keyboard.press('Control+Shift+z')
   ok('Ctrl+Shift+Z でやり直し', await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.lot === 'L-EDITED'))))
 
+  // スナップ・矢印の吸着・描画中のリアルタイム表示
+  {
+    const board = await a.locator('.board').boundingBox()
+    const pt = (x, y) => [board.x + x, board.y + y]
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.selectNone()
+      ed.setCamera({ x: 0, y: 0, scale: 1 })
+      ed.createShape({ id: 's_rectA', type: 'rect', x: 400, y: 420, w: 120, h: 80 })
+      ed.createShape({ id: 's_rectB', type: 'rect', x: 700, y: 445, w: 120, h: 80 })
+    })
+    await a.waitForTimeout(200)
+    // B を A の左端から 5px ずれた位置へドラッグ → 左端が揃う(x=400)
+    await a.mouse.move(...pt(760, 485))
+    await a.mouse.down()
+    await a.mouse.move(...pt(700, 485), { steps: 6 })
+    await a.mouse.move(...pt(465, 485), { steps: 6 })
+    await a.mouse.up()
+    const rb = await a.evaluate(() => window.__qcEditor.getShape('s_rectB'))
+    ok(`スナップで左端が揃う (x=${rb.x})`, rb.x === 400)
+    await a.evaluate(() => window.__qcEditor.updateShape('s_rectB', { x: 700, y: 445 }))
+
+    // 矢印ツールで A の中から B の中へドラッグ → 両端が吸着し、外周まで引かれる
+    await a.evaluate(() => window.__qcEditor.setTool('arrow'))
+    await a.mouse.move(...pt(460, 460))
+    await a.mouse.down()
+    await a.mouse.move(...pt(760, 485), { steps: 8 })
+    await a.mouse.up()
+    const arrow = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'arrow' && s.startBind && s.endBind) || null))
+    ok(`矢印が両端の図形に吸着 (${arrow.startBind.id} → ${arrow.endBind.id})`, arrow.startBind.id === 's_rectA' && arrow.endBind.id === 's_rectB' && arrow.x >= 520 && arrow.x <= 527 && arrow.x + arrow.dx >= 693 && arrow.x + arrow.dx <= 700)
+    // 吸着先を動かすと矢印が追従(B 側でも同じ)
+    await a.evaluate(() => window.__qcEditor.updateShape('s_rectB', { x: 700, y: 600 }))
+    const moved = await waitFor(() => b.evaluate((id) => { const s = window.__qcEditor.getShape(id); return s && s.y + s.dy > 560 ? s : null }, arrow.id))
+    ok('吸着先を動かすと矢印の終点が追従(相手の画面でも)', moved.y + moved.dy >= 594 && moved.y + moved.dy <= 640)
+    // 吸着先を消すと吸着が外れる(矢印は残る)
+    await a.evaluate(() => window.__qcEditor.deleteShapes(['s_rectB']))
+    const unbound = await waitFor(() => a.evaluate((id) => { const s = window.__qcEditor.getShape(id); return s && s.endBind === null ? s : null }, arrow.id))
+    ok('吸着先を削除すると吸着が外れる', !!unbound && unbound.startBind?.id === 's_rectA')
+    await a.evaluate(() => window.__qcEditor.setTool('select'))
+
+    // B がペンで描いている途中の線が A に見える
+    const boardB = await b.locator('.board').boundingBox()
+    await b.evaluate(() => { window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }); window.__qcEditor.setTool('draw') })
+    await b.mouse.move(boardB.x + 100, boardB.y + 300)
+    await b.mouse.down()
+    await b.mouse.move(boardB.x + 200, boardB.y + 350, { steps: 10 })
+    await b.mouse.move(boardB.x + 300, boardB.y + 300, { steps: 10 })
+    const live = await waitFor(() => a.evaluate(() => window.__qcEditor.getCollaborators().find((c) => c.draft && c.draft.type === 'draw')?.draft || null))
+    ok(`描画途中の線が相手に見える (${live.points.length / 2} 点)`, live.points.length >= 8)
+    await b.mouse.up()
+    ok('書き終えると途中表示が消え、確定した線が届く', await waitFor(() => a.evaluate(() => !window.__qcEditor.getCollaborators().some((c) => c.draft) && window.__qcEditor.getShapes().filter((s) => s.type === 'draw').length >= 2)))
+    await b.evaluate(() => window.__qcEditor.setTool('select'))
+  }
+
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
   ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))

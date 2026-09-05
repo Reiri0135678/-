@@ -75,6 +75,12 @@ export interface NoteShape extends ShapeBase {
   text: string
   color: string
 }
+/** 矢印の端点を図形に吸着させる情報。nx/ny は図形内の相対位置(0〜1) */
+export interface ArrowBinding {
+  id: string
+  nx: number
+  ny: number
+}
 export interface ArrowShape extends ShapeBase {
   type: 'arrow'
   /** 始点は (x,y)、終点は (x+dx, y+dy) */
@@ -82,6 +88,9 @@ export interface ArrowShape extends ShapeBase {
   dy: number
   color: string
   size: number
+  /** 吸着先(無ければ null)。吸着先が動くと端点が追従する */
+  startBind: ArrowBinding | null
+  endBind: ArrowBinding | null
 }
 export interface RectShape extends ShapeBase {
   type: 'rect'
@@ -170,7 +179,7 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
     case 'note':
       return { ...base, type, w: 180, h: 180, text: '', color: NOTE_COLORS[0] }
     case 'arrow':
-      return { ...base, type, dx: 100, dy: 0, color: DEFAULT_COLOR, size: 3 }
+      return { ...base, type, dx: 100, dy: 0, color: DEFAULT_COLOR, size: 3, startBind: null, endBind: null }
     case 'rect':
       return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2 }
     case 'ellipse':

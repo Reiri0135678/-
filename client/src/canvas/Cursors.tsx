@@ -1,12 +1,18 @@
 import type { JSX } from 'react'
 import { Group, Line, Rect, Text } from 'react-konva'
 import type { Collaborator } from './editor'
+import { ShapeView } from './shapes/ShapeView'
 
 /** 他の参加者のカーソルと名前。ズームに関係なく同じ大きさで表示する */
 export function Cursors({ collaborators, scale }: { collaborators: Collaborator[]; scale: number }): JSX.Element {
   const k = 1 / scale
   return (
     <>
+      {collaborators
+        .filter((c) => c.draft)
+        .map((c) => (
+          <ShapeView key={`draft-${c.clientId}`} shape={{ ...c.draft!, id: `draft-${c.clientId}` }} draft draggable={false} />
+        ))}
       {collaborators
         .filter((c) => c.cursor)
         .map((c) => (

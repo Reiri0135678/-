@@ -5,6 +5,8 @@ import {
   NOTE_COLORS,
   defaultsFor,
   normalizeShape,
+  type ArrowBinding,
+  type ArrowShape,
   type Shape,
   type ShapeType
 } from '@shared/shapes'
@@ -45,6 +47,8 @@ export interface Collaborator {
   color: string
   cursor: Point | null
   selection: string[]
+  /** 描画途中の図形(ペンの線など)。書き終える前から相手に見せる */
+  draft: Shape | null
 }
 export interface Style {
   color: string
@@ -202,7 +206,8 @@ export class BoardEditor {
         name: u.name,
         color: u.color,
         cursor: (state['cursor'] as Point | null) ?? null,
-        selection: (state['selection'] as string[]) ?? []
+        selection: (state['selection'] as string[]) ?? [],
+        draft: (state['draft'] as Shape | null) ?? null
       })
     })
     this.patch({ collaborators: list })
@@ -253,6 +258,21 @@ export class BoardEditor {
 
   updateShapes(updates: Array<{ id: string; patch: Partial<Shape> }>): void {
     if (this.snapshot.readonly) return
+    // 位置・大きさが変わる図形に吸着している矢印は、変更後の位置に合わせて端点を動かす
+    const moved = new Set(updates.filter((u) => ['x', 'y', 'w', 'h', 'rotation', 'dx', 'dy'].some((k) => k in u.patch)).map((u) => u.id))
+    if (moved.size) {
+      const next = new Map(this.snapshot.byId)
+      for (const { id, patch } of updates) {
+        const cur = next.get(id)
+        if (cur) next.set(id, { ...cur, ...patch } as Shape)
+      }
+      for (const s of this.snapshot.shapes) {
+        if (s.type !== 'arrow' || updates.some((u) => u.id === s.id)) continue
+        if (!((s.startBind && moved.has(s.startBind.id)) || (s.endBind && moved.has(s.endBind.id)))) continue
+        const r = resolveArrow(s, (id) => next.get(id))
+        updates = [...updates, { id: s.id, patch: r }]
+      }
+    }
     this.doc.transact(() => {
       for (const { id, patch } of updates) {
         const m = this.shapesMap.get(id)
@@ -288,6 +308,14 @@ export class BoardEditor {
     ids = others
     this.doc.transact(() => {
       for (const id of ids) this.shapesMap.delete(id)
+      // 消えた図形に吸着していた矢印は吸着を外す
+      this.shapesMap.forEach((m) => {
+        if (m.get('type') !== 'arrow') return
+        for (const k of ['startBind', 'endBind'] as const) {
+          const b = m.get(k) as ArrowBinding | null
+          if (b && ids.includes(b.id)) m.set(k, null)
+        }
+      })
       // 図面が消えたらカードの紐付けからも外す
       this.shapesMap.forEach((m) => {
         const linked = m.get('linkedShapeIds')
@@ -419,6 +447,93 @@ export class BoardEditor {
   getCollaborators(): Collaborator[] {
     return this.snapshot.collaborators
   }
+  private draftTimer: number | null = null
+  private pendingDraft: Shape | null | undefined
+  /** 描画途中の図形を在席情報に載せて相手に見せる(40ms 間隔) */
+  setDraft(shape: Shape | null): void {
+    this.pendingDraft = shape
+    if (shape === null) {
+      if (this.draftTimer !== null) {
+        clearTimeout(this.draftTimer)
+        this.draftTimer = null
+      }
+      this.provider.awareness.setLocalStateField('draft', null)
+      return
+    }
+    if (this.draftTimer !== null) return
+    this.draftTimer = window.setTimeout(() => {
+      this.draftTimer = null
+      this.provider.awareness.setLocalStateField('draft', this.pendingDraft ?? null)
+    }, 40)
+  }
+
+  /** 点の下にある図形(最前面)。矢印の吸着先を探すのに使う */
+  shapeAt(p: Point, exclude: string[] = []): Shape | null {
+    const list = this.snapshot.shapes
+    for (let i = list.length - 1; i >= 0; i--) {
+      const s = list[i]!
+      if (exclude.includes(s.id) || s.type === 'arrow' || s.type === 'draw') continue
+      if (s.type === 'request-card' && s.archived) continue
+      const b = shapeBounds(s)
+      if (p.x >= b.x && p.x <= b.x + b.w && p.y >= b.y && p.y <= b.y + b.h) return s
+    }
+    return null
+  }
+}
+
+/** 吸着情報から矢印の x,y,dx,dy を求める。端点は吸着先の外周まで引く */
+export function resolveArrow(a: ArrowShape, get: (id: string) => Shape | undefined): Pick<ArrowShape, 'x' | 'y' | 'dx' | 'dy'> {
+  let start: Point = { x: a.x, y: a.y }
+  let end: Point = { x: a.x + a.dx, y: a.y + a.dy }
+  const sShape = a.startBind ? get(a.startBind.id) : undefined
+  const eShape = a.endBind ? get(a.endBind.id) : undefined
+  if (sShape && a.startBind) start = anchorPoint(sShape, a.startBind)
+  if (eShape && a.endBind) end = anchorPoint(eShape, a.endBind)
+  if (eShape) end = clipToBounds(start, end, shapeBounds(eShape), 6)
+  if (sShape) start = clipToBounds(end, start, shapeBounds(sShape), 6)
+  return { x: start.x, y: start.y, dx: end.x - start.x, dy: end.y - start.y }
+}
+
+export function anchorPoint(s: Shape, b: ArrowBinding): Point {
+  const r = shapeBounds(s)
+  return { x: r.x + r.w * b.nx, y: r.y + r.h * b.ny }
+}
+
+export function bindingFor(s: Shape, p: Point): ArrowBinding {
+  const r = shapeBounds(s)
+  return { id: s.id, nx: r.w ? Math.min(1, Math.max(0, (p.x - r.x) / r.w)) : 0.5, ny: r.h ? Math.min(1, Math.max(0, (p.y - r.y) / r.h)) : 0.5 }
+}
+
+/** from → to の線分が矩形(pad で外側に広げたもの)に入る点を返す。入らなければ to のまま */
+function clipToBounds(from: Point, to: Point, r: { x: number; y: number; w: number; h: number }, pad: number): Point {
+  const x0 = r.x - pad
+  const y0 = r.y - pad
+  const x1 = r.x + r.w + pad
+  const y1 = r.y + r.h + pad
+  const inside = (p: Point) => p.x >= x0 && p.x <= x1 && p.y >= y0 && p.y <= y1
+  if (inside(from)) return to
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  let tMin = Infinity
+  const consider = (t: number, ok: boolean) => {
+    if (ok && t >= 0 && t <= 1 && t < tMin) tMin = t
+  }
+  if (dx !== 0) {
+    for (const X of [x0, x1]) {
+      const t = (X - from.x) / dx
+      const y = from.y + dy * t
+      consider(t, y >= y0 && y <= y1)
+    }
+  }
+  if (dy !== 0) {
+    for (const Y of [y0, y1]) {
+      const t = (Y - from.y) / dy
+      const x = from.x + dx * t
+      consider(t, x >= x0 && x <= x1)
+    }
+  }
+  if (!Number.isFinite(tMin)) return to
+  return { x: from.x + dx * tMin, y: from.y + dy * tMin }
 }
 
 /** 図形の外接矩形(回転は無視) */
