@@ -17,9 +17,11 @@
 | 11 | `11-quiz.html` | 名称当てクイズ（カタログのデータから出題、層・問題数・英語名モード） | 完成 |
 | 12 | `12-electron.html` | Electron 実装リファレンス（参照用、コードは実行されない） | 完成 |
 | 13 | `13-kintone.html` | kintone 連携リファレンス（参照用、上限値は公式で要確認） | 完成 |
+| 14 | `14-playground.html` | プレイグラウンド：各デモの HTML / CSS / JS を編集して即実行（`assets/demo-data.js` を `build.mjs` が生成） | 完成 |
 | 07 | `07-implementation-plan.md` | 実装計画：部品ライブラリ化（完了）と Mission Bridge への適用手順・確認事項 | 計画 |
 | - | `assets/guide.css` / `assets/guide.js` / `assets/catalog-data.js` | 共通スタイル、目次生成、コード表示ランタイム、カタログデータ（01 と 11 が共有） | - |
 | - | `../ui-kit/` | デモから切り出した再利用部品（15モジュール、テスト26件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
+| - | `build.mjs` | デモ抽出（`assets/demo-data.js`）と検索索引（`assets/search-index.js`）の生成。デモを編集したら `npm run build:docs` | - |
 | - | `test/verify.mjs` | 教材ページの検証（JSエラー、リンク、デモ数、代表操作、タッチスワイプ）。`npm run test:docs` | - |
 
 ## デモページの読み方
@@ -27,6 +29,11 @@
 1. **動作の意味**：その操作が何をするものか、何と混同しやすいか
 2. **操作してみる**：ページ上で実際に触れる
 3. **コードを見る**：折りたたみを開くと、そのデモを動かしている CSS / JS の実物が表示される（表示コード＝実行コード。`data-code` 属性の付いた `<style>` / `<script>` を `guide.js` が転記している）
+
+## 学習の補助
+- `00-index.html` の横断検索：全ページの見出しと説明を検索
+- カタログの「理解した」チェック：進捗はこの端末のブラウザ（`localStorage`）に保存。未習得のみ表示できる
+- テーマ：ヘッダーのボタンで OS設定／ダーク／ライトを切替。デモ領域は配色固定
 
 ## 前提・制約
 - 動作確認は Chromium 系ブラウザで実施。View Transitions（31）・`popover` 等は対応ブラウザでのみ動き、非対応時はフォールバックする

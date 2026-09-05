@@ -12,6 +12,7 @@
 ## コマンド
 ```
 npm run build       # ui-kit/*.js → ui-kit/dist/ui-kit.js（依存なし）
+npm run build:docs  # 教材のデモ抽出（プレイグラウンド用）と検索索引の生成（依存なし）
 npm test            # ui-kit のブラウザテスト（Playwright + Chromium が必要）
 npm run test:docs   # 教材ページの読み込み・リンク・主要操作の検証（同上）
 ```

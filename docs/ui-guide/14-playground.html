@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>プレイグラウンド</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/demo-data.js"></script>
+<style>
+  .tierF { background: #475569; }
+  .pg { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 14px 20px; max-width: 1400px; margin: 0 auto; }
+  .pg .editors { display: grid; grid-template-rows: auto 1fr 1fr 1fr; gap: 8px; min-height: calc(100vh - 140px); }
+  .pg textarea { width: 100%; height: 100%; min-height: 120px; font: 12.5px/1.5 ui-monospace, Menlo, Consolas, monospace; tab-size: 2; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--code); color: #e2e8f0; resize: vertical; white-space: pre; }
+  .pg label.ed { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-height: 0; }
+  .pg iframe { width: 100%; height: 100%; min-height: 480px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .pg .preview { display: flex; flex-direction: column; gap: 8px; }
+  .pg .desc { font-size: 13px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+  .pg .desc .how { color: var(--muted); margin: 4px 0 0; }
+  .err { color: #dc2626; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+  @media (max-width: 900px) { .pg { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>プレイグラウンド <span class="tier tierF">編集して即実行</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="09-exercises.html">課題</a></nav>
+  <select id="pick" style="margin-left:auto;max-width:360px"></select>
+  <button id="run" class="primary">実行（Ctrl+Enter）</button>
+  <button id="reset">元に戻す</button>
+  <a id="back" href="#" style="font-size:13px">元のデモへ</a>
+</header>
+<div class="pg">
+  <div class="editors">
+    <div class="desc"><b id="d-title"></b><p id="d-what" style="margin:4px 0 0"></p><p class="how" id="d-how"></p></div>
+    <label class="ed">HTML（デモ領域）<textarea id="ed-html" spellcheck="false"></textarea></label>
+    <label class="ed">CSS<textarea id="ed-css" spellcheck="false"></textarea></label>
+    <label class="ed">JavaScript（$ / $$ / logTo が使える）<textarea id="ed-js" spellcheck="false"></textarea></label>
+  </div>
+  <div class="preview">
+    <iframe id="frame" title="実行結果"></iframe>
+    <div class="err" id="err"></div>
+    <p class="note">練習課題（09）の解答をここで試せる。書き換えは保存されない（再読込で元のデモに戻る）。iframe 内では <code>localStorage</code> と <code>BroadcastChannel</code> も動くので、75・80・81・85 も試せる。</p>
+  </div>
+</div>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const pick = $('#pick'), frame = $('#frame'), err = $('#err');
+  const byId = Object.fromEntries(DEMOS.map(d => [d.id, d]));
+  // ページごとに optgroup
+  const groups = new Map(); DEMOS.forEach(d => { if (!groups.has(d.page)) groups.set(d.page, []); groups.get(d.page).push(d); });
+  pick.innerHTML = [...groups].map(([page, list]) => `<optgroup label="${list[0].pageTitle}">${list.map(d => `<option value="${d.id}">${d.title}</option>`).join('')}</optgroup>`).join('');
+  let current = null;
+  const load = id => {
+    current = byId[id] || DEMOS[0]; pick.value = current.id;
+    $('#d-title').textContent = current.title; $('#d-what').textContent = current.what; $('#d-how').textContent = current.how;
+    $('#ed-html').value = current.html; $('#ed-css').value = current.css; $('#ed-js').value = current.js;
+    $('#back').href = `${current.page}#${current.id}`; history.replaceState(null, '', '#' + current.id);
+    run();
+  };
+  const run = () => {
+    err.textContent = '';
+    // srcdoc は親と同じ基準 URL を持つので、相対パスの guide.css / guide.js がそのまま読める
+    frame.srcdoc = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="assets/guide.css"><script src="assets/guide.js"><\/script>
+<style>body{padding:14px;background:#f6f7f9}section.demo{margin:0}<\/style><style>${$('#ed-css').value}<\/style></head>
+<body><section class="demo" id="${current.id}">${$('#ed-html').value}</section>
+<script>window.onerror=(m,s,l,c)=>{parent.postMessage({pgError:m+' (行 '+l+')'},'*')};try{${$('#ed-js').value}\n}catch(e){parent.postMessage({pgError:String(e)},'*')}<\/script></body></html>`;
+  };
+  window.addEventListener('message', e => { if (e.data?.pgError) err.textContent = 'エラー: ' + e.data.pgError; });
+  pick.onchange = () => load(pick.value);
+  $('#run').onclick = run;
+  $('#reset').onclick = () => load(current.id);
+  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
+  // textarea で Tab をインデントに
+  document.querySelectorAll('textarea').forEach(t => t.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); const s = t.selectionStart; t.setRangeText('  ', s, t.selectionEnd, 'end'); } }));
+  load((location.hash || '#n02').slice(1));
+})();
+</script>
+</body>
+</html>

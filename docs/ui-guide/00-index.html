@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UI操作レクチャー 入口</title>
 <link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<script src="assets/search-index.js"></script>
 <style>
   main.single { max-width: 900px; margin: 0 auto; padding: 24px; }
   .path { counter-reset: step; }
@@ -15,6 +17,8 @@
   table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--card); }
   th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
   th { background: #f1f5f9; }
+  .gres { display: grid; gap: 6px; margin-bottom: 8px; } .gres a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; text-decoration: none; color: var(--text); font-size: 13px; }
+  .gres a b { color: var(--accent); } .gres a small { color: var(--muted); } .gres mark { background: #fde68a; padding: 0; }
   .tierD { background: #7c3aed; } .tierE { background: #db2777; } .tierF { background: #475569; }
 </style>
 </head>
@@ -22,6 +26,10 @@
 <header class="top"><h1>UI操作レクチャー資料（バニラJS / HTML）</h1></header>
 <main class="single">
   <div class="lead">フロントエンドUIの「操作の名称」と「実際の動き」を対応づける教材。依存ライブラリなし。すべてのページはこのフォルダをそのままブラウザで開けば動く（サーバ不要）。</div>
+
+  <h2 style="font-size:17px">横断検索</h2>
+  <div class="row"><input id="gq" type="search" placeholder="全ページの見出し・説明を検索（例: 慣性, revision, stopPropagation, z-index）" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px"><span class="readout" id="gcount"></span></div>
+  <div id="gres" class="gres"></div>
 
   <h2 style="font-size:17px">おすすめの順路</h2>
   <div class="path">
@@ -34,6 +42,7 @@
     <div class="step"><h3><a href="06-effects.html">E：演出・体感の上位効果（63〜70）</a> <span class="t tierE">E</span></h3><p>シェアードエレメント遷移、スタガー、マイクロインタラクション、ぼかしと性能…。最後に、控えめに。</p></div>
     <div class="step"><h3><a href="10-accessibility.html">アクセシビリティ</a> <span class="t tierF">検査</span></h3><p>キーボード順路の可視化、名前のない操作要素の検出、コントラスト計算、aria-live、環境設定の検出、チェックリスト。</p></div>
     <div class="step"><h3><a href="11-quiz.html">名称当てクイズ</a> <span class="t tierF">確認</span></h3><p>説明文から名称を4択で当てる。間違えた項目はデモへのリンクが残る。層と問題数を選べる。</p></div>
+    <div class="step"><h3><a href="14-playground.html">プレイグラウンド</a> <span class="t tierF">実験</span></h3><p>デモのHTML／CSS／JSをその場で書き換えて実行。各デモの「コードを見る」からも飛べる。練習課題の解答を試す場所。</p></div>
     <div class="step"><h3><a href="09-exercises.html">練習課題</a> <span class="t tierF">演習</span></h3><p>デモのコードを改変して仕様を満たす12問。ヒントと解答例つき。</p></div>
   </div>
 
@@ -58,5 +67,21 @@
   </table>
   <p class="note">動作確認は Chromium 系ブラウザ。View Transitions・<code>animation-timeline</code>・<code>popover</code> は対応ブラウザでのみ本来の動きになり、非対応では即時切替・静的表示にフォールバックする。</p>
 </main>
+<script>
+(() => {
+  const q = document.getElementById('gq'), res = document.getElementById('gres'), count = document.getElementById('gcount');
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const mark = (text, terms) => { let h = esc(text); terms.forEach(t => { h = h.replace(new RegExp(esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); }); return h; };
+  let timer;
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
+    const terms = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) { res.innerHTML = ''; count.textContent = ''; return; }
+    const hits = SEARCH_INDEX.map(e => { const hay = (e.title + ' ' + e.text).toLowerCase(); const score = terms.reduce((a, t) => a + (e.title.toLowerCase().includes(t) ? 3 : 0) + (hay.includes(t) ? 1 : 0), 0); return { e, score }; })
+      .filter(h => terms.every(t => (h.e.title + ' ' + h.e.text).toLowerCase().includes(t))).sort((a, b) => b.score - a.score).slice(0, 30);
+    count.textContent = `${hits.length} 件`;
+    res.innerHTML = hits.map(({ e }) => `<a href="${e.page}${e.id ? '#' + e.id : ''}"><b>${mark(e.title, terms)}</b> <small>— ${e.pageTitle}</small><br>${mark(e.text.slice(0, 160), terms)}…</a>`).join('') || '<div class="note">該当なし</div>';
+  }, 200); });
+})();
+</script>
 </body>
 </html>

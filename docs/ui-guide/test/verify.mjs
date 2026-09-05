@@ -14,6 +14,15 @@ const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' }).catch(() => chromium.launch());
 const url = f => 'file://' + path.join(dir, f);
 const results = []; const ok = (name, pass, detail = '') => results.push({ name, pass, detail });
+// 14-playground.html#id はアンカーではなくデモの ID（demo-data.js に存在すればよい）
+const demoIds = new Set([...fs.readFileSync(path.join(dir, 'assets', 'demo-data.js'), 'utf8').matchAll(/"id":"(\w+)"/g)].map(m => m[1]));
+
+// 0: 生成物（demo-data / search-index）が最新か（build.mjs を一時出力と比較）
+{ const { execFileSync } = await import('node:child_process'); const os = await import('node:os');
+  const before = ['demo-data.js', 'search-index.js'].map(f => fs.readFileSync(path.join(dir, 'assets', f), 'utf8'));
+  execFileSync(process.execPath, [path.join(dir, 'build.mjs')], { stdio: 'ignore' });
+  const after = ['demo-data.js', 'search-index.js'].map(f => fs.readFileSync(path.join(dir, 'assets', f), 'utf8'));
+  ok('生成物が最新（npm run build:docs 済み）', before[0] === after[0] && before[1] === after[1], '再生成して差分をコミットしてください'); }
 
 // 1〜3: 全ページ
 for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.html')).sort()) {
@@ -21,7 +30,7 @@ for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.html')).sort()) {
   await p.goto(url(f)); await p.waitForTimeout(300);
   ok(`${f}: JSエラーなし`, errs.length === 0, errs.join(' | '));
   const links = await p.$$eval('a[href]', a => [...new Set(a.map(x => x.getAttribute('href')).filter(h => !/^https?:/.test(h)))]);
-  const missing = links.filter(l => { const [file, hash] = l.split('#'); const t = path.join(dir, file || f); return !fs.existsSync(t) || (hash && !fs.readFileSync(t, 'utf8').includes(`id="${hash}"`)); });
+  const missing = links.filter(l => { const [file, hash] = l.split('#'); if (file === '14-playground.html') return hash ? !demoIds.has(hash) : false; const t = path.join(dir, file || f); return !fs.existsSync(t) || (hash && !fs.readFileSync(t, 'utf8').includes(`id="${hash}"`)); });
   ok(`${f}: リンク ${links.length} 本が全て解決`, missing.length === 0, missing.join(' '));
   const n = await p.evaluate(() => ({ demo: document.querySelectorAll('section.demo').length, toc: document.querySelectorAll('aside.toc a').length }));
   if (n.demo) ok(`${f}: デモ ${n.demo} 件 = 目次 ${n.toc} 件`, n.demo === n.toc);
@@ -57,6 +66,23 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); await p.waitForTimeout(100);
   ok('09 スワイプ（タッチ）: 右と判定', (await p.textContent('#s09-out')).includes('スワイプ右'), await p.textContent('#s09-out'));
   await ctx.close(); }
+{ // プレイグラウンド: デモを読み込み、JS を書き換えて実行できる
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('14-playground.html#n01')); await p.waitForTimeout(400);
+  const f = p.frameLocator('#frame'); ok('14 プレイグラウンド: n01 が iframe で動く', (await f.locator('#s01-box div').count()) === 100);
+  await p.fill('#ed-js', "document.querySelector('#s01-box').textContent = 'EDITED';"); await p.click('#run'); await p.waitForTimeout(300);
+  ok('14 プレイグラウンド: 書き換えた JS が実行される', (await f.locator('#s01-box').textContent()) === 'EDITED');
+  await p.fill('#ed-js', 'throw new Error("boom")'); await p.click('#run'); await p.waitForTimeout(300);
+  ok('14 プレイグラウンド: エラーが表示される', (await p.textContent('#err')).includes('boom'));
+  await p.close(); }
+{ const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('00-index.html')); await p.fill('#gq', '慣性'); await p.waitForTimeout(400);
+  ok('00 横断検索: 「慣性」がヒット', (await p.$$eval('#gres a', a => a.length)) > 0);
+  await p.goto(url('01-ui-operations-catalog.html')); await p.evaluate(() => localStorage.removeItem('ui-guide.progress'));
+  await p.reload(); await p.click('.item .done-cb input'); await p.reload(); await p.waitForTimeout(200);
+  ok('01 進捗: チェックが再読込後も残る', (await p.$$eval('.item.done', i => i.length)) === 1);
+  await p.evaluate(() => localStorage.removeItem('ui-guide.progress'));
+  await p.close(); }
 { const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   await p.goto(url('11-quiz.html')); await p.click('#start'); await p.click('.choice'); ok('11 クイズ: 回答後に次へが出る', !!(await p.$('#nextBtn')));
   await p.close(); }
