@@ -67,6 +67,8 @@ npm run backup       # data/ を backups/<日時>/ にコピー(14 世代保持)
 
 ## 本番相当で動かす(社内 LAN のサーバー 1 台)
 
+詳しい導入手順(Windows サービス化、HTTPS、バックアップ、更新)は `docs/deploy.md`。
+
 ```bash
 npm install
 npm run build        # dist/client を生成
@@ -102,11 +104,16 @@ Electron の `WebContentsView` / `<webview>` はトップレベル扱いなの�
 `config/kintone.example.json` を `config/kintone.json` にコピーして、サブドメイン・アプリ ID・API トークン・フィールドコードを埋める。
 詳細は `config/README.md`。
 
+## CI
+
+GitHub Actions(`.github/workflows/ci.yml`)で push / PR ごとに型チェック・ビルド・E2E を実行する。
+
 ## E2E テスト(同期の検証)
 
 ```bash
 npm run build
-CHROMIUM_PATH=/path/to/chrome npm run test:e2e
+npx playwright-core install chromium   # 初回のみ(既存の Chrome を使うなら CHROMIUM_PATH=/path/to/chrome)
+npm run test:e2e
 ```
 
 パスワード認証 + kintone モック + 埋め込み鍵 + 通知 Webhook(ローカル受け口)+ バックアップ先を指定してサーバーを起動し、

@@ -75,7 +75,8 @@ try {
   ok('未ログインの /api/rooms は 401', (await fetch(`${BASE}/api/rooms`)).status === 401)
   ok('認証モードは password', (await (await fetch(`${BASE}/api/auth/mode`)).json()).mode === 'password')
 
-  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })
+  // CHROMIUM_PATH が無ければ `npx playwright-core install chromium` で入れたブラウザを使う
+  const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox'] })
   const open = async (name, pw) => {
     const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } })
     const page = await ctx.newPage()
@@ -478,7 +479,7 @@ trailer << /Root 1 0 R >>
 
   // 再起動後も内容が残る(永続化ファイルからの復元)
   {
-    const ctx = await (await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })).newContext()
+    const ctx = await (await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--no-sandbox'] })).newContext()
     const page = await ctx.newPage()
     await page.goto(`${BASE}/`)
     await page.fill('input[placeholder="例: 山田"]', '山田')
