@@ -15,8 +15,8 @@
 </head>
 <body>
 <header class="top">
-  <h1>D：業務アプリの上位UI <span class="tier tierD">71 / 74 / 75 / 76 / 77 / 80 / 81 / 85</span></h1>
-  <nav><a href="01-ui-operations-catalog.html">← カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a></nav>
+  <h1>D：業務アプリの上位UI <span class="tier tierD">71〜86</span></h1>
+  <nav><a href="01-ui-operations-catalog.html">← カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a><a href="06-effects.html">E</a></nav>
 </header>
 <div class="layout">
 <aside class="toc"></aside>
@@ -441,6 +441,336 @@
       state = next;
       for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state:changed', state); // 送信元も含め全員に配信
     });
+  </script>
+</section>
+
+<!-- ===================== 72 ===================== -->
+<section class="demo" id="n72">
+  <h2><span class="no">72</span>ツリー / 階層グリッド <small>Tree grid with virtual scroll</small></h2>
+  <p class="what">部品表（BOM）や組織のような階層を、展開状態を持ったまま仮想スクロールする。コツは「木」をそのまま描かず、<b>展開中のノードだけを平坦な配列に変換</b>してから 23 の仮想スクロールに渡すこと。展開／折りたたみは平坦化をやり直すだけ。</p>
+  <p class="how"><b>操作：</b>▶ で展開。全展開（2,440ノード）しても DOM 行数は増えない。</p>
+  <div class="stage">
+    <div class="row"><button id="s72-expand">全展開</button><button id="s72-collapse">全折りたたみ</button><span class="readout" id="s72-out"></span></div>
+    <div id="s72-view" class="s72-view"><div id="s72-spacer"><div id="s72-rows"></div></div></div>
+  </div>
+  <style data-code>
+    .s72-view { height: 200px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; user-select: none; }
+    .s72-row { height: 26px; line-height: 26px; border-bottom: 1px solid #f1f5f9; white-space: nowrap; }
+    .s72-row .tg { display: inline-block; width: 18px; text-align: center; cursor: pointer; color: var(--muted); }
+  </style>
+  <script data-code>
+    (() => {
+      // 3階層のツリー（40 × 10 × 5 = 2,000ノード）
+      const tree = Array.from({ length: 40 }, (_, i) => ({ name: `製品 ${i + 1}`, open: false, children: Array.from({ length: 10 }, (_, j) => ({ name: `ユニット ${i + 1}-${j + 1}`, open: false, children: Array.from({ length: 5 }, (_, k) => ({ name: `部品 ${i + 1}-${j + 1}-${k + 1}`, children: [] })) })) }));
+      const H = 26, view = $('#s72-view'), spacer = $('#s72-spacer'), rows = $('#s72-rows'), out = $('#s72-out');
+      const TOTAL = (c => { const walk = ns => ns.reduce((a, n) => a + 1 + walk(n.children), 0); return walk(c); })(tree);
+      let flat = [];
+      const flatten = () => { flat = []; const walk = (nodes, depth) => nodes.forEach(n => { flat.push({ n, depth }); if (n.open) walk(n.children, depth + 1); }); walk(tree, 0); spacer.style.height = flat.length * H + 'px'; };
+      const render = () => {
+        const start = Math.floor(view.scrollTop / H), count = Math.ceil(view.clientHeight / H) + 2;
+        rows.style.transform = `translateY(${start * H}px)`;
+        rows.innerHTML = flat.slice(start, start + count).map(({ n, depth }, i) => `<div class="s72-row" style="padding-left:${depth * 18 + 6}px"><span class="tg" data-i="${start + i}">${n.children.length ? (n.open ? '▼' : '▶') : '·'}</span>${n.name}</div>`).join('');
+        out.textContent = `表示中ノード ${flat.length.toLocaleString()} / 全 ${TOTAL.toLocaleString()} / DOM ${rows.children.length} 行`;
+      };
+      rows.addEventListener('click', e => { const i = e.target.dataset.i; if (i == null) return; const n = flat[i].n; if (n.children.length) { n.open = !n.open; flatten(); render(); } });
+      view.addEventListener('scroll', render);
+      const setAll = open => { const walk = ns => ns.forEach(n => { if (n.children.length) { n.open = open; walk(n.children); } }); walk(tree); flatten(); render(); };
+      $('#s72-expand').onclick = () => setAll(true); $('#s72-collapse').onclick = () => setAll(false);
+      flatten(); render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 73 ===================== -->
+<section class="demo" id="n73">
+  <h2><span class="no">73</span>ピボット集計ビュー <small>Pivot with drag-to-assign axes</small></h2>
+  <p class="what">レコード一覧を「行の軸」「列の軸」「集計値」に振り分けて集計表を作る。項目チップを枠へドラッグして軸を組み替える。集計は <code>Map</code> に「行キー｜列キー」で足し込むだけ。kintone のレコードを取得した後の分析ビューとして使える。</p>
+  <p class="how"><b>操作：</b>チップを「行」「列」の枠へドラッグ（HTML標準DnD）。「値」は数量/金額を切替。</p>
+  <div class="stage">
+    <div class="row"><span>項目：</span><span id="s73-fields"></span></div>
+    <div class="row"><span>行：</span><span class="s73-zone" data-axis="row"></span><span>列：</span><span class="s73-zone" data-axis="col"></span><span>値：</span><select id="s73-val"><option value="qty">数量</option><option value="amount">金額</option></select></div>
+    <div style="overflow:auto"><table class="mini" id="s73-t"></table></div>
+  </div>
+  <style data-code>
+    .s73-chip { display: inline-block; padding: 2px 10px; margin: 2px; border-radius: 999px; background: #e0e7ff; color: #3730a3; font-size: 12px; cursor: grab; }
+    .s73-zone { display: inline-block; min-width: 90px; min-height: 26px; padding: 2px; border: 1px dashed #94a3b8; border-radius: 6px; vertical-align: middle; margin-right: 12px; }
+    .s73-zone.over { border-color: var(--accent); background: var(--accent-soft); }
+    #s73-t td.num { text-align: right; } #s73-t .tot { font-weight: 600; background: #f8fafc; }
+  </style>
+  <script data-code>
+    (() => {
+      const FIELDS = { site: '拠点', person: '担当', month: '月', status: 'ステータス' };
+      const recs = Array.from({ length: 200 }, (_, i) => ({ site: ['本社', '第2工場', '倉庫'][i % 3], person: ['佐藤', '鈴木', '高橋', '田中'][i % 4], month: `${(i % 6) + 4}月`, status: ['受注', '製造中', '出荷済'][(i * 7) % 3], qty: (i % 9 + 1) * 10, amount: (i % 9 + 1) * 10 * (100 + (i % 5) * 50) }));
+      const axes = { row: 'site', col: 'month' };
+      const fields = $('#s73-fields'), t = $('#s73-t');
+      fields.innerHTML = Object.entries(FIELDS).map(([k, v]) => `<span class="s73-chip" draggable="true" data-f="${k}">${v}</span>`).join('');
+      fields.addEventListener('dragstart', e => e.dataTransfer.setData('text/plain', e.target.dataset.f));
+      $$('.s73-zone').forEach(z => {
+        z.addEventListener('dragover', e => { e.preventDefault(); z.classList.add('over'); });
+        z.addEventListener('dragleave', () => z.classList.remove('over'));
+        z.addEventListener('drop', e => { e.preventDefault(); z.classList.remove('over'); axes[z.dataset.axis] = e.dataTransfer.getData('text/plain'); render(); });
+      });
+      const render = () => {
+        $$('.s73-zone').forEach(z => z.innerHTML = `<span class="s73-chip">${FIELDS[axes[z.dataset.axis]]}</span>`);
+        const val = $('#s73-val').value, sum = new Map(), rows = new Set(), cols = new Set();
+        for (const r of recs) { const rk = r[axes.row], ck = r[axes.col]; rows.add(rk); cols.add(ck); const k = rk + '|' + ck; sum.set(k, (sum.get(k) || 0) + r[val]); } // 足し込むだけ
+        const R = [...rows].sort(), C = [...cols].sort(), tot = k => [...sum].filter(([kk]) => kk.startsWith(k + '|')).reduce((a, [, v]) => a + v, 0);
+        t.innerHTML = `<tr><th>${FIELDS[axes.row]} \\ ${FIELDS[axes.col]}</th>${C.map(c => `<th>${c}</th>`).join('')}<th>合計</th></tr>` +
+          R.map(r => `<tr><th>${r}</th>${C.map(c => `<td class="num">${(sum.get(r + '|' + c) || 0).toLocaleString()}</td>`).join('')}<td class="num tot">${tot(r).toLocaleString()}</td></tr>`).join('');
+      };
+      $('#s73-val').onchange = render; render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 78 ===================== -->
+<section class="demo" id="n78">
+  <h2><span class="no">78</span>競合解決 <small>Conflict resolution（楽観ロック）</small></h2>
+  <p class="what">自分が編集している間に他の人が同じレコードを更新していたら、保存時に検知して「上書き／マージ／破棄」を選ばせる。検知は<b>リビジョン番号</b>で行う（kintone は <code>revision</code> を持ち、不一致なら PUT が失敗する）。3方向比較（元・自分・相手）で、片方しか変えていない項目は自動マージできる。</p>
+  <p class="how"><b>操作：</b>「他ユーザーが更新」を押してから保存すると競合ダイアログが出る。</p>
+  <div class="stage">
+    <div class="row"><button id="s78-other">他ユーザーが「数量」と「担当」を更新</button><button id="s78-save" class="primary">保存</button><span class="readout" id="s78-out"></span></div>
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1;font-size:13px"><b>自分の編集</b><div id="s78-form"></div></div>
+      <div style="flex:1;font-size:13px"><b>サーバ</b><pre class="readout" id="s78-server" style="white-space:pre-wrap"></pre></div>
+    </div>
+    <dialog id="s78-dlg" class="s78-dlg"><b>他のユーザーが先に更新しています</b><table class="mini" id="s78-cmp" style="margin:8px 0"></table><div class="row"><button data-act="merge" class="primary">自動マージ</button><button data-act="overwrite">自分の内容で上書き</button><button data-act="discard">自分の変更を破棄</button></div></dialog>
+  </div>
+  <style data-code>
+    .s78-dlg { border: none; border-radius: 10px; padding: 16px; font-size: 13px; } .s78-dlg::backdrop { background: rgba(15,23,42,.4); }
+    #s78-form label { display: block; margin: 4px 0; } #s78-form input { margin-left: 6px; }
+    #s78-cmp td.c { background: #fecaca; } #s78-cmp td.m { background: #bbf7d0; }
+  </style>
+  <script data-code>
+    (() => {
+      let server = { revision: 5, 数量: '100', 担当: '佐藤', 備考: '通常' };
+      let base = { ...server }, mine = { ...server };                      // base: 自分が開いた時点、mine: 編集中
+      const form = $('#s78-form'), sv = $('#s78-server'), out = $('#s78-out'), dlg = $('#s78-dlg');
+      const F = ['数量', '担当', '備考'];
+      const render = () => { form.innerHTML = F.map(k => `<label>${k} <input data-k="${k}" value="${mine[k]}"></label>`).join(''); sv.textContent = JSON.stringify(server, null, 1); };
+      form.addEventListener('input', e => mine[e.target.dataset.k] = e.target.value);
+      $('#s78-other').onclick = () => { server = { ...server, revision: server.revision + 1, 数量: '150', 担当: '鈴木' }; render(); out.textContent = `サーバが rev ${server.revision} に進んだ`; };
+      const put = (data) => { server = { ...server, ...data, revision: server.revision + 1 }; base = { ...server }; mine = { ...server }; render(); out.textContent = `保存成功 → rev ${server.revision}`; };
+      $('#s78-save').onclick = () => {
+        if (base.revision === server.revision) return put(mine);          // 競合なし
+        $('#s78-cmp').innerHTML = '<tr><th>項目</th><th>元</th><th>自分</th><th>相手</th><th>判定</th></tr>' + F.map(k => {
+          const me = mine[k] !== base[k], other = server[k] !== base[k];
+          const j = me && other && mine[k] !== server[k] ? '<td class="c">競合</td>' : me ? '<td class="m">自分を採用</td>' : other ? '<td class="m">相手を採用</td>' : '<td>変更なし</td>';
+          return `<tr><td>${k}</td><td>${base[k]}</td><td>${mine[k]}</td><td>${server[k]}</td>${j}</tr>`;
+        }).join('');
+        dlg.showModal();
+      };
+      dlg.addEventListener('click', e => {
+        const act = e.target.dataset.act; if (!act) return; dlg.close();
+        if (act === 'overwrite') put(mine);
+        else if (act === 'discard') { base = { ...server }; mine = { ...server }; render(); out.textContent = '自分の変更を破棄してサーバ版を表示'; }
+        else {                                                             // 3方向マージ：片方だけ変えた項目はそれを採用、両方なら自分を優先
+          const merged = {}; F.forEach(k => merged[k] = mine[k] !== base[k] ? mine[k] : server[k]);
+          base = { ...server }; put(merged); out.textContent += '（自動マージ）';
+        }
+      });
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 79 ===================== -->
+<section class="demo" id="n79">
+  <h2><span class="no">79</span>オフライン対応 <small>Offline queue and sync status</small></h2>
+  <p class="what">通信できない間の操作を<b>キューに溜め</b>、復帰したら順に再送する。画面には「未同期 n 件」を常に見せ、ユーザーが不安にならないようにする。判定は <code>navigator.onLine</code> と <code>online/offline</code> イベント、ただし「繋がっているがAPIが落ちている」も同じ扱いにする（送信失敗→キューに戻す）。</p>
+  <p class="how"><b>操作：</b>「オフライン」にして操作を数回 → 「オンライン」に戻すとキューが流れる。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s79-off"> オフライン（模擬）</label><button id="s79-do">レコード更新（操作）</button><span class="readout" id="s79-status">-</span></div>
+    <div class="log" id="s79-log"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const KEY = 'ui-guide.s79.queue';
+      let queue = JSON.parse(localStorage.getItem(KEY) || '[]'), busy = false, n = 0;
+      const log = $('#s79-log'), status = $('#s79-status'), off = $('#s79-off');
+      const online = () => navigator.onLine && !off.checked;
+      const api = job => new Promise((ok, ng) => setTimeout(() => online() ? ok() : ng(new Error('offline')), 300));
+      const save = () => { localStorage.setItem(KEY, JSON.stringify(queue)); status.textContent = `${online() ? 'オンライン' : 'オフライン'} / 未同期 ${queue.length} 件`; };
+      async function flush() {                                             // 復帰時に先頭から順に送る。失敗したら止めて次の機会へ
+        if (busy) return; busy = true;
+        while (queue.length && online()) {
+          const job = queue[0];
+          try { await api(job); queue.shift(); logTo(log, `✔ 同期: ${job.name}`); save(); }
+          catch { logTo(log, `✖ 送信失敗、待機: ${job.name}`); break; }
+        }
+        busy = false;
+      }
+      $('#s79-do').onclick = () => { const job = { id: Date.now(), name: `更新 #${++n}` }; queue.push(job); logTo(log, `+ 操作をキューへ: ${job.name}`); save(); flush(); };
+      off.onchange = () => { save(); logTo(log, off.checked ? '-- オフラインになった' : '-- オンラインに復帰'); flush(); };
+      window.addEventListener('online', () => { save(); flush(); }); window.addEventListener('offline', save);
+      save(); if (queue.length) logTo(log, `前回の未同期 ${queue.length} 件を復元`); flush();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 82 ===================== -->
+<section class="demo" id="n82">
+  <h2><span class="no">82</span>ルーティングと履歴 <small>History API / 戻る・進むで状態復元</small></h2>
+  <p class="what">SPA でも「戻る」ボタンが効くように、画面遷移を <code>history.pushState</code> で履歴に積む。<code>state</code> オブジェクトにスクロール位置や絞り込みを入れておけば、<code>popstate</code> で戻ったときにその状態ごと復元できる。Electron でも同じ仕組みが使える。</p>
+  <p class="how"><b>操作：</b>絞り込み→スクロール→行をクリックで詳細へ→ブラウザの「戻る」（または枠内の←）。一覧が同じ位置・同じ絞り込みで戻る。</p>
+  <div class="stage">
+    <div class="row"><button id="s82-back">← 戻る（history.back）</button><span class="readout" id="s82-out"></span></div>
+    <div id="s82-app"></div>
+  </div>
+  <style data-code>
+    .s82-list { height: 130px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .s82-list div { padding: 3px 10px; border-bottom: 1px solid #f1f5f9; cursor: pointer; }
+  </style>
+  <script data-code>
+    (() => {
+      const app = $('#s82-app'), out = $('#s82-out');
+      let ui = { filter: '', scroll: 0 };                                   // 一覧画面の状態（履歴に保存する）
+      const routes = {
+        list: () => {
+          app.innerHTML = `<div class="row"><input id="s82-f" placeholder="絞り込み" value="${ui.filter}" style="width:120px"></div><div class="s82-list" id="s82-l"></div>`;
+          const l = $('#s82-l'), f = $('#s82-f');
+          const fill = () => l.innerHTML = Array.from({ length: 80 }, (_, i) => `受注 #${1001 + i}`).filter(r => r.includes(ui.filter)).map(r => `<div data-id="${r}">${r}</div>`).join('');
+          fill(); l.scrollTop = ui.scroll;
+          f.oninput = () => { ui.filter = f.value; fill(); };
+          l.onscroll = () => ui.scroll = l.scrollTop;
+          l.onclick = e => { if (e.target.dataset.id) { history.replaceState({ route: 'list', ui }, '');                 // 離れる前に一覧の状態を保存
+            history.pushState({ route: 'detail', id: e.target.dataset.id }, '', '#n82'); render(history.state); } };
+        },
+        detail: st => app.innerHTML = `<div style="font-size:13px;padding:8px;background:#fff;border:1px solid #cbd5e1;border-radius:6px"><b>${st.id}</b> の詳細<br>ブラウザの「戻る」で一覧の位置と絞り込みが復元される。</div>`,
+      };
+      const render = st => { const s = st?.route ? st : { route: 'list', ui }; if (s.ui) ui = s.ui; routes[s.route](s); out.textContent = `route=${s.route} history.length=${history.length}`; };
+      window.addEventListener('popstate', e => render(e.state));            // 戻る/進む
+      $('#s82-back').onclick = () => history.back();
+      render(history.state?.route ? history.state : null);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 83 ===================== -->
+<section class="demo" id="n83">
+  <h2><span class="no">83</span>スマートプレビュー <small>Hover prefetch and preview card</small></h2>
+  <p class="what">リンクにホバーして一定時間（300ms）留まったら、先読みしてカードで内容を出す。カーソルが通り過ぎただけでは取得しない（遅延＋キャンセル）。取得結果はキャッシュし、2回目は即表示。kintone なら <code>GET /k/v1/record.json</code> をここで叩く。</p>
+  <p class="how"><b>操作：</b>リンクにホバーして少し待つ。同じリンクに戻ると即表示（キャッシュ）。</p>
+  <div class="stage" style="min-height:150px">
+    <div class="row" style="font-size:13px">関連レコード：<a href="#n83" data-id="1001">受注 #1001</a><a href="#n83" data-id="1002">受注 #1002</a><a href="#n83" data-id="1003">受注 #1003</a><span class="readout" id="s83-out">-</span></div>
+    <div id="s83-card" class="s83-card" hidden></div>
+  </div>
+  <style data-code>
+    .s83-card { position: absolute; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; box-shadow: 0 10px 24px rgba(0,0,0,.12); width: 220px; z-index: 5; }
+  </style>
+  <script data-code>
+    (() => {
+      const card = $('#s83-card'), out = $('#s83-out'), cache = new Map();
+      const fetchRecord = id => cache.get(id) || (cache.set(id, new Promise(r => setTimeout(() => r({ id, customer: '株式会社サンプル', qty: 100 + +id % 100, due: '2026-09-20' }), 600))), cache.get(id)); // Promise ごとキャッシュ
+      let timer = null, current = null;
+      $$('a[data-id]').forEach(a => {
+        a.addEventListener('pointerenter', () => {
+          const id = a.dataset.id; current = id;
+          timer = setTimeout(async () => {                                 // 300ms 留まったら取得開始
+            const t0 = performance.now(); const rec = await fetchRecord(id);
+            if (current !== id) return;                                     // 待っている間に離れたら表示しない
+            const r = a.getBoundingClientRect(), s = card.parentElement.getBoundingClientRect();
+            card.style.left = r.left - s.left + 'px'; card.style.top = r.bottom - s.top + 6 + 'px';
+            card.innerHTML = `<b>受注 #${rec.id}</b><br>${rec.customer}<br>数量 ${rec.qty} / 納期 ${rec.due}`; card.hidden = false;
+            out.textContent = `#${id}: ${(performance.now() - t0).toFixed(0)}ms${performance.now() - t0 < 50 ? '（キャッシュ）' : '（取得）'}`;
+          }, 300);
+        });
+        a.addEventListener('pointerleave', () => { clearTimeout(timer); current = null; card.hidden = true; });
+        a.addEventListener('click', e => e.preventDefault());
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 84 ===================== -->
+<section class="demo" id="n84">
+  <h2><span class="no">84</span>ズーム可能タイムライン / ガント <small>Time axis with pan, zoom, drag</small></h2>
+  <p class="what">43 の座標変換を「横軸＝時間」に適用したもの。<code>x = (t − t0) × pxPerDay + offset</code> と逆変換だけで、パン・ズーム・バーのドラッグ（日付変更）・日単位スナップが全部書ける。目盛りはズーム倍率に応じて「日／週／月」を切り替える。</p>
+  <p class="how"><b>操作：</b>背景ドラッグでパン、ホイールでズーム（カーソル基準）、バーをドラッグで日程変更（日単位に吸着）。</p>
+  <div class="stage" style="padding:0">
+    <div id="s84-view" class="s84-view"><svg id="s84-svg" class="s84-svg"></svg><span class="readout" id="s84-out" style="position:absolute;right:8px;top:8px">-</span></div>
+  </div>
+  <style data-code>
+    .s84-view { position: relative; height: 240px; background: #fff; overflow: hidden; touch-action: none; user-select: none; cursor: grab; }
+    .s84-svg { width: 100%; height: 100%; display: block; }
+    .s84-svg .tick { stroke: #e5e7eb; } .s84-svg .tick.major { stroke: #94a3b8; } .s84-svg text { font-size: 11px; fill: #64748b; }
+    .s84-svg .bar { fill: var(--accent); rx: 4; cursor: ew-resize; } .s84-svg .bar:hover { fill: #1d4ed8; } .s84-svg .label { fill: #fff; font-size: 11px; pointer-events: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s84-view'), svg = $('#s84-svg'), out = $('#s84-out'), DAY = 86400000;
+      const t0 = new Date('2026-09-01').getTime();
+      const tasks = [{ name: '設計', s: 0, d: 5 }, { name: '材料手配', s: 3, d: 7 }, { name: '加工', s: 9, d: 10 }, { name: '組立', s: 18, d: 6 }, { name: '検査', s: 23, d: 3 }, { name: '出荷', s: 26, d: 1 }];
+      let ppd = 24, off = 40;                                              // px/日, オフセット
+      const x = day => day * ppd + off, day = px => (px - off) / ppd;      // 変換と逆変換
+      const render = () => {
+        const W = view.clientWidth, H = view.clientHeight; let s = '';
+        const step = ppd > 40 ? 1 : ppd > 12 ? 7 : 30;                    // ズームに応じた目盛り（日/週/月）
+        for (let d = Math.floor(day(0) / step) * step; x(d) < W; d += step) {
+          const dt = new Date(t0 + d * DAY), major = step === 1 ? dt.getDay() === 1 : true;
+          s += `<line class="tick ${major ? 'major' : ''}" x1="${x(d)}" x2="${x(d)}" y1="24" y2="${H}"/><text x="${x(d) + 3}" y="16">${step === 30 ? `${dt.getMonth() + 1}月` : `${dt.getMonth() + 1}/${dt.getDate()}`}</text>`;
+        }
+        tasks.forEach((t, i) => s += `<rect class="bar" data-i="${i}" x="${x(t.s)}" y="${36 + i * 32}" width="${t.d * ppd}" height="24"/><text class="label" x="${x(t.s) + 6}" y="${52 + i * 32}">${t.name} ${new Date(t0 + t.s * DAY).getDate()}日〜</text>`);
+        svg.innerHTML = s; out.textContent = `${ppd.toFixed(1)} px/日（目盛り: ${step === 1 ? '日' : step === 7 ? '週' : '月'}）`;
+      };
+      let drag = null;
+      view.addEventListener('pointerdown', e => { const bar = e.target.closest('.bar'); drag = bar ? { type: 'bar', t: tasks[+bar.dataset.i], s0: tasks[+bar.dataset.i].s, x0: e.clientX } : { type: 'pan', x0: e.clientX, off0: off }; view.setPointerCapture(e.pointerId); });
+      view.addEventListener('pointermove', e => {
+        if (!drag) return;
+        if (drag.type === 'pan') off = drag.off0 + e.clientX - drag.x0;
+        else drag.t.s = Math.round(drag.s0 + (e.clientX - drag.x0) / ppd);  // 日単位にスナップ
+        render();
+      });
+      view.addEventListener('pointerup', () => drag = null);
+      view.addEventListener('wheel', e => { e.preventDefault(); const cx = e.clientX - view.getBoundingClientRect().left, d = day(cx); ppd = Math.min(120, Math.max(3, ppd * Math.exp(-e.deltaY * 0.002))); off = cx - d * ppd; render(); }, { passive: false }); // カーソル基準ズーム
+      new ResizeObserver(render).observe(view);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 86 ===================== -->
+<section class="demo" id="n86">
+  <h2><span class="no">86</span>監視ボード型UI <small>Polling / 変化点のフラッシュ / 通知集約</small></h2>
+  <p class="what">現場の状況を常時表示する画面。①一定間隔で取得（タブが隠れている間は止める：<code>visibilitychange</code>）②前回との差分だけをフラッシュ表示 ③通知は1件ずつ出さず「n件更新」に集約し、ミュートできる。ポーリング間隔は「取得にかかった時間」より十分長くする。</p>
+  <p class="how"><b>操作：</b>2秒ごとに値が変わり、変わったセルが光る。タブを切り替えると停止し、戻ると再開する。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s86-run" checked> ポーリング（2s）</label><label><input type="checkbox" id="s86-mute"> 通知ミュート</label><span class="readout" id="s86-out">-</span><span class="pill" id="s86-badge" hidden>0</span></div>
+    <table class="mini" id="s86-t" style="width:100%"></table>
+  </div>
+  <style data-code>
+    #s86-t td.flash { animation: s86-flash 1.2s ease-out; }
+    @keyframes s86-flash { from { background: #fde68a; } }
+  </style>
+  <script data-code>
+    (() => {
+      const LINES = ['ライン1', 'ライン2', 'ライン3', 'ライン4'], COLS = ['稼働', '生産数', '不良', '状態'];
+      let prev = null, timer = null, pending = 0;
+      const t = $('#s86-t'), out = $('#s86-out'), badge = $('#s86-badge');
+      let sim = LINES.map((l, i) => [l, '稼働中', String(1000 + i * 100), '0', '正常']);
+      const fetchStatus = () => new Promise(r => setTimeout(() => {                 // 疑似API：毎回2〜3セルだけ変わる
+        sim = sim.map(row => [...row]);
+        for (let k = 0; k < 2 + Math.floor(Math.random() * 2); k++) {
+          const row = sim[Math.floor(Math.random() * sim.length)], c = 1 + Math.floor(Math.random() * 4);
+          row[c] = c === 2 ? String(+row[c] + 1) : c === 3 ? String(+row[c] + (Math.random() < 0.3 ? 1 : 0)) : c === 1 ? (Math.random() < 0.8 ? '稼働中' : '停止') : (Math.random() < 0.8 ? '正常' : '要確認');
+        }
+        r(sim);
+      }, 200));
+      const render = rows => {
+        let changed = 0;
+        t.innerHTML = '<tr><th></th>' + COLS.map(c => `<th>${c}</th>`).join('') + '</tr>' + rows.map((r, i) => `<tr><th>${r[0]}</th>${r.slice(1).map((v, j) => { const f = prev && prev[i][j + 1] !== v; if (f) changed++; return `<td class="${f ? 'flash' : ''}">${v}</td>`; }).join('')}</tr>`).join('');
+        prev = rows;
+        if (changed && !$('#s86-mute').checked) { pending += changed; badge.hidden = false; badge.textContent = `${pending} 件更新`; } // 集約
+      };
+      const poll = async () => {
+        if (document.hidden) return;                                       // 見えていないなら取得しない
+        const t0 = performance.now(); const rows = await fetchStatus(); render(rows);
+        out.textContent = `最終取得 ${new Date().toLocaleTimeString()}（${(performance.now() - t0).toFixed(0)}ms）`;
+      };
+      const start = () => { clearInterval(timer); if ($('#s86-run').checked) { poll(); timer = setInterval(poll, 2000); } };
+      document.addEventListener('visibilitychange', () => { out.textContent = document.hidden ? '非表示：ポーリング停止' : out.textContent; if (!document.hidden) poll(); });
+      $('#s86-run').onchange = start; badge.onclick = () => { pending = 0; badge.hidden = true; };
+      start();
+    })();
   </script>
 </section>
 

@@ -8,7 +8,7 @@
   :root {
     --bg: #f6f7f9; --card: #fff; --text: #1d1f23; --muted: #6b7280;
     --line: #e5e7eb; --accent: #2563eb;
-    --tierA: #16a34a; --tierB: #d97706; --tierC: #dc2626; --tierD: #7c3aed;
+    --tierA: #16a34a; --tierB: #d97706; --tierC: #dc2626; --tierD: #7c3aed; --tierE: #db2777;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
@@ -28,6 +28,7 @@
   section[data-tier="B"] h2 { border-color: var(--tierB); }
   section[data-tier="C"] h2 { border-color: var(--tierC); }
   section[data-tier="D"] h2 { border-color: var(--tierD); }
+  section[data-tier="E"] h2 { border-color: var(--tierE); }
   .item { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: grid; grid-template-columns: 56px 1fr; gap: 4px 12px; }
   .item.hidden { display: none; }
   .num { font-weight: 700; color: var(--muted); font-size: 14px; grid-row: 1 / span 3; padding-top: 2px; }
@@ -38,7 +39,7 @@
   .api code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; color: #fff; }
   .demo-link { margin-left: 8px; font-size: 12px; text-decoration: none; color: var(--accent); font-weight: 600; }
-  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); } .tag-D { background: var(--tierD); }
+  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); } .tag-D { background: var(--tierD); } .tag-E { background: var(--tierE); }
   footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
   @media (max-width: 600px) { .item { grid-template-columns: 40px 1fr; } }
 </style>
@@ -53,19 +54,21 @@
     <span class="chip" data-tier="B">B: カスタマイズ</span>
     <span class="chip" data-tier="C">C: プロ志向</span>
     <span class="chip" data-tier="D">D: 業務アプリ設計</span>
+    <span class="chip" data-tier="E">E: 演出・体感</span>
     <span class="count" id="count"></span>
   </div>
 </header>
 
 <main>
   <div class="intro">
-    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a>）へ飛べる。
+    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a> / <a href="06-effects.html">E</a>）へ飛べる。
     <table>
       <tr><th style="width:120px">層</th><th>意味</th><th>実装の主な手段</th></tr>
       <tr><td><span class="tag tag-A">A</span> 一般</td><td>ほぼ全てのアプリで使う基本操作・演出。ブラウザ標準で大半が賄える</td><td>CSS / 標準DOM API</td></tr>
       <tr><td><span class="tag tag-B">B</span> カスタマイズ</td><td>標準挙動を自前で制御・拡張するもの。業務アプリの「使いやすさ」はここで決まる</td><td>Pointer Events / Observer系 / rAF</td></tr>
       <tr><td><span class="tag tag-C">C</span> プロ志向</td><td>エディタ・キャンバス・グリッド等、ツール系アプリに必要な高度操作</td><td>座標変換 / 状態機械 / Canvas / Electron連携</td></tr>
-      <tr><td><span class="tag tag-D">D</span> 業務アプリ設計</td><td>A〜Cの部品を組み合わせた設計パターン（第3弾）。番号は提案リストの通りで飛び番あり</td><td>状態オブジェクト集約 / localStorage / BroadcastChannel</td></tr>
+      <tr><td><span class="tag tag-D">D</span> 業務アプリ設計</td><td>A〜Cの部品を組み合わせた設計パターン（第3弾・第4弾）。番号は提案リストの通り</td><td>状態オブジェクト集約 / localStorage / BroadcastChannel / History API</td></tr>
+      <tr><td><span class="tag tag-E">E</span> 演出・体感</td><td>見た目の気持ちよさを作る上位効果（第4弾）。短く・控えめに・止められるように</td><td>View Transitions / WAAPI / animation-timeline / backdrop-filter</td></tr>
     </table>
   </div>
   <div id="list"></div>
@@ -151,10 +154,28 @@ const ITEMS = [
   { tier:'D', no:80, ja:'ドッキングレイアウト完成形', en:'Dock layout with tabs / float / persist', desc:'ゾーン間のタブ移動、境界リサイズ、分離ウィンドウ化、レイアウトJSONの保存・復元。33の完成形。', api:'レイアウトJSON → 再描画, <code>elementFromPoint</code>, <code>localStorage</code>' },
   { tier:'D', no:81, ja:'ワークスペース永続化', en:'Workspace persistence', desc:'開いていたタブ・絞り込み・選択・スクロール位置を保存し、再起動時に「昨日の続き」から始められるようにする。', api:'状態オブジェクト + デバウンス保存, 描画後に <code>scrollTop</code> 復元' },
   { tier:'D', no:85, ja:'マルチウィンドウ同期', en:'Multi-window sync', desc:'複数ウィンドウ間で状態を即時同期する。ブラウザ/renderer 間は BroadcastChannel、Electron ではメインが状態を持ち IPC で配信。', api:'<code>BroadcastChannel</code>, <code>storage</code> イベント, <code>webContents.send</code>' },
+  { tier:'D', no:72, ja:'ツリー / 階層グリッド', en:'Tree grid with virtual scroll', desc:'展開状態を持つ階層（BOM等）を、展開中ノードだけ平坦化してから仮想スクロールに渡す。', api:'平坦化配列 + 23' },
+  { tier:'D', no:73, ja:'ピボット集計ビュー', en:'Pivot with drag-to-assign axes', desc:'項目チップを行・列の枠へドラッグして軸を組み替え、Map に足し込んで集計表を作る。', api:'HTML DnD, <code>Map</code> 集計' },
+  { tier:'D', no:78, ja:'競合解決', en:'Conflict resolution (optimistic lock)', desc:'リビジョン不一致を保存時に検知し、3方向比較で「自動マージ / 上書き / 破棄」を選ばせる。kintone の revision に対応。', api:'revision 比較, <code>&lt;dialog&gt;</code>' },
+  { tier:'D', no:79, ja:'オフライン対応', en:'Offline queue and sync status', desc:'通信不可の間の操作をキューに溜め、復帰時に順に再送。未同期件数を常時表示。', api:'<code>navigator.onLine</code>, <code>online/offline</code>, <code>localStorage</code> キュー' },
+  { tier:'D', no:82, ja:'ルーティングと履歴', en:'History API state restore', desc:'画面遷移を履歴に積み、戻る/進むでスクロール位置や絞り込みごと復元する。', api:'<code>history.pushState</code>, <code>popstate</code>, <code>state</code> オブジェクト' },
+  { tier:'D', no:83, ja:'スマートプレビュー', en:'Hover prefetch and preview card', desc:'リンクに300ms留まったら先読みしてカード表示。通り過ぎならキャンセル、取得結果はキャッシュ。', api:'遅延タイマー + Promise キャッシュ' },
+  { tier:'D', no:84, ja:'ズーム可能タイムライン / ガント', en:'Time axis with pan, zoom, drag', desc:'座標変換を時間軸に適用。パン・カーソル基準ズーム・バーのドラッグで日程変更・日単位スナップ・ズームに応じた目盛り切替。', api:'<code>x = day × pxPerDay + offset</code>, SVG' },
+  { tier:'D', no:86, ja:'監視ボード型UI', en:'Polling board with change flash', desc:'定期取得（非表示時は停止）、前回との差分セルだけフラッシュ、通知は件数に集約しミュート可能。', api:'<code>setInterval</code>, <code>visibilitychange</code>, 差分比較' },
+
+  // ===== E: 演出・体感の上位効果（第4弾） =====
+  { tier:'E', no:63, ja:'シェアードエレメント遷移', en:'Shared element transition', desc:'一覧の要素が「同じ物として」詳細へ拡大移動。遷移の瞬間だけクリックした要素に view-transition-name を付ける。', api:'<code>startViewTransition</code>, 動的 <code>view-transition-name</code>' },
+  { tier:'E', no:64, ja:'スタガーアニメーション', en:'Stagger', desc:'複数要素を数十msずつ遅らせて順に出す。遅延の上限を設けて合計時間を抑える。', api:'<code>animation-delay: calc(var(--i) * …)</code>' },
+  { tier:'E', no:65, ja:'スケルトン → 実データのモーフィング', en:'Skeleton morph', desc:'スケルトンと本物を重ねてクロスフェードし、高さ変化は FLIP で伸縮させてガタつきを消す。', api:'重ね配置 + <code>opacity</code> + 高さ FLIP' },
+  { tier:'E', no:66, ja:'マイクロインタラクション', en:'Micro-interactions', desc:'チェックのバウンス、保存ボタンの状態変化、いいねの弾み。操作直後・その場所で150〜300ms。', api:'<code>cubic-bezier</code> オーバーシュート, <code>@keyframes</code>' },
+  { tier:'E', no:67, ja:'ジェスチャー連動の物理', en:'Interactive back swipe', desc:'遷移を指に追従させ、離した時点で閾値と速度から完了/取消を決め、残りをスプリングで流す。', api:'Pointer Events + 進捗 0〜1 + rAF スプリング' },
+  { tier:'E', no:68, ja:'スクロール駆動アニメーション（CSS）', en:'animation-timeline', desc:'JS 無しでスクロール量をアニメーション進捗にする。scroll() は位置、view() は可視割合に連動。', api:'<code>animation-timeline: scroll() / view()</code>, <code>animation-range</code>' },
+  { tier:'E', no:69, ja:'ぼかし / グラスモーフィズム', en:'backdrop-filter and performance', desc:'半透明パネルの背後をぼかす。毎フレーム再計算されるため弱い端末では重い。フレーム時間を計測して採否を決める。', api:'<code>backdrop-filter: blur()</code>, rAF 計測' },
+  { tier:'E', no:70, ja:'ダークモード切替のクロスフェード', en:'Theme transition', desc:'テーマ切替を View Transitions でつなぎ、クリック位置から円形に広がる演出にする。', api:'<code>data-theme</code> + CSS 変数, <code>::view-transition-new</code> + <code>clip-path</code>' },
 ];
 
-const TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html' };
-const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・抜粋）' };
+const TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html', E:'06-effects.html' };
+const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・第4弾）', E:'E. 演出・体感の上位効果（第4弾）' };
 
 const listEl = document.getElementById('list');
 const qEl = document.getElementById('q');
@@ -164,12 +185,11 @@ let tierFilter = 'all';
 function render() {
   listEl.innerHTML = '';
   let n = 0;
-  for (const t of ['A','B','C','D']) {
+  for (const t of ['A','B','C','D','E']) {
     const sec = document.createElement('section');
     sec.dataset.tier = t;
     sec.innerHTML = `<h2>${TIER_NAME[t]}</h2>`;
-    ITEMS.forEach((it, i) => {
-      if (it.tier !== t) return;
+    ITEMS.map((it, i) => [it, i]).filter(([it]) => it.tier === t).sort((a, b) => (a[0].no ?? a[1] + 1) - (b[0].no ?? b[1] + 1)).forEach(([it, i]) => {
       n++;
       const el = document.createElement('div');
       el.className = 'item';
