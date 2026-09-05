@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI操作レクチャー 入口</title>
+<link rel="stylesheet" href="assets/guide.css">
+<style>
+  main.single { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .path { counter-reset: step; }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px 14px 56px; margin-bottom: 10px; position: relative; }
+  .step::before { counter-increment: step; content: counter(step); position: absolute; left: 16px; top: 14px; width: 28px; height: 28px; border-radius: 50%; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 14px; }
+  .step h3 { margin: 0 0 4px; font-size: 15px; } .step p { margin: 0; font-size: 13.5px; color: var(--muted); }
+  .step .t { display: inline-block; font-size: 11px; color: #fff; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; }
+  .tierD { background: #7c3aed; } .tierE { background: #db2777; } .tierF { background: #475569; }
+</style>
+</head>
+<body>
+<header class="top"><h1>UI操作レクチャー資料（バニラJS / HTML）</h1></header>
+<main class="single">
+  <div class="lead">フロントエンドUIの「操作の名称」と「実際の動き」を対応づける教材。依存ライブラリなし。すべてのページはこのフォルダをそのままブラウザで開けば動く（サーバ不要）。</div>
+
+  <h2 style="font-size:17px">おすすめの順路</h2>
+  <div class="path">
+    <div class="step"><h3><a href="08-foundations.html">基礎知識</a> <span class="t tierF">土台</span></h3><p>座標系、イベントの発火順、transform と left/top の違い、passive/touch-action、そして「混同しやすい用語の対比表」。全デモの前提になる。</p></div>
+    <div class="step"><h3><a href="01-ui-operations-catalog.html">カタログ</a> <span class="t tierF">索引</span></h3><p>86項目の名称・英語名・一言説明・実装手段。検索と層フィルタ。各項目から動くデモへ飛べる。</p></div>
+    <div class="step"><h3><a href="02-basic.html">A：一般的なUI操作（01〜22）</a> <span class="t tierA">A</span></h3><p>スクロール、パン、ズーム、DnD、フェード、モーダル…。ブラウザ標準で賄える基本。</p></div>
+    <div class="step"><h3><a href="03-custom.html">B：カスタマイズ性の高いUI（23〜42）</a> <span class="t tierB">B</span></h3><p>仮想スクロール、慣性、スプリング、FLIP、並べ替え、Undo/Redo…。標準挙動を自前で制御する。</p></div>
+    <div class="step"><h3><a href="04-pro.html">C：プロ志向のUI（43〜62）</a> <span class="t tierC">C</span></h3><p>無限キャンバス、ミニマップ、ノードエディタ、データグリッド、Electron連携…。ツール系アプリの高度操作。</p></div>
+    <div class="step"><h3><a href="05-advanced.html">D：業務アプリの設計パターン（71〜86）</a> <span class="t tierD">D</span></h3><p>大規模グリッド、検索・フォームの型、バッチ操作、競合解決、オフライン、ドッキング、マルチウィンドウ…。A〜Cの部品の組み合わせ方。</p></div>
+    <div class="step"><h3><a href="06-effects.html">E：演出・体感の上位効果（63〜70）</a> <span class="t tierE">E</span></h3><p>シェアードエレメント遷移、スタガー、マイクロインタラクション、ぼかしと性能…。最後に、控えめに。</p></div>
+    <div class="step"><h3><a href="09-exercises.html">練習課題</a> <span class="t tierF">演習</span></h3><p>デモのコードを改変して仕様を満たす12問。ヒントと解答例つき。</p></div>
+  </div>
+
+  <h2 style="font-size:17px">各デモページの読み方</h2>
+  <table>
+    <tr><th style="width:160px">見出し</th><th>意味</th></tr>
+    <tr><td>番号＋名称＋英語名</td><td>カタログの通し番号。英語名は検索・調査時のキーワード</td></tr>
+    <tr><td>動作の意味</td><td>その操作が何をするものか、何と混同しやすいか、実装の要点</td></tr>
+    <tr><td>操作：</td><td>ページ上で実際に試す手順</td></tr>
+    <tr><td>コードを見る</td><td>そのデモを動かしている CSS / JS の<b>実物</b>。写しではないので、ブラウザの開発者ツールで書き換えればその場で挙動が変わる</td></tr>
+  </table>
+
+  <h2 style="font-size:17px">付属物</h2>
+  <table>
+    <tr><th style="width:200px">場所</th><th>内容</th></tr>
+    <tr><td><code>../ui-kit/</code></td><td>デモから切り出した再利用部品（10モジュール、依存なしESM、テスト付き）</td></tr>
+    <tr><td><code>07-implementation-plan.md</code></td><td>部品化と実アプリ適用の計画書（Markdown）</td></tr>
+    <tr><td><code>README.md</code></td><td>索引・前提・デモの追加方法（Markdown）</td></tr>
+  </table>
+  <p class="note">動作確認は Chromium 系ブラウザ。View Transitions・<code>animation-timeline</code>・<code>popover</code> は対応ブラウザでのみ本来の動きになり、非対応では即時切替・静的表示にフォールバックする。</p>
+</main>
+</body>
+</html>

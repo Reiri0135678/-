@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>基礎知識：座標系・イベント・描画の土台</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierF { background: #475569; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; }
+  table.cmp th, table.cmp td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; white-space: nowrap; }
+  table.cmp td.k { font-weight: 600; white-space: nowrap; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>基礎知識 <span class="tier tierF">全デモの土台</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a><a href="05-advanced.html">D</a><a href="06-effects.html">E</a><a href="09-exercises.html">課題</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">86項目のデモを読むときに必ず出てくる「前提」をまとめた。座標系、イベントの順序、描画の仕組み、そして混同しやすい用語の対比表。ここが曖昧だと、デモのコードは動いても「なぜそう書くか」が分からない。</div>
+
+<!-- ===================== F1 ===================== -->
+<section class="demo" id="f1">
+  <h2><span class="no">F1</span>座標系の違い <small>clientX / pageX / offsetX / screenX / getBoundingClientRect</small></h2>
+  <p class="what">マウス位置には5種類の「原点」がある。ドラッグやズームで一番よく使うのは <b>clientX と getBoundingClientRect().left の差</b>（＝要素内のローカル座標）。<code>offsetX</code> は「イベントが当たった要素」基準なので、子要素の上で値が飛ぶ。</p>
+  <p class="how"><b>操作：</b>枠内でマウスを動かす。枠は少しスクロールしてある。青い子要素の上で offsetX がどう変わるか見る。</p>
+  <div class="stage">
+    <div id="f1-view" class="f1-view"><div class="f1-inner"><div class="box" style="position:absolute;left:120px;top:60px">子要素</div></div></div>
+    <table class="cmp" id="f1-t" style="margin-top:8px"></table>
+  </div>
+  <style data-code>
+    .f1-view { height: 150px; overflow: auto; border: 1px solid #cbd5e1; background: #fff; }
+    .f1-inner { position: relative; width: 900px; height: 400px; background-image: linear-gradient(#f1f5f9 1px, transparent 1px), linear-gradient(90deg, #f1f5f9 1px, transparent 1px); background-size: 40px 40px; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#f1-view'), t = $('#f1-t');
+      view.scrollTop = 30; view.scrollLeft = 20;
+      const rows = [
+        ['clientX/Y', 'ブラウザの表示領域（ビューポート）左上が原点。スクロールしても要素は動くが原点は動かない', e => [e.clientX, e.clientY]],
+        ['pageX/Y', 'ページ全体の左上が原点。client + ページのスクロール量', e => [e.pageX, e.pageY]],
+        ['offsetX/Y', 'イベントが当たった要素（target）の左上が原点。子要素の上では値が飛ぶ → ドラッグには使わない', e => [e.offsetX, e.offsetY]],
+        ['screenX/Y', '画面（モニタ）左上が原点。UIではほぼ使わない', e => [e.screenX, e.screenY]],
+        ['client − rect', '要素の getBoundingClientRect() を引く → 要素内ローカル座標。ドラッグ・ズーム・キャンバスはこれ', e => { const r = view.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }],
+        ['+ scroll', 'ローカル座標 + 要素のスクロール量 → スクロール内容上の座標', e => { const r = view.getBoundingClientRect(); return [e.clientX - r.left + view.scrollLeft, e.clientY - r.top + view.scrollTop]; }],
+      ];
+      const render = e => t.innerHTML = '<tr><th>値</th><th>原点</th><th>x, y</th></tr>' + rows.map(([k, d, f]) => { const [x, y] = e ? f(e).map(Math.round) : ['-', '-']; return `<tr><td class="k">${k}</td><td>${d}</td><td>${x}, ${y}</td></tr>`; }).join('');
+      view.addEventListener('pointermove', render); render(null);
+    })();
+  </script>
+</section>
+
+<!-- ===================== F2 ===================== -->
+<section class="demo" id="f2">
+  <h2><span class="no">F2</span>イベントの発火順と伝播 <small>capture → target → bubble / stopPropagation</small></h2>
+  <p class="what">イベントは「外側から内側へ（capture）→ 当たった要素（target）→ 内側から外側へ（bubble）」の順に流れる。<code>addEventListener(type, fn, true)</code> で capture 側に登録できる。<code>stopPropagation()</code> はそこから先へ流さない。<code>preventDefault()</code> は伝播ではなく「ブラウザの既定動作」を止める。この2つの違いが最重要。</p>
+  <p class="how"><b>操作：</b>内側の箱をクリック。ログに順序が出る。チェックで「中央で stopPropagation」を有効にすると、外側の bubble が来なくなる。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="f2-stop"> 中央（bubble）で stopPropagation()</label><button id="f2-clear">ログ消去</button></div>
+    <div class="row" style="align-items:flex-start">
+      <div id="f2-outer" class="f2-box">外側<div id="f2-mid" class="f2-box">中央<div id="f2-inner" class="f2-box" style="background:var(--accent);color:#fff">内側</div></div></div>
+      <div class="log" id="f2-log" style="flex:1"></div>
+    </div>
+  </div>
+  <style data-code>
+    .f2-box { padding: 14px; border: 1px solid #94a3b8; border-radius: 8px; background: #fff; font-size: 12px; user-select: none; cursor: pointer; }
+  </style>
+  <script data-code>
+    (() => {
+      const log = $('#f2-log');
+      ['outer', 'mid', 'inner'].forEach(id => {
+        const el = $('#f2-' + id);
+        el.addEventListener('click', e => logTo(log, `capture: ${id}`), true);                 // capture 側
+        el.addEventListener('click', e => { logTo(log, `bubble:  ${id}` + (e.target === el ? '（target）' : '')); if (id === 'mid' && $('#f2-stop').checked) { e.stopPropagation(); logTo(log, '  → stopPropagation: ここで止める'); } });
+      });
+      $('#f2-inner').addEventListener('click', () => logTo(log, '---'));
+      $('#f2-clear').onclick = () => log.textContent = '';
+    })();
+  </script>
+</section>
+
+<!-- ===================== F3 ===================== -->
+<section class="demo" id="f3">
+  <h2><span class="no">F3</span>transform と left/top の違い <small>レイアウト vs 合成</small></h2>
+  <p class="what">位置を動かす方法は2つあるが、コストが違う。<code>left/top</code> を変えるとブラウザは<b>レイアウト計算</b>（周囲の要素の位置も再計算）をやり直す。<code>transform</code> は最終的な<b>合成</b>段階で動かすだけで、レイアウトは走らない。だからデモは全部 transform で動かしている。<code>opacity</code> も同じく安い。</p>
+  <p class="how"><b>操作：</b>300個の箱を同じ動きで走らせ、フレーム時間を比べる。差が小さい端末もあるが、要素数が増えるほど開く。</p>
+  <div class="stage">
+    <div class="row"><button id="f3-left">left/top で動かす</button><button id="f3-tf">transform で動かす</button><span class="readout" id="f3-out">-</span></div>
+    <div id="f3-field" class="f3-field"></div>
+  </div>
+  <style data-code>
+    .f3-field { position: relative; height: 120px; overflow: hidden; background: #fff; border: 1px solid #cbd5e1; }
+    .f3-field i { position: absolute; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); left: 0; top: 0; }
+  </style>
+  <script data-code>
+    (() => {
+      const field = $('#f3-field'), out = $('#f3-out'), N = 300;
+      field.innerHTML = Array.from({ length: N }, () => '<i></i>').join('');
+      const dots = $$('i', field);
+      const run = mode => {
+        const t0 = performance.now(); let frames = 0, worst = 0, last = t0;
+        const step = now => {
+          const p = (now - t0) / 1500; worst = Math.max(worst, now - last); last = now; frames++;
+          dots.forEach((d, i) => {
+            const x = p * 400 + (i % 30) * 6, y = 10 + Math.floor(i / 30) * 10 + Math.sin(p * 6 + i) * 4;
+            if (mode === 'left') { d.style.left = x + 'px'; d.style.top = y + 'px'; d.style.transform = ''; }
+            else { d.style.transform = `translate(${x}px, ${y}px)`; d.style.left = d.style.top = ''; }
+          });
+          if (p < 1) requestAnimationFrame(step); else out.textContent = `${mode}: 平均 ${((now - t0) / frames).toFixed(1)} ms/frame, 最悪 ${worst.toFixed(1)} ms`;
+        };
+        requestAnimationFrame(step);
+      };
+      $('#f3-left').onclick = () => run('left'); $('#f3-tf').onclick = () => run('transform');
+    })();
+  </script>
+</section>
+
+<!-- ===================== F4 ===================== -->
+<section class="demo" id="f4">
+  <h2><span class="no">F4</span>passive リスナーと touch-action <small>スクロールを止めたいのに止まらない理由</small></h2>
+  <p class="what">ブラウザは <code>wheel</code> / <code>touchmove</code> を「既定で passive（preventDefault が効かない）」として扱うことがある。自前でズームやパンをするなら <code>{ passive: false }</code> を明示する。タッチでは加えて CSS の <code>touch-action</code> で「どの方向をブラウザに任せるか」を宣言する方が確実。</p>
+  <p class="how"><b>操作：</b>左右の枠でホイール。左は preventDefault が無視されてページがスクロールする。右は止まる。</p>
+  <div class="stage">
+    <div class="row" style="align-items:stretch">
+      <div id="f4-a" class="f4-box">passive: true<br><small>preventDefault は無視される</small><br><span class="readout" id="f4-a-out">-</span></div>
+      <div id="f4-b" class="f4-box">passive: false<br><small>ページは動かない</small><br><span class="readout" id="f4-b-out">-</span></div>
+    </div>
+  </div>
+  <style data-code>
+    .f4-box { flex: 1; padding: 14px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; text-align: center; touch-action: none; }
+  </style>
+  <script data-code>
+    (() => {
+      $('#f4-a').addEventListener('wheel', e => { e.preventDefault(); $('#f4-a-out').textContent = `defaultPrevented=${e.defaultPrevented}`; }, { passive: true });   // 効かない（コンソールに警告）
+      $('#f4-b').addEventListener('wheel', e => { e.preventDefault(); $('#f4-b-out').textContent = `defaultPrevented=${e.defaultPrevented}`; }, { passive: false });  // 効く
+    })();
+  </script>
+</section>
+
+<!-- ===================== F5 ===================== -->
+<section class="demo" id="f5">
+  <h2><span class="no">F5</span>動かし方の4手段 <small>transition / CSS animation / WAAPI / requestAnimationFrame</small></h2>
+  <p class="what">同じ「右に300px動かす」でも手段が4つある。使い分けの軸は「<b>誰が時間を管理するか</b>」と「<b>途中で介入したいか</b>」。迷ったら transition、JSで止めたり戻したりするなら WAAPI、毎フレーム値を計算するなら rAF。</p>
+  <p class="how"><b>操作：</b>再生。4つが同じ動きをするのを確認し、下の表で選び方を見る。</p>
+  <div class="stage">
+    <div class="row"><button id="f5-run">再生</button></div>
+    <div class="f5-lane"><span>1. transition</span><div class="f5-ball f5-tr"></div></div>
+    <div class="f5-lane"><span>2. CSS animation</span><div class="f5-ball f5-an"></div></div>
+    <div class="f5-lane"><span>3. WAAPI</span><div class="f5-ball f5-wa"></div></div>
+    <div class="f5-lane"><span>4. rAF</span><div class="f5-ball f5-raf"></div></div>
+    <table class="cmp" style="margin-top:8px">
+      <tr><th>手段</th><th>時間管理</th><th>向いている場面</th><th>途中介入</th><th>デモ</th></tr>
+      <tr><td class="k">transition</td><td>ブラウザ</td><td>状態AとBの間を補間する。ホバー、開閉、表示切替</td><td>弱い（クラスを外すと戻るだけ）</td><td><a href="02-basic.html#n14">14</a></td></tr>
+      <tr><td class="k">CSS animation</td><td>ブラウザ</td><td>繰り返し、複数キーフレーム、ローディング</td><td>弱い</td><td><a href="02-basic.html#n22">22</a>, <a href="06-effects.html#n64">64</a></td></tr>
+      <tr><td class="k">WAAPI</td><td>ブラウザ（JSから制御）</td><td>一時停止・逆再生・速度変更・完了待ちが要る</td><td>強い</td><td><a href="04-pro.html#n53">53</a>, <a href="03-custom.html#n30">30</a></td></tr>
+      <tr><td class="k">rAF</td><td>自分</td><td>物理（慣性・スプリング）、入力追従、Canvas</td><td>完全</td><td><a href="03-custom.html#n28">28</a>, <a href="03-custom.html#n29">29</a></td></tr>
+    </table>
+  </div>
+  <style data-code>
+    .f5-lane { position: relative; height: 28px; margin-bottom: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .f5-lane span { position: absolute; left: 8px; top: 4px; font-size: 12px; color: var(--muted); }
+    .f5-ball { position: absolute; top: 3px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); }
+    .f5-tr { transition: transform .8s ease-out; } .f5-tr.go { transform: translateX(300px); }
+    @keyframes f5-move { to { transform: translateX(300px); } } .f5-an.go { animation: f5-move .8s ease-out forwards; }
+  </style>
+  <script data-code>
+    (() => {
+      $('#f5-run').onclick = () => {
+        const tr = $('.f5-tr'), an = $('.f5-an'), wa = $('.f5-wa'), raf = $('.f5-raf');
+        tr.classList.remove('go'); an.classList.remove('go'); void tr.offsetWidth;                       // リセット
+        tr.classList.add('go');                                                                          // 1. transition：クラス付与
+        an.classList.add('go');                                                                          // 2. CSS animation：クラス付与
+        wa.animate([{ transform: 'none' }, { transform: 'translateX(300px)' }], { duration: 800, easing: 'ease-out', fill: 'forwards' }); // 3. WAAPI
+        const t0 = performance.now(), ease = p => 1 - (1 - p) ** 3;                                    // 4. rAF：自分で補間
+        const step = now => { const p = Math.min(1, (now - t0) / 800); raf.style.transform = `translateX(${ease(p) * 300}px)`; if (p < 1) requestAnimationFrame(step); };
+        requestAnimationFrame(step);
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== F6 ===================== -->
+<section class="demo" id="f6">
+  <h2><span class="no">F6</span>スロットルとデバウンス <small>Throttle / Debounce</small></h2>
+  <p class="what">高頻度イベント（scroll, pointermove, input, resize）の間引き方は2種類。<b>デバウンス</b>＝止まってから1回（検索、保存）。<b>スロットル</b>＝一定間隔で1回（スクロール連動、進捗表示）。描画目的なら 54 の rAF バッチが第3の選択肢。</p>
+  <p class="how"><b>操作：</b>灰色の帯でマウスを動かす。3つのカウンタの増え方を比べる。</p>
+  <div class="stage">
+    <div id="f6-area" class="f6-area">ここでマウスを動かす</div>
+    <div class="row"><span class="readout" id="f6-raw">raw: 0</span><span class="readout" id="f6-th">throttle(100ms): 0</span><span class="readout" id="f6-db">debounce(300ms): 0</span></div>
+  </div>
+  <style data-code>
+    .f6-area { height: 70px; background: #e2e8f0; border-radius: 8px; display: grid; place-items: center; color: var(--muted); margin-bottom: 8px; }
+  </style>
+  <script data-code>
+    (() => {
+      const throttle = (fn, ms) => { let last = 0; return (...a) => { const now = Date.now(); if (now - last >= ms) { last = now; fn(...a); } }; };
+      const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+      let raw = 0, th = 0, db = 0;
+      const onTh = throttle(() => $('#f6-th').textContent = `throttle(100ms): ${++th}`, 100);
+      const onDb = debounce(() => $('#f6-db').textContent = `debounce(300ms): ${++db}`, 300);
+      $('#f6-area').addEventListener('pointermove', () => { $('#f6-raw').textContent = `raw: ${++raw}`; onTh(); onDb(); });
+    })();
+  </script>
+</section>
+
+<!-- ===================== F7 ===================== -->
+<section class="demo" id="f7">
+  <h2><span class="no">F7</span>重なり順とスタッキングコンテキスト <small>z-index が効かない理由</small></h2>
+  <p class="what"><code>z-index</code> は「同じスタッキングコンテキスト内」でしか比較されない。親に <code>transform</code>・<code>opacity&lt;1</code>・<code>filter</code>・<code>position + z-index</code> などがあると、そこで新しいコンテキストができ、子の z-index がいくら大きくても親の外の要素を追い越せない。ツールチップやドロップダウンが「下に潜る」原因の9割はこれ。</p>
+  <p class="how"><b>操作：</b>チェックで左の親に <code>transform</code> を付ける。子の z-index:999 が右の z-index:1 に負ける。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="f7-tf"> 左の親に transform: translateZ(0) を付ける（新しいスタッキングコンテキスト）</label></div>
+    <div class="row" style="align-items:flex-start;position:relative;height:90px">
+      <div id="f7-parent" class="f7-parent">親<div class="f7-child">子 z-index:999</div></div>
+      <div class="f7-other">隣 z-index:1</div>
+    </div>
+  </div>
+  <style data-code>
+    .f7-parent { position: relative; width: 140px; height: 60px; background: #fff; border: 1px solid #94a3b8; font-size: 12px; padding: 4px; }
+    .f7-parent.ctx { transform: translateZ(0); }
+    .f7-child { position: absolute; left: 60px; top: 20px; width: 150px; height: 50px; background: var(--accent); color: #fff; z-index: 999; padding: 4px; }
+    .f7-other { position: absolute; left: 120px; top: 30px; width: 140px; height: 50px; background: #fde68a; z-index: 1; font-size: 12px; padding: 4px; }
+  </style>
+  <script data-code>
+    (() => { $('#f7-tf').onchange = e => $('#f7-parent').classList.toggle('ctx', e.target.checked); })();
+  </script>
+</section>
+
+<!-- ===================== F8 ===================== -->
+<section class="demo" id="f8">
+  <h2><span class="no">F8</span>混同しやすい用語の対比表 <small>名前が似ている・動きが似ている</small></h2>
+  <p class="what">「何が違うのか」を一言で。判断の軸は<b>何が動くか／誰が時間を管理するか／どこが原点か</b>。</p>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <table class="cmp">
+    <tr><th style="width:190px">対比</th><th>違い</th><th style="width:90px">デモ</th></tr>
+    <tr><td class="k">スクロール vs パン</td><td>スクロールは<b>枠の中で中身がずれる</b>（境界あり、ブラウザ標準）。パンは<b>視点を動かす</b>（境界なし、自前）。地図はパン、表はスクロール</td><td><a href="02-basic.html#n01">01</a> <a href="02-basic.html#n02">02</a></td></tr>
+    <tr><td class="k">ズーム vs scale()</td><td>ズームは「操作」、<code>scale()</code> はそれを実現する「手段」の一つ。ズームには「どこを中心に」が必ず付く</td><td><a href="02-basic.html#n03">03</a> <a href="04-pro.html#n44">44</a></td></tr>
+    <tr><td class="k">トランジション vs アニメーション</td><td>トランジションは<b>状態変化の間を補間</b>（開始と終了の2点）。アニメーションは<b>キーフレームを再生</b>（複数点、繰り返し可）</td><td><a href="02-basic.html#n14">14</a> <a href="#f5">F5</a></td></tr>
+    <tr><td class="k">フェード vs 表示/非表示</td><td>フェードは opacity の補間で、<b>要素はそこに在る</b>（クリックできる、場所を取る）。display:none は存在ごと消える。組み合わせて使う</td><td><a href="02-basic.html#n12">12</a></td></tr>
+    <tr><td class="k">opacity vs visibility vs display</td><td>opacity:0 は見えないが操作できる／visibility:hidden は見えず操作不可だが場所は取る／display:none は場所も消える。アニメーションできるのは opacity だけ</td><td><a href="02-basic.html#n12">12</a></td></tr>
+    <tr><td class="k">ホバー vs フォーカス</td><td>ホバーはポインタが乗っている（タッチには無い）。フォーカスはキーボード入力の受け先（常に1つ）。情報をホバーだけに頼らない</td><td><a href="02-basic.html#n06">06</a> <a href="02-basic.html#n07">07</a></td></tr>
+    <tr><td class="k">クリック vs pointerup</td><td>click は「同じ要素で down→up」が揃ったときの合成イベント。pointerup は指を離した瞬間。ドラッグ終了は pointerup で取る</td><td><a href="02-basic.html#n04">04</a></td></tr>
+    <tr><td class="k">ドラッグ vs スワイプ vs フリック</td><td>ドラッグは追従（離した位置が結果）。スワイプは方向を判定する操作。フリックは特に速いスワイプ（速度で判定）</td><td><a href="02-basic.html#n09">09</a></td></tr>
+    <tr><td class="k">慣性 vs スプリング</td><td>慣性は「離した速度を減衰させる」（止まる位置は成り行き）。スプリングは「目標に引き寄せる」（止まる位置が決まっている）</td><td><a href="03-custom.html#n28">28</a> <a href="03-custom.html#n29">29</a></td></tr>
+    <tr><td class="k">モーダル vs ポップオーバー vs トースト</td><td>モーダルは背後を止めて返事を要求。ポップオーバーは要素に紐づく補足で、外側クリックで消える。トーストは通知で、勝手に消える</td><td><a href="02-basic.html#n15">15</a> <a href="02-basic.html#n17">17</a> <a href="02-basic.html#n16">16</a></td></tr>
+    <tr><td class="k">ツールチップ vs ポップオーバー</td><td>ツールチップはホバーで出る短い文字だけ。ポップオーバーはクリックで出て、中に操作（ボタン等）を持てる</td><td><a href="02-basic.html#n17">17</a></td></tr>
+    <tr><td class="k">ドロップダウン vs コンテキストメニュー</td><td>出し方の違い。ドロップダウンはボタン押下で下に出る。コンテキストメニューは右クリック位置に出る。中身は同じ</td><td><a href="02-basic.html#n20">20</a> <a href="03-custom.html#n39">39</a></td></tr>
+    <tr><td class="k">アコーディオン vs タブ</td><td>アコーディオンは縦に積んで複数開ける。タブは同じ場所を排他で切り替える</td><td><a href="02-basic.html#n18">18</a> <a href="02-basic.html#n19">19</a></td></tr>
+    <tr><td class="k">sticky vs fixed</td><td>fixed はビューポートに固定（親を無視）。sticky はスクロール親の中でだけ固定され、親が流れれば一緒に流れる。表の見出しは sticky</td><td><a href="03-custom.html#n24">24</a></td></tr>
+    <tr><td class="k">ページネーション vs 無限スクロール vs 仮想スクロール</td><td>前2つは「取得の分割」（サーバから少しずつ）。仮想スクロールは「描画の分割」（手元にある大量データのDOMを減らす）。併用できる</td><td><a href="02-basic.html#n21">21</a> <a href="03-custom.html#n23">23</a></td></tr>
+    <tr><td class="k">スクロールスナップ vs スナップ（吸着）</td><td>前者はスクロール停止位置の吸着（CSS）。後者はドラッグ中の位置吸着（ガイド線、グリッド）。名前が同じだけ</td><td><a href="03-custom.html#n25">25</a> <a href="04-pro.html#n47">47</a></td></tr>
+    <tr><td class="k">スロットル vs デバウンス</td><td>スロットルは一定間隔で必ず1回。デバウンスは止まってから1回。描画は rAF バッチ</td><td><a href="#f6">F6</a> <a href="04-pro.html#n54">54</a></td></tr>
+    <tr><td class="k">preventDefault vs stopPropagation</td><td>前者はブラウザの既定動作（スクロール、リンク遷移、右クリックメニュー）を止める。後者はイベントの伝播を止める。無関係</td><td><a href="#f2">F2</a> <a href="#f4">F4</a></td></tr>
+    <tr><td class="k">FLIP vs View Transitions</td><td>FLIP は自分で before/after を測って transform で誤魔化す。View Transitions はブラウザがスナップショットして同じことを自動でやる。対応ブラウザなら後者が楽</td><td><a href="03-custom.html#n30">30</a> <a href="03-custom.html#n31">31</a></td></tr>
+    <tr><td class="k">楽観的更新 vs 楽観ロック</td><td>楽観的更新は「先に画面を変えて、失敗したら戻す」（体感）。楽観ロックは「revision で競合を検知する」（整合性）。名前が似ているだけで別物</td><td><a href="04-pro.html#n57">57</a> <a href="05-advanced.html#n78">78</a></td></tr>
+  </table>
+  </div>
+</section>
+
+</main>
+</div>
+</body>
+</html>
