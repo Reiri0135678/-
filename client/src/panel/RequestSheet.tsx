@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CLOSED_STATUSES,
   PRIORITIES,
@@ -9,6 +9,7 @@ import {
   todayString,
   toCsv,
   toRequestRecord,
+  type Priority,
   type RequestCardShape,
   type RequestRecord,
   type RequestStatus
@@ -46,7 +47,18 @@ const COLUMNS: Column[] = [
   { key: 'kintoneRecordId', label: 'kintone', width: 80, kind: 'readonly' }
 ]
 
-/** 下部ドロワー: 依頼カードのスプレッドシート(セル直接編集・並べ替え・絞り込み・CSV・kintone 送信) */
+const DAY = 86400_000
+
+/** 納期の状態: 超過 / 2 日以内 / 余裕 / 納期なし・終了済み */
+export function dueState(rec: Pick<RequestRecord, 'dueDate' | 'status'>, today = todayString()): 'overdue' | 'soon' | 'ok' | 'none' {
+  if (!rec.dueDate || CLOSED_STATUSES.includes(rec.status)) return 'none'
+  const diff = Math.round((Date.parse(rec.dueDate) - Date.parse(today)) / DAY)
+  if (diff < 0) return 'overdue'
+  if (diff <= 2) return 'soon'
+  return 'ok'
+}
+
+/** 下部ドロワー: 依頼カードのスプレッドシート(セル直接編集・キーボード移動・一括変更・並べ替え・絞り込み・集計・CSV・kintone 送信) */
 export function RequestSheet({
   editor,
   roomId,
@@ -60,24 +72,34 @@ export function RequestSheet({
 }): JSX.Element {
   const cards = useCards(editor)
   const selected = useSingleSelection(editor)
+  const [view, setView] = useState<'list' | 'summary'>('list')
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<RequestStatus | ''>('')
+  const [deptFilter, setDeptFilter] = useState('')
+  const [overdueOnly, setOverdueOnly] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'no', dir: -1 })
   const [showArchived, setShowArchived] = useState(false)
+  const [checked, setChecked] = useState<Set<string>>(new Set())
   const [kstatus, setKstatus] = useState<KintoneStatus | null>(null)
   const [syncMsg, setSyncMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const tableRef = useRef<HTMLTableElement>(null)
+  const today = todayString()
 
   useEffect(() => {
     kintoneStatus().then(setKstatus).catch(() => setKstatus({ mode: 'unconfigured' }))
   }, [])
 
+  const depts = useMemo(() => [...new Set(cards.map((c) => c.dept).filter(Boolean))].sort(), [cards])
+
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase()
     const list = cards
-      .map((c) => ({ card: c, rec: toRequestRecord(c, boardName) }))
+      .map((c) => ({ card: c, rec: toRequestRecord(c, boardName), due: dueState(c, today) }))
       .filter(({ rec }) => showArchived || !rec.archived)
       .filter(({ rec }) => !statusFilter || rec.status === statusFilter)
+      .filter(({ rec }) => !deptFilter || rec.dept === deptFilter)
+      .filter(({ due }) => !overdueOnly || due === 'overdue')
       .filter(({ rec }) => !q || Object.values(rec).some((v) => String(v).toLowerCase().includes(q)))
     list.sort((a, b) => {
       const av = String(a.rec[sort.key] ?? '')
@@ -85,10 +107,18 @@ export function RequestSheet({
       return av.localeCompare(bv, 'ja') * sort.dir
     })
     return list
-  }, [cards, boardName, query, statusFilter, sort, showArchived])
+  }, [cards, boardName, query, statusFilter, deptFilter, overdueOnly, sort, showArchived, today])
 
-  const toggleSort = (key: SortKey) =>
-    setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
+  // 表示から消えた行のチェックは外す
+  useEffect(() => {
+    setChecked((prev) => {
+      const ids = new Set(rows.map((r) => r.card.id))
+      const next = new Set([...prev].filter((id) => ids.has(id)))
+      return next.size === prev.size ? prev : next
+    })
+  }, [rows])
+
+  const toggleSort = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
   const exportCsv = () => {
     const csv = toCsv(rows.map((r) => r.rec))
@@ -114,45 +144,97 @@ export function RequestSheet({
     }
   }
 
+  // ---- キーボード移動: ↑↓ Enter で同じ列の隣の行へ、Esc でフォーカスを外す ----------
+  const onGridKeyDown = (e: React.KeyboardEvent) => {
+    const t = e.target as HTMLElement
+    if (!(t instanceof HTMLInputElement || t instanceof HTMLSelectElement)) return
+    const col = t.dataset['col']
+    const tr = t.closest('tr')
+    if (!col || !tr) return
+    let dir = 0
+    if (e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey && !(t instanceof HTMLSelectElement))) dir = 1
+    else if (e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey)) dir = -1
+    else if (e.key === 'Escape') {
+      t.blur()
+      return
+    }
+    if (!dir) return
+    const target = dir === 1 ? tr.nextElementSibling : tr.previousElementSibling
+    const next = target?.querySelector<HTMLElement>(`input[data-col="${col}"], select[data-col="${col}"]`)
+    if (next) {
+      e.preventDefault()
+      next.focus()
+      if (next instanceof HTMLInputElement) next.select()
+    }
+  }
+
+  // ---- 一括変更 ----------------------------------------------------------
+  const checkedCards = rows.filter((r) => checked.has(r.card.id)).map((r) => r.card)
+  const allChecked = rows.length > 0 && rows.every((r) => checked.has(r.card.id))
+  const bulk = (patch: Partial<RequestCardShape>) => {
+    editor.updateShapes(checkedCards.map((c) => ({ id: c.id, patch })))
+  }
+  /** 選択中の全カードから移れる状態だけ */
+  const bulkStatuses = REQUEST_STATUSES.filter((s) => checkedCards.length > 0 && checkedCards.every((c) => canTransition(c.status, s)))
+  const [bulkAssignee, setBulkAssignee] = useState('')
+
   const addCard = () => addCardAtCenter(editor)
 
   const active = cards.filter((c) => !c.archived)
   const counts = REQUEST_STATUSES.map((st) => [st, active.filter((c) => c.status === st).length] as const).filter(([, n]) => n > 0)
+  const overdue = active.filter((c) => dueState(c, today) === 'overdue').length
   const archivable = active.filter((c) => CLOSED_STATUSES.includes(c.status))
-  const archiveClosed = () => {
-    editor.updateShapes(archivable.map((c) => ({ id: c.id, patch: { archived: true } })))
-  }
-  const kintoneLabel =
-    kstatus?.mode === 'mock' ? 'kintone へ送信(モック)' : kstatus?.mode === 'configured' ? 'kintone へ送信' : 'kintone 未設定'
+  const archiveClosed = () => editor.updateShapes(archivable.map((c) => ({ id: c.id, patch: { archived: true } })))
+  const kintoneLabel = kstatus?.mode === 'mock' ? 'kintone へ送信(モック)' : kstatus?.mode === 'configured' ? 'kintone へ送信' : 'kintone 未設定'
 
   return (
     <div className="sheet" data-testid="sheet">
       <div className="sheet__bar">
-        <strong>依頼一覧</strong>
+        <span className="sheet__tabs">
+          <button className="tab" data-active={view === 'list'} onClick={() => setView('list')} data-testid="tab-list">
+            依頼一覧
+          </button>
+          <button className="tab" data-active={view === 'summary'} onClick={() => setView('summary')} data-testid="tab-summary">
+            集計
+          </button>
+        </span>
         <span className="counts">
           {counts.map(([st, n]) => (
             <span key={st} className="counts__item" data-status={st}>
               {st} {n}
             </span>
           ))}
+          {overdue > 0 && (
+            <span className="counts__item counts__item--overdue" data-testid="overdue-count">
+              納期超過 {overdue}
+            </span>
+          )}
         </span>
-        <input
-          className="sheet__search"
-          placeholder="検索(品番・部門・備考など)"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          data-testid="sheet-search"
-        />
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as RequestStatus | '')} data-testid="sheet-filter">
-          <option value="">すべての状態</option>
-          {REQUEST_STATUSES.map((s) => (
-            <option key={s}>{s}</option>
-          ))}
-        </select>
-        <label className="sheet__check">
-          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} data-testid="sheet-archived" />
-          アーカイブも表示
-        </label>
+        {view === 'list' && (
+          <>
+            <input className="sheet__search" placeholder="検索(品番・部門・備考など)" value={query} onChange={(e) => setQuery(e.target.value)} data-testid="sheet-search" />
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value as RequestStatus | '')} data-testid="sheet-filter">
+              <option value="">すべての状態</option>
+              {REQUEST_STATUSES.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+            <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} data-testid="sheet-dept">
+              <option value="">すべての部門</option>
+              {depts.map((d) => (
+                <option key={d}>{d}</option>
+              ))}
+            </select>
+            <label className="sheet__check">
+              <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} data-testid="sheet-overdue" />
+              納期超過のみ
+            </label>
+            <label className="sheet__check">
+              <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} data-testid="sheet-archived" />
+              アーカイブも表示
+            </label>
+          </>
+        )}
         <span className="sheet__spacer" />
         {!readonly && archivable.length > 0 && (
           <button className="btn" onClick={archiveClosed} title="完了・取消のカードをボードから外します(一覧と kintone には残ります)" data-testid="sheet-archive">
@@ -184,63 +266,268 @@ export function RequestSheet({
           {syncMsg}
         </div>
       )}
-      <div className="sheet__scroll">
-        <table className="grid">
-          <colgroup>
-            {COLUMNS.map((c) => (
-              <col key={c.key} style={{ width: c.width }} />
+
+      {view === 'list' && !readonly && checkedCards.length > 0 && (
+        <div className="sheet__bulk" data-testid="bulk-bar">
+          <strong>{checkedCards.length} 件を選択中</strong>
+          <select value="" onChange={(e) => e.target.value && bulk({ status: e.target.value as RequestStatus })} data-testid="bulk-status">
+            <option value="">状態を変更…</option>
+            {bulkStatuses.map((s) => (
+              <option key={s}>{s}</option>
             ))}
-          </colgroup>
+          </select>
+          <select value="" onChange={(e) => e.target.value && bulk({ priority: e.target.value as Priority })} data-testid="bulk-priority">
+            <option value="">優先度を変更…</option>
+            {PRIORITIES.map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+          <span className="sheet__bulk-assign">
+            <input
+              placeholder="担当を割り当て"
+              value={bulkAssignee}
+              onChange={(e) => setBulkAssignee(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && bulkAssignee.trim()) {
+                  bulk({ assignee: bulkAssignee.trim() })
+                  setBulkAssignee('')
+                }
+              }}
+              data-testid="bulk-assignee"
+            />
+            <button
+              className="btn"
+              disabled={!bulkAssignee.trim()}
+              onClick={() => {
+                bulk({ assignee: bulkAssignee.trim() })
+                setBulkAssignee('')
+              }}
+              data-testid="bulk-assignee-apply"
+            >
+              割当
+            </button>
+          </span>
+          <button className="btn" onClick={() => bulk({ archived: true })} data-testid="bulk-archive">
+            アーカイブ
+          </button>
+          <span className="sheet__spacer" />
+          <button className="link" onClick={() => setChecked(new Set())} data-testid="bulk-clear">
+            選択解除
+          </button>
+        </div>
+      )}
+
+      {view === 'summary' ? (
+        <Summary cards={active} today={today} />
+      ) : (
+        <div className="sheet__scroll">
+          <table className="grid" ref={tableRef} onKeyDown={onGridKeyDown}>
+            <colgroup>
+              {!readonly && <col style={{ width: 32 }} />}
+              {COLUMNS.map((c) => (
+                <col key={c.key} style={{ width: c.width }} />
+              ))}
+            </colgroup>
+            <thead>
+              <tr>
+                {!readonly && (
+                  <th className="grid__check">
+                    <input
+                      type="checkbox"
+                      checked={allChecked}
+                      onChange={(e) => setChecked(e.target.checked ? new Set(rows.map((r) => r.card.id)) : new Set())}
+                      title="すべて選択"
+                      data-testid="check-all"
+                    />
+                  </th>
+                )}
+                {COLUMNS.map((c) => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)} data-sorted={sort.key === c.key ? sort.dir : undefined}>
+                    {c.label}
+                    {sort.key === c.key && <span className="grid__arrow">{sort.dir === 1 ? '▲' : '▼'}</span>}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={COLUMNS.length + 1} className="muted">
+                    {cards.length === 0 ? '依頼はまだありません' : '条件に合う依頼がありません'}
+                  </td>
+                </tr>
+              )}
+              {rows.map(({ card, rec, due }) => (
+                <tr
+                  key={card.id}
+                  data-selected={selected?.id === card.id}
+                  data-checked={checked.has(card.id)}
+                  data-priority={rec.priority}
+                  data-due={due}
+                  data-testid="sheet-row"
+                  onClick={(e) => {
+                    if ((e.target as HTMLElement).closest('input,select')) return
+                    focusShape(editor, card.id)
+                  }}
+                >
+                  {!readonly && (
+                    <td className="grid__check">
+                      <input
+                        type="checkbox"
+                        checked={checked.has(card.id)}
+                        onChange={(e) => {
+                          setChecked((prev) => {
+                            const next = new Set(prev)
+                            if (e.target.checked) next.add(card.id)
+                            else next.delete(card.id)
+                            return next
+                          })
+                        }}
+                        data-testid="row-check"
+                      />
+                    </td>
+                  )}
+                  {COLUMNS.map((c) => (
+                    <td key={c.key} data-col={c.key} data-priority={c.key === 'priority' ? rec.priority : undefined} data-due={c.key === 'dueDate' ? due : undefined}>
+                      <Cell
+                        column={c}
+                        value={String(rec[c.key] ?? '')}
+                        readonly={readonly}
+                        status={rec.status}
+                        onChange={(v) => {
+                          if (c.key === 'result') {
+                            updateCard(editor, card.id, v === '未判定' ? { result: '未判定', judgedBy: '', judgedAt: '' } : { result: v as never, judgedBy: editor.userName, judgedAt: todayString() })
+                            return
+                          }
+                          updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape>)
+                        }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 集計ビュー: 状態別・部門別の件数、リードタイム、納期、担当別の持ち件数 */
+function Summary({ cards, today }: { cards: RequestCardShape[]; today: string }): JSX.Element {
+  const open = cards.filter((c) => !CLOSED_STATUSES.includes(c.status))
+  const done = cards.filter((c) => c.status === '完了')
+  const leadDays = done
+    .map((c) => {
+      const end = c.judgedAt || new Date(c.updatedAt).toISOString().slice(0, 10)
+      return c.requestedAt ? (Date.parse(end) - Date.parse(c.requestedAt)) / DAY : NaN
+    })
+    .filter((d) => Number.isFinite(d) && d >= 0)
+  const avgLead = leadDays.length ? leadDays.reduce((a, b) => a + b, 0) / leadDays.length : null
+  const overdue = open.filter((c) => dueState(c, today) === 'overdue')
+  const soon = open.filter((c) => dueState(c, today) === 'soon')
+  const urgent = open.filter((c) => c.priority === '至急')
+
+  const byDept = groupCount(cards, (c) => c.dept || '(部門未設定)')
+  const byAssignee = groupCount(open, (c) => c.assignee || '(未割当)')
+  const results = RESULTS.map((r) => [r, cards.filter((c) => c.result === r).length] as const)
+
+  return (
+    <div className="summary" data-testid="summary">
+      <div className="tiles">
+        <Tile label="対応中" value={open.length} sub={`全 ${cards.length} 件中`} />
+        <Tile label="納期超過" value={overdue.length} tone={overdue.length ? 'bad' : 'ok'} sub={soon.length ? `2 日以内 ${soon.length} 件` : ''} />
+        <Tile label="至急(対応中)" value={urgent.length} tone={urgent.length ? 'warn' : 'ok'} />
+        <Tile label="平均リードタイム" value={avgLead === null ? '-' : `${avgLead.toFixed(1)} 日`} sub={`完了 ${leadDays.length} 件から`} />
+        <Tile label="不合格" value={results.find(([r]) => r === '不合格')?.[1] ?? 0} tone="warn" sub={`合格 ${results.find(([r]) => r === '合格')?.[1] ?? 0} / 条件付 ${results.find(([r]) => r === '条件付合格')?.[1] ?? 0}`} />
+      </div>
+      <div className="summary__tables">
+        <BreakdownTable title="部門別" rows={byDept} cards={cards} data-testid="by-dept" />
+        <BreakdownTable title="担当別(対応中)" rows={byAssignee} cards={open} />
+        <div className="breakdown">
+          <h3>納期超過</h3>
+          {overdue.length === 0 ? (
+            <p className="muted">ありません</p>
+          ) : (
+            <table className="mini">
+              <tbody>
+                {overdue
+                  .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+                  .map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.no}</td>
+                      <td>{c.partNo || c.title}</td>
+                      <td>{c.dept}</td>
+                      <td className="num">{c.dueDate}</td>
+                      <td className="num bad">{Math.round((Date.parse(today) - Date.parse(c.dueDate)) / DAY)} 日超過</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function groupCount(cards: RequestCardShape[], key: (c: RequestCardShape) => string): Array<[string, RequestCardShape[]]> {
+  const m = new Map<string, RequestCardShape[]>()
+  for (const c of cards) {
+    const k = key(c)
+    m.set(k, [...(m.get(k) ?? []), c])
+  }
+  return [...m.entries()].sort((a, b) => b[1].length - a[1].length)
+}
+
+function BreakdownTable({ title, rows, cards, ...rest }: { title: string; rows: Array<[string, RequestCardShape[]]>; cards: RequestCardShape[]; 'data-testid'?: string }): JSX.Element {
+  const statuses = REQUEST_STATUSES.filter((s) => cards.some((c) => c.status === s))
+  return (
+    <div className="breakdown" data-testid={rest['data-testid']}>
+      <h3>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="muted">データがありません</p>
+      ) : (
+        <table className="mini">
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
-                <th key={c.key} onClick={() => toggleSort(c.key)} data-sorted={sort.key === c.key ? sort.dir : undefined}>
-                  {c.label}
-                  {sort.key === c.key && <span className="grid__arrow">{sort.dir === 1 ? '▲' : '▼'}</span>}
+              <th></th>
+              <th className="num">件数</th>
+              {statuses.map((s) => (
+                <th key={s} className="num">
+                  {s}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={COLUMNS.length} className="muted">
-                  {cards.length === 0 ? '依頼はまだありません' : '条件に合う依頼がありません'}
+            {rows.map(([name, list]) => (
+              <tr key={name}>
+                <td>{name}</td>
+                <td className="num">
+                  <b>{list.length}</b>
                 </td>
-              </tr>
-            )}
-            {rows.map(({ card, rec }) => (
-              <tr
-                key={card.id}
-                data-selected={selected?.id === card.id}
-                data-testid="sheet-row"
-                onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('input,select')) return
-                  focusShape(editor, card.id)
-                }}
-              >
-                {COLUMNS.map((c) => (
-                  <td key={c.key} data-col={c.key} data-priority={c.key === 'priority' ? rec.priority : undefined}>
-                    <Cell
-                      column={c}
-                      value={String(rec[c.key] ?? '')}
-                      readonly={readonly}
-                      status={rec.status}
-                      onChange={(v) => {
-                        if (c.key === 'result') {
-                          updateCard(editor, card.id, v === '未判定' ? { result: '未判定', judgedBy: '', judgedAt: '' } : { result: v as never, judgedBy: editor.userName, judgedAt: todayString() })
-                          return
-                        }
-                        updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape>)
-                      }}
-                    />
+                {statuses.map((s) => (
+                  <td key={s} className="num">
+                    {list.filter((c) => c.status === s).length || ''}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
-      </div>
+      )}
+    </div>
+  )
+}
+
+function Tile({ label, value, sub, tone }: { label: string; value: number | string; sub?: string; tone?: 'ok' | 'warn' | 'bad' }): JSX.Element {
+  return (
+    <div className="tile" data-tone={tone}>
+      <span className="tile__label">{label}</span>
+      <span className="tile__value">{value}</span>
+      {sub && <span className="tile__sub">{sub}</span>}
     </div>
   )
 }
@@ -262,8 +549,7 @@ function Cell({
     return <span className="grid__ro">{value || (column.kind === 'readonly' ? '-' : '')}</span>
   }
   if (column.kind === 'select' || column.kind === 'priority' || column.kind === 'result') {
-    const opts =
-      column.kind === 'select' ? REQUEST_STATUSES.filter((s) => canTransition(status, s)) : column.kind === 'priority' ? PRIORITIES : RESULTS
+    const opts = column.kind === 'select' ? REQUEST_STATUSES.filter((s) => canTransition(status, s)) : column.kind === 'priority' ? PRIORITIES : RESULTS
     return (
       <select value={value} onChange={(e) => onChange(e.target.value)} data-col={column.key}>
         {opts.map((s) => (
@@ -282,3 +568,4 @@ function Cell({
     />
   )
 }
+

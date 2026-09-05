@@ -156,6 +156,48 @@ try {
   ok('状態フィルタで 1 行', (await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === 1 ? 1 : null))) === 1)
   await a.selectOption('[data-testid="sheet-filter"]', '')
 
+  // 一覧: キーボード移動・一括変更・納期超過の強調・集計
+  {
+    await a.locator('[data-testid="sheet-row"] input[data-col="lot"]').first().focus()
+    await a.keyboard.press('ArrowDown')
+    const focusedRow = await a.evaluate(() => { const el = document.activeElement; return el?.dataset?.col === 'lot' ? Array.from(document.querySelectorAll('[data-testid="sheet-row"]')).indexOf(el.closest('tr')) : -1 })
+    ok('↓ キーで同じ列の次の行へ移動', focusedRow === 1)
+    await a.keyboard.press('ArrowUp')
+    ok('↑ キーで戻る', (await a.evaluate(() => Array.from(document.querySelectorAll('[data-testid="sheet-row"]')).indexOf(document.activeElement.closest('tr')))) === 0)
+    await a.keyboard.press('Escape')
+
+    await a.check('[data-testid="check-all"]')
+    await a.waitForSelector('[data-testid="bulk-bar"]')
+    ok('全選択で一括変更バーが出る(2 件)', /2 件/.test(await a.locator('[data-testid="bulk-bar"] strong').textContent()))
+    const bulkOpts = await a.locator('[data-testid="bulk-status"] option').allTextContents()
+    ok(`一括の状態変更は全カードから移れる状態だけ (${bulkOpts.slice(1).join('/')})`, bulkOpts.slice(1).join('/') === '受付/差戻し')
+    await a.fill('[data-testid="bulk-assignee"]', '鈴木')
+    await a.click('[data-testid="bulk-assignee-apply"]')
+    ok('一括で担当を割当 → B に同期', await waitFor(() => b.evaluate(() => { const cs = window.__qcEditor.getShapes().filter((s) => s.type === 'request-card'); return cs.length === 2 && cs.every((s) => s.assignee === '鈴木') })))
+    await a.click('[data-testid="bulk-clear"]')
+    ok('選択解除でバーが消える', (await a.locator('[data-testid="bulk-bar"]').count()) === 0)
+
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    await a.evaluate((d) => { const ed = window.__qcEditor; ed.updateShape(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'E2E-001').id, { dueDate: d }) }, yesterday)
+    await a.waitForSelector('[data-testid="overdue-count"]')
+    ok('納期超過が件数と行の強調に出る', (await a.locator('[data-testid="sheet-row"][data-due="overdue"]').count()) === 1 && /納期超過 1/.test(await a.locator('[data-testid="overdue-count"]').textContent()))
+    await a.check('[data-testid="sheet-overdue"]')
+    ok('「納期超過のみ」で 1 行', (await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === 1 ? 1 : null))) === 1)
+    await a.uncheck('[data-testid="sheet-overdue"]')
+    await a.selectOption('[data-testid="sheet-dept"]', '製造1課')
+    ok('部門で絞り込み', (await waitFor(async () => { const n = await a.locator('[data-testid="sheet-row"]').count(); return n >= 1 ? n : null })) >= 1)
+    await a.selectOption('[data-testid="sheet-dept"]', '')
+
+    await a.click('[data-testid="tab-summary"]')
+    await a.waitForSelector('[data-testid="summary"]')
+    const tiles = await a.locator('.tile').count()
+    const deptRows = await a.locator('[data-testid="by-dept"] tbody tr').count()
+    ok(`集計ビュー: タイル ${tiles} 枚、部門別 ${deptRows} 行`, tiles >= 5 && deptRows >= 1)
+    ok('集計に納期超過 1 件', /1/.test(await a.locator('.tile[data-tone="bad"] .tile__value').textContent()))
+    await a.click('[data-testid="tab-list"]')
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.updateShape(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'E2E-001').id, { dueDate: '' }) })
+  }
+
   // CSV: ダウンロードイベントが発生し内容に見出しが含まれる
   const [download] = await Promise.all([a.waitForEvent('download'), a.click('[data-testid="sheet-csv"]')])
   const csvPath = await download.path()
