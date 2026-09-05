@@ -1,6 +1,6 @@
 {
   "name": "qc-board",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "品質管理室 検査依頼デジタル化アプリ(多人数同時編集ホワイトボード)",
   "private": true,
   "type": "module",

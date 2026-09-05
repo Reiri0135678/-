@@ -3,7 +3,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Arrow, Ellipse, Group, Image as KImage, Line, Rect, Text } from 'react-konva'
 import { getStroke } from 'perfect-freehand'
-import type { DrawShape, ImageShape, NoteShape, RequestCardShape, Shape, TextShape } from '@shared/shapes'
+import { dashArray, type DrawShape, type EllipseShape, type ImageShape, type NoteShape, type RectShape, type RequestCardShape, type Shape, type TextShape } from '@shared/shapes'
 import { useImage } from '../useImage'
 
 export interface ShapeHandlers {
@@ -72,32 +72,31 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
     case 'arrow':
       return (
         <Group {...common}>
-          <Arrow
-            points={[0, 0, shape.dx, shape.dy]}
-            stroke={shape.color}
-            fill={shape.color}
-            strokeWidth={shape.size}
-            pointerLength={10 + shape.size}
-            pointerWidth={10 + shape.size}
-            hitStrokeWidth={16}
-            lineCap="round"
-          />
+          {shape.headStart || shape.headEnd ? (
+            <Arrow
+              points={[0, 0, shape.dx, shape.dy]}
+              stroke={shape.color}
+              fill={shape.color}
+              strokeWidth={shape.size}
+              dash={dashArray(shape.dash, shape.size)}
+              pointerLength={10 + shape.size}
+              pointerWidth={10 + shape.size}
+              pointerAtBeginning={shape.headStart}
+              pointerAtEnding={shape.headEnd}
+              hitStrokeWidth={16}
+              lineCap="round"
+            />
+          ) : (
+            <Line points={[0, 0, shape.dx, shape.dy]} stroke={shape.color} strokeWidth={shape.size} dash={dashArray(shape.dash, shape.size)} hitStrokeWidth={16} lineCap="round" />
+          )}
           <LockBadge shape={shape} />
         </Group>
       )
     case 'rect':
       return (
         <Group {...common}>
-          <Rect
-            width={shape.w}
-            height={shape.h}
-            stroke={shape.color}
-            strokeWidth={shape.size}
-            fill={shape.fill === 'transparent' ? undefined : shape.fill}
-            cornerRadius={4}
-            hitStrokeWidth={12}
-          />
-          {shape.fill === 'transparent' && <Rect width={shape.w} height={shape.h} fill="rgba(0,0,0,0.001)" />}
+          <GeoView shape={shape} />
+          <LabelView shape={shape} />
           <LockBadge shape={shape} />
         </Group>
       )
@@ -111,9 +110,11 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
             radiusY={Math.max(1, shape.h / 2)}
             stroke={shape.color}
             strokeWidth={shape.size}
+            dash={dashArray(shape.dash, shape.size)}
             fill={shape.fill === 'transparent' ? 'rgba(0,0,0,0.001)' : shape.fill}
             hitStrokeWidth={12}
           />
+          <LabelView shape={shape} />
           <LockBadge shape={shape} />
         </Group>
       )
@@ -132,6 +133,45 @@ export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps)
         </Group>
       )
   }
+}
+
+/** 四角系の図形(四角・角丸・三角・ひし形・六角) */
+function GeoView({ shape }: { shape: RectShape }): JSX.Element {
+  const { w, h } = shape
+  const stroke = { stroke: shape.color, strokeWidth: shape.size, dash: dashArray(shape.dash, shape.size), hitStrokeWidth: 12, lineJoin: 'round' as const }
+  const fill = shape.fill === 'transparent' ? 'rgba(0,0,0,0.001)' : shape.fill
+  if (shape.kind === 'rect' || shape.kind === 'rounded') {
+    return <Rect width={w} height={h} cornerRadius={shape.kind === 'rounded' ? Math.min(w, h) * 0.2 : 4} fill={fill} {...stroke} />
+  }
+  const pts =
+    shape.kind === 'triangle'
+      ? [w / 2, 0, w, h, 0, h]
+      : shape.kind === 'diamond'
+        ? [w / 2, 0, w, h / 2, w / 2, h, 0, h / 2]
+        : [w * 0.25, 0, w * 0.75, 0, w, h / 2, w * 0.75, h, w * 0.25, h, 0, h / 2]
+  return <Line points={pts} closed fill={fill} {...stroke} />
+}
+
+/** 図形の中のラベル */
+function LabelView({ shape }: { shape: RectShape | EllipseShape }): JSX.Element | null {
+  if (!shape.label) return null
+  return (
+    <Text
+      text={shape.label}
+      x={8}
+      y={8}
+      width={Math.max(1, shape.w - 16)}
+      height={Math.max(1, shape.h - 16)}
+      align="center"
+      verticalAlign="middle"
+      fontSize={shape.fontSize}
+      fontFamily={FONT}
+      fill={shape.color}
+      wrap="word"
+      ellipsis
+      listening={false}
+    />
+  )
 }
 
 function DrawView({ shape }: { shape: DrawShape }): JSX.Element {

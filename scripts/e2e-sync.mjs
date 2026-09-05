@@ -280,6 +280,109 @@ try {
     await a.keyboard.press('Escape')
   }
 
+  // コピー/貼り付け・右クリックメニュー・整列・重なり順・微調整・直線/線種/矢頭/図形の種類/ラベル・PNG・検索・追従
+  {
+    const board = await a.locator('.board').boundingBox()
+    const pt = (x, y) => [board.x + x, board.y + y]
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.selectNone(); ed.setCamera({ x: 0, y: 0, scale: 1 }) })
+    const rectsBefore = await a.evaluate(() => window.__qcEditor.getShapes().filter((s) => s.type === 'rect').length)
+    // 右クリック → コピー、空き地で右クリック → 貼り付け
+    await a.mouse.click(...pt(460, 460), { button: 'right' })
+    await a.waitForSelector('[data-testid="context-menu"]')
+    await a.click('[data-testid="menu-copy"]')
+    await a.mouse.click(...pt(900, 520), { button: 'right' })
+    await a.waitForSelector('[data-testid="context-menu"]')
+    await a.click('[data-testid="menu-paste"]')
+    const pasted = await waitFor(() => a.evaluate((n) => { const rs = window.__qcEditor.getShapes().filter((s) => s.type === 'rect'); return rs.length === n + 1 ? rs[rs.length - 1] : null }, rectsBefore))
+    ok(`右クリックのコピー→貼り付けで複製される(貼り付け位置の中心 x=${Math.round(pasted.x + pasted.w / 2)})`, Math.abs(pasted.x + pasted.w / 2 - 900) < 2 && Math.abs(pasted.y + pasted.h / 2 - 520) < 2 && pasted.id !== 's_rectA')
+    ok('貼り付けた図形は相手にも届く', await waitFor(() => b.evaluate((id) => !!window.__qcEditor.getShape(id), pasted.id)))
+
+    // 整列・等間隔
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.createShape({ id: 's_al1', type: 'rect', x: 100, y: 480, w: 60, h: 40 })
+      ed.createShape({ id: 's_al2', type: 'rect', x: 300, y: 510, w: 60, h: 40 })
+      ed.createShape({ id: 's_al3', type: 'rect', x: 380, y: 540, w: 60, h: 40 })
+      ed.select(['s_al1', 's_al2', 's_al3'])
+    })
+    await a.waitForSelector('[data-testid="align-row"]')
+    await a.click('[data-align-how="top"]')
+    ok('上揃え', await waitFor(() => a.evaluate(() => ['s_al1', 's_al2', 's_al3'].every((id) => window.__qcEditor.getShape(id).y === 480))))
+    await a.click('[data-distribute="x"]')
+    ok('左右に等間隔', await waitFor(() => a.evaluate(() => { const [p, q, r] = ['s_al1', 's_al2', 's_al3'].map((id) => window.__qcEditor.getShape(id)); return Math.abs((q.x - (p.x + p.w)) - (r.x - (q.x + q.w))) < 0.5 })))
+
+    // 重なり順と微調整
+    await a.evaluate(() => window.__qcEditor.select('s_al1'))
+    await a.click('.board', { position: { x: 5, y: 5 } })
+    await a.evaluate(() => window.__qcEditor.select('s_al1'))
+    await a.keyboard.press('Control+Shift+]')
+    ok('Ctrl+Shift+] で最前面へ', await waitFor(() => a.evaluate(() => { const ss = window.__qcEditor.getShapes(); return ss[ss.length - 1].id === 's_al1' })))
+    await a.keyboard.press('Control+Shift+[')
+    ok('Ctrl+Shift+[ で最背面へ', await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes()[0].id === 's_al1')))
+    const x0 = await a.evaluate(() => window.__qcEditor.getShape('s_al1').x)
+    await a.keyboard.press('Shift+ArrowRight')
+    await a.keyboard.press('ArrowDown')
+    ok('矢印キーで微調整(Shift で 10px)', await waitFor(() => a.evaluate((x0) => { const s = window.__qcEditor.getShape('s_al1'); return s.x === x0 + 10 && s.y === 481 }, x0)))
+
+    // 直線ツール・線種・矢頭・図形の種類
+    await a.evaluate(() => window.__qcEditor.setTool('line'))
+    await a.mouse.move(...pt(600, 300))
+    await a.mouse.down()
+    await a.mouse.move(...pt(800, 380), { steps: 5 })
+    await a.mouse.up()
+    const line = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'arrow' && !s.headEnd && !s.headStart) || null))
+    ok('直線ツールで矢頭なしの線', !!line)
+    await a.evaluate((id) => window.__qcEditor.select(id), line.id)
+    await a.waitForSelector('[data-testid="dash-row"]')
+    await a.click('[data-dash="dashed"]')
+    await a.click('[data-heads="both"]')
+    ok('破線・両端矢頭が相手に同期', await waitFor(() => b.evaluate((id) => { const s = window.__qcEditor.getShape(id); return s.dash === 'dashed' && s.headStart && s.headEnd }, line.id)))
+    await a.evaluate(() => window.__qcEditor.select('s_al2'))
+    await a.waitForSelector('[data-testid="kind-row"]')
+    await a.click('[data-kind="diamond"]')
+    ok('図形の種類をひし形に', await waitFor(() => b.evaluate(() => window.__qcEditor.getShape('s_al2').kind === 'diamond')))
+
+    // ラベル(ダブルクリックで編集)
+    const al2 = await a.evaluate(() => window.__qcEditor.getShape('s_al2'))
+    await a.evaluate(() => window.__qcEditor.selectNone())
+    await a.mouse.dblclick(...pt(al2.x + al2.w / 2, al2.y + al2.h / 2))
+    await a.waitForSelector('[data-testid="text-editor"]')
+    await a.keyboard.type('判定')
+    await a.keyboard.press('Escape')
+    ok('図形内ラベルが相手に同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShape('s_al2').label === '判定')))
+
+    // PNG 書き出し
+    const [dl] = await Promise.all([a.waitForEvent('download'), a.evaluate(() => window.__qcExport('page'))])
+    const { statSync, readFileSync: rfs } = await import('node:fs')
+    const pngHead = rfs(await dl.path()).subarray(0, 8).toString('hex')
+    // ヘッドレス Chromium は日本語ファイル名を "download" にするため、中身(PNG シグネチャ)で判定
+    ok(`ページを PNG 保存 (${statSync(await dl.path()).size} bytes)`, pngHead === '89504e470d0a1a0a' && statSync(await dl.path()).size > 2000)
+
+    // 検索
+    await a.click('.board', { position: { x: 5, y: 5 } })
+    await a.keyboard.press('Control+f')
+    await a.waitForSelector('[data-testid="find-bar"]')
+    await a.fill('[data-testid="find-input"]', 'E2E-001')
+    ok('検索の件数', (await waitFor(async () => { const t = await a.locator('[data-testid="find-count"]').textContent(); return /1 \/ 1/.test(t) ? t : null })) !== null)
+    await a.keyboard.press('Enter')
+    ok('Enter で該当図形へ移動・選択', await waitFor(() => a.evaluate(() => { const ed = window.__qcEditor; const sel = ed.getSelectedShapes(); return sel.length === 1 && sel[0].partNo === 'E2E-001' })))
+    await a.keyboard.press('Escape')
+
+    // 追従
+    await b.evaluate(() => window.__qcEditor.setCamera({ x: -300, y: -200, scale: 1.5 }))
+    await a.click('[data-testid="peers-btn"]')
+    await a.click('[data-testid="follow-佐藤"]')
+    ok('相手の画面に追従(倍率が一致)', await waitFor(() => a.evaluate(() => { const c = window.__qcEditor.getSnapshot().camera; return Math.abs(c.scale - 1.5) < 0.01 && window.__qcEditor.getSnapshot().following !== null })))
+    await a.waitForSelector('[data-testid="follow-banner"]')
+    await b.evaluate(() => window.__qcEditor.setCamera({ x: 0, y: 0, scale: 0.8 }))
+    ok('相手が動くと追従して変わる', await waitFor(() => a.evaluate(() => Math.abs(window.__qcEditor.getSnapshot().camera.scale - 0.8) < 0.01)))
+    await a.mouse.move(...pt(700, 400))
+    await a.mouse.wheel(0, 100)
+    ok('自分で操作すると追従が解除される', await waitFor(() => a.evaluate(() => window.__qcEditor.getSnapshot().following === null)))
+    await a.evaluate(() => { const ed = window.__qcEditor; ed.setCamera({ x: 0, y: 0, scale: 1 }); ed.selectNone() })
+    await b.evaluate(() => window.__qcEditor.setCamera({ x: 0, y: 0, scale: 1 }))
+  }
+
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
   ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))
@@ -377,7 +480,7 @@ try {
   const csvPath = await download.path()
   const { readFileSync } = await import('node:fs')
   const csv = readFileSync(csvPath, 'utf8')
-  ok('CSV に見出しと行がある', csv.includes('状態') && csv.includes('SHEET-EDIT'))
+  ok(`CSV に見出しと行がある (${download.suggestedFilename()})`, csv.includes('状態') && csv.includes('SHEET-EDIT'))
 
   // B が画像をドロップ → サーバー保存、A のギャラリーに出る
   await b.evaluate(async () => {

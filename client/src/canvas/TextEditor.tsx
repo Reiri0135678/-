@@ -1,15 +1,16 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { NoteShape, TextShape } from '@shared/shapes'
+import type { EllipseShape, NoteShape, RectShape, TextShape } from '@shared/shapes'
 import type { BoardEditor } from './editor'
 import { useEditorSnapshot } from './hooks'
 
 /** 文字・付箋の文字入力オーバーレイ(キャンバス上の位置に textarea を重ねる) */
 export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: string }): JSX.Element | null {
   const snap = useEditorSnapshot(editor)
-  const shape = snap.byId.get(shapeId) as TextShape | NoteShape | undefined
+  const shape = snap.byId.get(shapeId) as TextShape | NoteShape | RectShape | EllipseShape | undefined
+  const isLabel = shape?.type === 'rect' || shape?.type === 'ellipse'
   const ref = useRef<HTMLTextAreaElement>(null)
-  const [value, setValue] = useState(shape?.text ?? '')
+  const [value, setValue] = useState(shape ? (shape.type === 'rect' || shape.type === 'ellipse' ? shape.label : shape.text) : '')
 
   useEffect(() => {
     const el = ref.current
@@ -26,10 +27,11 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
     }
   }, [value, shape, editor, shapeId, snap.camera.scale])
 
-  if (!shape || (shape.type !== 'text' && shape.type !== 'note')) return null
+  if (!shape) return null
 
   const commit = () => {
-    editor.updateShape(shapeId, { text: value })
+    if (isLabel) editor.updateShape(shapeId, { label: value } as Partial<RectShape>)
+    else editor.updateShape(shapeId, { text: value } as Partial<TextShape>)
     if (shape.type === 'text' && value.trim() === '') editor.deleteShapes([shapeId])
     editor.setEditing(null)
   }
@@ -37,7 +39,8 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
   const pos = editor.pageToScreen({ x: shape.x, y: shape.y })
   const k = snap.camera.scale
   const isNote = shape.type === 'note'
-  const pad = isNote ? 12 * k : 0
+  const pad = isNote ? 12 * k : isLabel ? 8 * k : 0
+  const styled = shape.type === 'text' || shape.type === 'note' ? shape : { bold: false, italic: false, underline: false, align: 'center' as const, fontSize: shape.fontSize, color: shape.color }
 
   return (
     <textarea
@@ -51,7 +54,7 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
         if (e.key === 'Escape') {
           e.preventDefault()
           commit()
-        } else if (e.key === 'Enter' && !e.shiftKey && !isNote) {
+        } else if (e.key === 'Enter' && !e.shiftKey && !isNote && !isLabel) {
           e.preventDefault()
           commit()
         }
@@ -60,16 +63,16 @@ export function TextEditor({ editor, shapeId }: { editor: BoardEditor; shapeId: 
       style={{
         left: pos.x + pad,
         top: pos.y + pad,
-        width: (shape.w - (isNote ? 24 : 0)) * k,
-        height: (shape.h - (isNote ? 24 : 0)) * k,
-        fontSize: (isNote ? shape.fontSize : shape.fontSize) * k,
-        fontWeight: shape.bold ? 700 : 400,
-        fontStyle: shape.italic ? 'italic' : 'normal',
-        textDecoration: shape.underline ? 'underline' : 'none',
-        textAlign: shape.align,
+        width: (shape.w - (isNote ? 24 : isLabel ? 16 : 0)) * k,
+        height: (shape.h - (isNote ? 24 : isLabel ? 16 : 0)) * k,
+        fontSize: shape.fontSize * k,
+        fontWeight: styled.bold ? 700 : 400,
+        fontStyle: styled.italic ? 'italic' : 'normal',
+        textDecoration: styled.underline ? 'underline' : 'none',
+        textAlign: styled.align,
         lineHeight: isNote ? 1.35 : 1.3,
         color: isNote ? '#1f2937' : shape.color,
-        background: isNote ? shape.color : 'transparent',
+        background: isNote ? shape.color : isLabel ? 'rgba(255,254,251,0.85)' : 'transparent',
         transform: `rotate(${shape.rotation}deg)`,
         transformOrigin: `${-pad}px ${-pad}px`
       }}

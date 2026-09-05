@@ -14,6 +14,8 @@ import { ZoomBar } from './ZoomBar'
 import { TextEditor } from './TextEditor'
 import { PageBar } from './PageBar'
 import { CommentPins, CommentPopover, type CommentPopoverState } from './Comments'
+import { ContextMenu, type MenuState } from './ContextMenu'
+import { FindBar } from './FindBar'
 import { loadImageSize } from './useImage'
 import { expandFiles } from './pdf'
 
@@ -56,7 +58,7 @@ export function Board(props: BoardProps): JSX.Element {
   )
 }
 
-const CREATE_TOOLS: ReadonlySet<ToolId> = new Set(['arrow', 'rect', 'ellipse', 'request-card'])
+const CREATE_TOOLS: ReadonlySet<ToolId> = new Set(['arrow', 'line', 'rect', 'ellipse', 'request-card'])
 const KEY_TOOLS: Record<string, ToolId> = {
   v: 'select',
   h: 'hand',
@@ -66,6 +68,7 @@ const KEY_TOOLS: Record<string, ToolId> = {
   t: 'text',
   n: 'note',
   a: 'arrow',
+  l: 'line',
   r: 'rect',
   o: 'ellipse',
   c: 'request-card',
@@ -84,6 +87,8 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
   const [bindTarget, setBindTarget] = useState<string | null>(null)
   const [commentPop, setCommentPop] = useState<CommentPopoverState | null>(null)
+  const [menu, setMenu] = useState<MenuState | null>(null)
+  const [findOpen, setFindOpen] = useState(false)
   const [spaceDown, setSpaceDown] = useState(false)
   const gesture = useRef<
     | { kind: 'draw'; points: number[] }
@@ -167,7 +172,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       onDblClick(shape, e) {
         if (snap.readonly) return
         e.cancelBubble = true
-        if (shape.type === 'text' || shape.type === 'note') {
+        if (shape.type === 'text' || shape.type === 'note' || shape.type === 'rect' || shape.type === 'ellipse') {
           editor.select(shape.id)
           editor.setEditing(shape.id)
         }
@@ -329,9 +334,10 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     const w = Math.abs(b.x - a.x)
     const h = Math.abs(b.y - a.y)
     const st = snap.style
-    if (tool === 'arrow') return { ...defaultsFor('arrow'), ...base, x: a.x, y: a.y, dx: b.x - a.x, dy: b.y - a.y, color: st.color, size: st.size } as Shape
-    if (tool === 'rect') return { ...defaultsFor('rect'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill } as Shape
-    if (tool === 'ellipse') return { ...defaultsFor('ellipse'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill } as Shape
+    if (tool === 'arrow' || tool === 'line')
+      return { ...defaultsFor('arrow'), ...base, x: a.x, y: a.y, dx: b.x - a.x, dy: b.y - a.y, color: st.color, size: st.size, dash: st.dash, headEnd: tool === 'arrow', headStart: false } as Shape
+    if (tool === 'rect') return { ...defaultsFor('rect'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill, dash: st.dash, kind: st.geoKind } as Shape
+    if (tool === 'ellipse') return { ...defaultsFor('ellipse'), ...base, x, y, w, h, color: st.color, size: st.size, fill: st.fill, dash: st.dash } as Shape
     return { ...defaultsFor('request-card'), ...base, x: a.x, y: a.y, w: Math.max(CARD_W, w), h: Math.max(CARD_H, h) } as Shape
   }
 
@@ -369,7 +375,7 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       const d = makeDraft(tool, g.start, end, g.id)
       // ほぼクリックだけなら既定サイズで置く
       if (tool !== 'request-card' && Math.hypot(end.x - g.start.x, end.y - g.start.y) < 4) {
-        if (tool === 'arrow') (d as { dx: number; dy: number }).dx = 120
+        if (tool === 'arrow' || tool === 'line') (d as { dx: number; dy: number }).dx = 120
         else {
           d.w = 120
           d.h = 80
@@ -492,6 +498,38 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         if (!s.readonly && s.selection.length) editor.select(editor.duplicate(s.selection))
         return
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+        if (s.selection.length) {
+          e.preventDefault()
+          void editor.copy()
+        }
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'x') {
+        if (s.selection.length) {
+          e.preventDefault()
+          void editor.cut()
+        }
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        setFindOpen(true)
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === ']' || e.key === '[')) {
+        e.preventDefault()
+        if (!s.selection.length || s.readonly) return
+        if (e.key === ']') (e.shiftKey ? editor.bringToFront : editor.bringForward).call(editor, s.selection)
+        else (e.shiftKey ? editor.sendToBack : editor.sendBackward).call(editor, s.selection)
+        return
+      }
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key) && s.selection.length && !s.readonly) {
+        e.preventDefault()
+        const step = (e.shiftKey ? 10 : 1) / 1
+        editor.nudge(s.selection, e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0, e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0)
+        return
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
         e.preventDefault()
         if (e.shiftKey) editor.ungroupSelection()
@@ -588,10 +626,22 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       const t = e.target
       if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) return
       const files = Array.from(e.clipboardData?.files ?? []).filter((f) => f.type.startsWith('image/') || f.type === 'application/pdf')
-      if (files.length === 0) return
-      e.preventDefault()
       const center = editor.screenToPage({ x: size.w / 2, y: size.h / 2 })
-      void addFiles(files, center)
+      if (files.length > 0) {
+        e.preventDefault()
+        void addFiles(files, center)
+        return
+      }
+      const text = e.clipboardData?.getData('text/plain') ?? ''
+      if (text.includes('"mark":"qc-board/shapes"')) {
+        e.preventDefault()
+        void editor.paste(undefined, text)
+      } else if (text.trim() && !editor.isReadonly()) {
+        // ただの文字は文字図形として貼る
+        e.preventDefault()
+        const sh = editor.createShape({ type: 'text', x: center.x - 100, y: center.y - 14, w: Math.min(600, Math.max(200, text.length * 10)), text: text.trim() })
+        editor.select(sh.id)
+      }
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
@@ -636,6 +686,31 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
     if (touches.current.size < 2) pinch.current = null
   }
 
+  // ---- PNG 書き出し: 対象が画面に収まるよう一時的にカメラを合わせ、描画層だけを画像化 --------
+  const exportPng = async (scope: 'page' | 'selection') => {
+    const layer = layerRef.current
+    if (!layer) return
+    const shapes = scope === 'selection' ? editor.getSelectedShapes() : snap.shapes.filter((s) => !(s.type === 'request-card' && s.archived))
+    const b = boundsOfShapes(shapes)
+    if (!b) return
+    const pad = 24
+    const prev = editor.getSnapshot().camera
+    const scale = Math.min(4, Math.max(0.05, Math.min((size.w - pad * 2) / b.w, (size.h - pad * 2) / b.h)))
+    editor.setCamera({ scale, x: pad - b.x * scale, y: pad - b.y * scale }, { keepFollow: true })
+    await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+    const dataUrl = layer.toDataURL({ x: pad - 4, y: pad - 4, width: Math.ceil(b.w * scale) + 8, height: Math.ceil(b.h * scale) + 8, pixelRatio: Math.min(4, 2 / scale) })
+    editor.setCamera(prev, { keepFollow: true })
+    // data URL だとファイル名が付かないブラウザがあるので Blob にしてから保存
+    const blob = await (await fetch(dataUrl)).blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${scope === 'selection' ? '選択範囲' : 'ボード'}_${todayString()}.png`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  ;(window as unknown as { __qcExport?: typeof exportPng }).__qcExport = exportPng
   const panning = snap.tool === 'hand' || spaceDown
   const cursor = panning ? 'grab' : snap.tool === 'select' ? 'default' : snap.tool === 'eraser' ? 'cell' : snap.tool === 'comment' ? 'help' : 'crosshair'
 
@@ -647,6 +722,19 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       style={{ cursor }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={onDrop}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        const el = containerRef.current
+        const stage = stageRef.current
+        if (!el || !stage) return
+        const r = el.getBoundingClientRect()
+        const screen = { x: e.clientX - r.left, y: e.clientY - r.top }
+        const page = editor.screenToPage(screen)
+        const node = stage.getIntersection(screen)
+        const id = shapeIdOf(node)
+        if (id && id !== 'draft' && !editor.getSnapshot().selection.includes(id)) editor.select(id)
+        setMenu({ screen: { x: e.clientX, y: e.clientY }, page, shapeId: id && id !== 'draft' ? id : null })
+      }}
       onPointerDownCapture={onTouchPointerDown}
       onPointerMoveCapture={onTouchPointerMove}
       onPointerUpCapture={onTouchPointerUp}
@@ -723,6 +811,24 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
       </Stage>
       {snap.editingId && <TextEditor editor={editor} shapeId={snap.editingId} />}
       {commentPop && <CommentPopover editor={editor} state={commentPop} onClose={() => setCommentPop(null)} />}
+      {menu && (
+        <ContextMenu
+          editor={editor}
+          state={menu}
+          onClose={() => setMenu(null)}
+          onExport={(scope) => void exportPng(scope)}
+          onComment={(at, shapeId) => setCommentPop({ at, shapeId })}
+        />
+      )}
+      {findOpen && <FindBar editor={editor} onClose={() => setFindOpen(false)} />}
+      {snap.following !== null && (
+        <div className="follow-banner" data-testid="follow-banner">
+          {snap.collaborators.find((c) => c.clientId === snap.following)?.name ?? ''} さんの画面に追従中
+          <button className="link" onClick={() => editor.follow(null)}>
+            解除
+          </button>
+        </div>
+      )}
       <QcToolbar />
       <StylePanel />
       <PageBar />
@@ -736,6 +842,22 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
   )
 }
 
+
+function boundsOfShapes(shapes: Shape[]): { x: number; y: number; w: number; h: number } | null {
+  if (!shapes.length) return null
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const s of shapes) {
+    const b = shapeBounds(s)
+    x0 = Math.min(x0, b.x)
+    y0 = Math.min(y0, b.y)
+    x1 = Math.max(x1, b.x + b.w)
+    y1 = Math.max(y1, b.y + b.h)
+  }
+  return { x: x0, y: y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) }
+}
 
 /** 移動中の矩形を、他の図形の端・中心に揃える。返り値は補正量とガイド線の位置 */
 function snapTo(

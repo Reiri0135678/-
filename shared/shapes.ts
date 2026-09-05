@@ -99,6 +99,7 @@ export interface ArrowBinding {
   nx: number
   ny: number
 }
+export type LineDash = 'solid' | 'dashed' | 'dotted'
 export interface ArrowShape extends ShapeBase {
   type: 'arrow'
   /** 始点は (x,y)、終点は (x+dx, y+dy) */
@@ -109,18 +110,38 @@ export interface ArrowShape extends ShapeBase {
   /** 吸着先(無ければ null)。吸着先が動くと端点が追従する */
   startBind: ArrowBinding | null
   endBind: ArrowBinding | null
+  dash: LineDash
+  /** 矢頭。両方 false なら直線 */
+  headStart: boolean
+  headEnd: boolean
 }
+export type GeoKind = 'rect' | 'rounded' | 'triangle' | 'diamond' | 'hexagon'
+export const GEO_KINDS: Array<{ kind: GeoKind; label: string }> = [
+  { kind: 'rect', label: '四角' },
+  { kind: 'rounded', label: '角丸' },
+  { kind: 'triangle', label: '三角' },
+  { kind: 'diamond', label: 'ひし形' },
+  { kind: 'hexagon', label: '六角' }
+]
 export interface RectShape extends ShapeBase {
   type: 'rect'
+  kind: GeoKind
   color: string
   fill: string
   size: number
+  dash: LineDash
+  /** 図形の中に置く文字 */
+  label: string
+  fontSize: number
 }
 export interface EllipseShape extends ShapeBase {
   type: 'ellipse'
   color: string
   fill: string
   size: number
+  dash: LineDash
+  label: string
+  fontSize: number
 }
 export interface ImageShape extends ShapeBase {
   type: 'image'
@@ -197,11 +218,11 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
     case 'note':
       return { ...base, type, w: 180, h: 180, text: '', color: NOTE_COLORS[0], fontSize: 18, bold: false, italic: false, underline: false, align: 'left' }
     case 'arrow':
-      return { ...base, type, dx: 100, dy: 0, color: DEFAULT_COLOR, size: 3, startBind: null, endBind: null }
+      return { ...base, type, dx: 100, dy: 0, color: DEFAULT_COLOR, size: 3, startBind: null, endBind: null, dash: 'solid', headStart: false, headEnd: true }
     case 'rect':
-      return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2 }
+      return { ...base, type, kind: 'rect', w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2, dash: 'solid', label: '', fontSize: 16 }
     case 'ellipse':
-      return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2 }
+      return { ...base, type, w: 120, h: 80, color: DEFAULT_COLOR, fill: 'transparent', size: 2, dash: 'solid', label: '', fontSize: 16 }
     case 'image':
       return { ...base, type, w: 200, h: 150, src: '', name: '' }
     case 'request-card':
@@ -513,3 +534,13 @@ export function normalizeComment(raw: Record<string, unknown>): CommentThread | 
     replies: Array.isArray(raw['replies']) ? (raw['replies'] as CommentReply[]) : []
   }
 }
+
+/** 線種のダッシュ配列(太さに比例) */
+export function dashArray(dash: LineDash, size: number): number[] | undefined {
+  if (dash === 'dashed') return [size * 4, size * 3]
+  if (dash === 'dotted') return [size, size * 2]
+  return undefined
+}
+
+/** クリップボード用の包み。他アプリのテキストと区別するための印 */
+export const CLIPBOARD_MARK = 'qc-board/shapes'

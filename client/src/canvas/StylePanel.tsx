@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { COLORS, NOTE_COLORS, type TextAlign } from '@shared/shapes'
+import { COLORS, GEO_KINDS, NOTE_COLORS, type ArrowShape, type LineDash, type TextAlign } from '@shared/shapes'
 import { useEditor, useEditorSnapshot } from './hooks'
 
 const SIZES: Array<{ label: string; value: number }> = [
@@ -22,6 +22,15 @@ export function StylePanel(): JSX.Element | null {
   const showColor = !(showNote && types.size === 1 && sel.length > 0) || sel.length === 0
   const anyLocked = sel.some((s) => s.locked)
   const anyGrouped = sel.some((s) => s.groupId)
+  const showDash = ['arrow', 'line', 'rect', 'ellipse'].includes(snap.tool) || types.has('arrow') || types.has('rect') || types.has('ellipse')
+  const showKind = snap.tool === 'rect' || types.has('rect')
+  const arrows = sel.filter((s): s is ArrowShape => s.type === 'arrow')
+  const showHeads = snap.tool === 'arrow' || snap.tool === 'line' || arrows.length > 0
+  const heads = arrows[0] ? (arrows[0].headStart && arrows[0].headEnd ? 'both' : arrows[0].headEnd ? 'end' : arrows[0].headStart ? 'start' : 'none') : snap.tool === 'line' ? 'none' : 'end'
+  const setHeads = (h: 'none' | 'end' | 'both') => {
+    editor.updateShapes(arrows.map((a) => ({ id: a.id, patch: { headStart: h === 'both', headEnd: h !== 'none' } })))
+    if (arrows.length === 0) editor.setTool(h === 'none' ? 'line' : 'arrow')
+  }
   // 選択中の文字図形の装飾(混在時は既定値)
   const first = sel.find((s) => s.type === 'text' || s.type === 'note') as { bold: boolean; italic: boolean; underline: boolean; align: TextAlign; fontSize: number } | undefined
   const t = first ?? snap.style
@@ -58,6 +67,34 @@ export function StylePanel(): JSX.Element | null {
           ))}
         </div>
       )}
+      {showDash && (
+        <div className="style-panel__row" data-testid="dash-row">
+          {(['solid', 'dashed', 'dotted'] as LineDash[]).map((d) => (
+            <button key={d} className="chip" data-active={(sel.find((x) => 'dash' in x) as { dash?: LineDash } | undefined)?.dash === d || (!sel.some((x) => 'dash' in x) && snap.style.dash === d)} onClick={() => editor.setStyle({ dash: d })} data-dash={d} title={d === 'solid' ? '実線' : d === 'dashed' ? '破線' : '点線'}>
+              {d === 'solid' ? '━' : d === 'dashed' ? '╌' : '┈'}
+            </button>
+          ))}
+          {showHeads && (
+            <>
+              <span className="style-panel__gap" />
+              {(['none', 'end', 'both'] as const).map((h) => (
+                <button key={h} className="chip" data-active={heads === h} onClick={() => setHeads(h)} data-heads={h} title={h === 'none' ? '矢頭なし' : h === 'end' ? '終点に矢頭' : '両端に矢頭'}>
+                  {h === 'none' ? '—' : h === 'end' ? '→' : '↔'}
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+      {showKind && (
+        <div className="style-panel__row" data-testid="kind-row">
+          {GEO_KINDS.map((g) => (
+            <button key={g.kind} className="chip" data-active={(sel.find((x) => x.type === 'rect') as { kind?: string } | undefined)?.kind === g.kind || (!types.has('rect') && snap.style.geoKind === g.kind)} onClick={() => editor.setStyle({ geoKind: g.kind })} data-kind={g.kind}>
+              {g.label}
+            </button>
+          ))}
+        </div>
+      )}
       {showText && (
         <>
           <div className="style-panel__row" data-testid="text-style">
@@ -84,6 +121,50 @@ export function StylePanel(): JSX.Element | null {
             ))}
           </div>
         </>
+      )}
+      {sel.length >= 2 && (
+        <div className="style-panel__row" data-testid="align-row">
+          {(
+            [
+              ['left', '⇤', '左揃え'],
+              ['centerX', '⫿', '左右中央'],
+              ['right', '⇥', '右揃え'],
+              ['top', '⤒', '上揃え'],
+              ['centerY', '⫾', '上下中央'],
+              ['bottom', '⤓', '下揃え']
+            ] as const
+          ).map(([how, icon, title]) => (
+            <button key={how} className="chip" onClick={() => editor.align(sel.map((s) => s.id), how)} title={title} data-align-how={how}>
+              {icon}
+            </button>
+          ))}
+          {sel.length >= 3 && (
+            <>
+              <button className="chip" onClick={() => editor.distribute(sel.map((s) => s.id), 'x')} title="左右に等間隔" data-distribute="x">
+                ⇹
+              </button>
+              <button className="chip" onClick={() => editor.distribute(sel.map((s) => s.id), 'y')} title="上下に等間隔" data-distribute="y">
+                ⇳
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {sel.length > 0 && (
+        <div className="style-panel__row">
+          <button className="chip" onClick={() => editor.bringToFront(sel.map((s) => s.id))} title="最前面へ (Ctrl+Shift+])" data-z="front">
+            ⬆⬆
+          </button>
+          <button className="chip" onClick={() => editor.bringForward(sel.map((s) => s.id))} title="前へ (Ctrl+])" data-z="forward">
+            ⬆
+          </button>
+          <button className="chip" onClick={() => editor.sendBackward(sel.map((s) => s.id))} title="後ろへ (Ctrl+[)" data-z="backward">
+            ⬇
+          </button>
+          <button className="chip" onClick={() => editor.sendToBack(sel.map((s) => s.id))} title="最背面へ (Ctrl+Shift+[)" data-z="back">
+            ⬇⬇
+          </button>
+        </div>
       )}
       {sel.length > 0 && (
         <div className="style-panel__row">

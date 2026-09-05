@@ -9,6 +9,7 @@ import { RequestSheet } from '../panel/RequestSheet'
 import { roleLabel } from './Landing'
 import { isEmbed, notifyHost } from '../embed'
 import { useSingleSelection } from '../panel/useCards'
+import { useEditorSnapshot } from '../canvas/hooks'
 
 const DRAWER_KEY = 'qc.drawerOpen'
 const DRAWER_H_KEY = 'qc.drawerHeight'
@@ -114,7 +115,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
         )}
         <span className="app__meta">
           <span className={`dot dot--${status}`} />
-          {status === 'online' ? `接続中 · 他 ${peers} 人` : status === 'connecting' ? '接続中…' : '切断'}
+          {status === 'online' ? (editor ? <Peers editor={editor} /> : `接続中 · 他 ${peers} 人`) : status === 'connecting' ? '接続中…' : '切断'}
           {' · '}
           {user.name}({roleLabel(user.role)})
           <button className="link" onClick={toggleDrawer} data-testid="toggle-drawer">
@@ -159,4 +160,40 @@ function SelectionNotifier({ editor, roomId }: { editor: Editor; roomId: string 
     notifyHost({ event: 'card-selected', roomId, shapeId, partNo, status })
   }, [roomId, shapeId, partNo, status])
   return null
+}
+
+/** 接続中の人数。クリックで一覧を出し、相手の画面に追従できる */
+function Peers({ editor }: { editor: Editor }): JSX.Element {
+  const snap = useEditorSnapshot(editor)
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="peers">
+      <button className="link" onClick={() => setOpen((v) => !v)} data-testid="peers-btn">
+        接続中 · 他 {snap.collaborators.length} 人
+      </button>
+      {open && (
+        <div className="peers__pop" data-testid="peers-pop">
+          {snap.collaborators.length === 0 && <span className="muted">他に接続している人はいません</span>}
+          {snap.collaborators.map((c) => (
+            <div key={c.clientId} className="peers__row">
+              <span className="peers__dot" style={{ background: c.color }} />
+              <span>{c.name}</span>
+              <span className="muted">{snap.pages.find((p) => p.id === c.page)?.name ?? ''}</span>
+              <button
+                className="chip"
+                data-active={snap.following === c.clientId}
+                onClick={() => {
+                  editor.follow(snap.following === c.clientId ? null : c.clientId)
+                  setOpen(false)
+                }}
+                data-testid={`follow-${c.name}`}
+              >
+                {snap.following === c.clientId ? '追従中' : '追従'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </span>
+  )
 }

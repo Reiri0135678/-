@@ -15,6 +15,7 @@ const ITEMS: Item[] = [
   { id: 'text', label: '文字', icon: 'T', key: 'T' },
   { id: 'note', label: '付箋', icon: '▣', key: 'N' },
   { id: 'arrow', label: '矢印', icon: '→', key: 'A' },
+  { id: 'line', label: '直線', icon: '╱', key: 'L' },
   { id: 'rect', label: '四角', icon: '▭', key: 'R' },
   { id: 'ellipse', label: '楕円', icon: '◯', key: 'O' },
   'sep',

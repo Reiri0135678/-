@@ -1,6 +1,7 @@
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import {
+  CLIPBOARD_MARK,
   COLORS,
   DEFAULT_PAGE,
   NOTE_COLORS,
@@ -10,6 +11,8 @@ import {
   type ArrowBinding,
   type ArrowShape,
   type CommentThread,
+  type GeoKind,
+  type LineDash,
   type PageInfo,
   type Shape,
   type ShapeType,
@@ -35,6 +38,7 @@ export type ToolId =
   | 'arrow'
   | 'rect'
   | 'ellipse'
+  | 'line'
   | 'request-card'
   | 'comment'
 
@@ -57,6 +61,8 @@ export interface Collaborator {
   draft: Shape | null
   /** 見ているページ */
   page: string
+  /** 見ている範囲(追従用) */
+  view: { x: number; y: number; scale: number; w: number; h: number } | null
 }
 export interface Style {
   color: string
@@ -68,6 +74,8 @@ export interface Style {
   italic: boolean
   underline: boolean
   align: TextAlign
+  dash: LineDash
+  geoKind: GeoKind
 }
 export type ConnectionStatus = 'connecting' | 'online' | 'offline'
 
@@ -81,6 +89,8 @@ export interface EditorSnapshot {
   currentPage: string
   comments: CommentThread[]
   showResolved: boolean
+  /** 追従中の相手(clientId) */
+  following: number | null
   selection: string[]
   tool: ToolId
   camera: Camera
@@ -153,6 +163,7 @@ export class BoardEditor {
       currentPage: DEFAULT_PAGE,
       comments: [],
       showResolved: false,
+      following: null,
       selection: [],
       tool: 'select',
       camera: { x: 0, y: 0, scale: 1 },
@@ -162,7 +173,7 @@ export class BoardEditor {
       canUndo: false,
       canRedo: false,
       editingId: null,
-      style: { color: COLORS[0], size: 3, noteColor: NOTE_COLORS[0], fill: 'transparent', fontSize: 18, bold: false, italic: false, underline: false, align: 'left' },
+      style: { color: COLORS[0], size: 3, noteColor: NOTE_COLORS[0], fill: 'transparent', fontSize: 18, bold: false, italic: false, underline: false, align: 'left', dash: 'solid', geoKind: 'rect' },
       version: 0
     }
 
@@ -331,10 +342,41 @@ export class BoardEditor {
         cursor: (state['cursor'] as Point | null) ?? null,
         selection: (state['selection'] as string[]) ?? [],
         draft: (state['draft'] as Shape | null) ?? null,
-        page: String(state['page'] ?? DEFAULT_PAGE)
+        page: String(state['page'] ?? DEFAULT_PAGE),
+        view: (state['view'] as Collaborator['view']) ?? null
       })
     })
     this.patch({ collaborators: list })
+    // 追従中なら相手の視点に合わせる
+    const f = this.snapshot.following
+    if (f !== null) {
+      const c = list.find((x) => x.clientId === f)
+      if (!c) this.patch({ following: null })
+      else if (c.view) {
+        if (c.page !== this.snapshot.currentPage) this.setPage(c.page)
+        this.applyView(c.view)
+      }
+    }
+  }
+
+  /** 相手の表示範囲を自分の画面に収める(縦横比が違っても全体が入るように) */
+  private applyView(v: NonNullable<Collaborator['view']>): void {
+    const { w, h } = this.viewport
+    const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, Math.min(w / (v.w / v.scale), h / (v.h / v.scale))))
+    const cx = (v.w / 2 - v.x) / v.scale
+    const cy = (v.h / 2 - v.y) / v.scale
+    this.snapshot = { ...this.snapshot, camera: { scale, x: w / 2 - cx * scale, y: h / 2 - cy * scale } }
+    this.patch({})
+  }
+  follow(clientId: number | null): void {
+    this.patch({ following: clientId })
+    if (clientId !== null) {
+      const c = this.snapshot.collaborators.find((x) => x.clientId === clientId)
+      if (c?.view) {
+        if (c.page !== this.snapshot.currentPage) this.setPage(c.page)
+        this.applyView(c.view)
+      }
+    }
   }
 
   // ---- 図形 ------------------------------------------------------------
@@ -464,6 +506,160 @@ export class BoardEditor {
     let z = this.nextZ()
     this.updateShapes(ids.map((id) => ({ id, patch: { z: z++ } })))
   }
+  sendToBack(ids: string[]): void {
+    const min = this.snapshot.shapes.length ? this.snapshot.shapes[0]!.z : 0
+    let z = min - ids.length
+    this.updateShapes(ids.map((id) => ({ id, patch: { z: z++ } })))
+  }
+  /** 一段だけ前(後ろ)へ: 隣の図形と z を入れ替える */
+  bringForward(ids: string[]): void {
+    this.stepZ(ids, 1)
+  }
+  sendBackward(ids: string[]): void {
+    this.stepZ(ids, -1)
+  }
+  private stepZ(ids: string[], dir: 1 | -1): void {
+    const order = this.snapshot.shapes.map((s) => s.id)
+    const set = new Set(ids)
+    const next = [...order]
+    if (dir === 1) {
+      for (let i = next.length - 2; i >= 0; i--) if (set.has(next[i]!) && !set.has(next[i + 1]!)) [next[i], next[i + 1]] = [next[i + 1]!, next[i]!]
+    } else {
+      for (let i = 1; i < next.length; i++) if (set.has(next[i]!) && !set.has(next[i - 1]!)) [next[i], next[i - 1]] = [next[i - 1]!, next[i]!]
+    }
+    if (next.every((id, i) => id === order[i])) return
+    this.updateShapes(next.map((id, i) => ({ id, patch: { z: i + 1 } })))
+  }
+
+  /** 矢印キーなどでの微調整 */
+  nudge(ids: string[], dx: number, dy: number): void {
+    this.updateShapes(ids.map((id) => ({ id, patch: { x: this.snapshot.byId.get(id)!.x + dx, y: this.snapshot.byId.get(id)!.y + dy } })))
+  }
+
+  /** 整列(2 つ以上)。基準は選択全体の外接枠 */
+  align(ids: string[], how: 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom'): void {
+    const shapes = ids.map((id) => this.snapshot.byId.get(id)!).filter(Boolean)
+    const all = boundsOf(shapes)
+    if (!all || shapes.length < 2) return
+    this.updateShapes(
+      shapes.map((s) => {
+        const b = shapeBounds(s)
+        const patch: Partial<Shape> = {}
+        if (how === 'left') patch.x = s.x + (all.x - b.x)
+        if (how === 'right') patch.x = s.x + (all.x + all.w - (b.x + b.w))
+        if (how === 'centerX') patch.x = s.x + (all.x + all.w / 2 - (b.x + b.w / 2))
+        if (how === 'top') patch.y = s.y + (all.y - b.y)
+        if (how === 'bottom') patch.y = s.y + (all.y + all.h - (b.y + b.h))
+        if (how === 'centerY') patch.y = s.y + (all.y + all.h / 2 - (b.y + b.h / 2))
+        return { id: s.id, patch }
+      })
+    )
+  }
+  /** 等間隔に並べる(3 つ以上) */
+  distribute(ids: string[], axis: 'x' | 'y'): void {
+    const shapes = ids.map((id) => this.snapshot.byId.get(id)!).filter(Boolean)
+    if (shapes.length < 3) return
+    const items = shapes.map((s) => ({ s, b: shapeBounds(s) })).sort((a, b) => (axis === 'x' ? a.b.x - b.b.x : a.b.y - b.b.y))
+    const first = items[0]!.b
+    const last = items[items.length - 1]!.b
+    const total = axis === 'x' ? last.x + last.w - first.x : last.y + last.h - first.y
+    const sizes = items.reduce((acc, it) => acc + (axis === 'x' ? it.b.w : it.b.h), 0)
+    const gap = (total - sizes) / (items.length - 1)
+    let pos = axis === 'x' ? first.x : first.y
+    this.updateShapes(
+      items.map(({ s, b }) => {
+        const patch: Partial<Shape> = axis === 'x' ? { x: s.x + (pos - b.x) } : { y: s.y + (pos - b.y) }
+        pos += (axis === 'x' ? b.w : b.h) + gap
+        return { id: s.id, patch }
+      })
+    )
+  }
+
+  // ---- クリップボード ------------------------------------------------------
+  private memClipboard: Shape[] = []
+  /** 選択中の図形をクリップボードへ(テキストとしても書くので、別ボードのタブへも貼れる) */
+  async copy(ids: string[] = this.snapshot.selection): Promise<number> {
+    const shapes = ids.map((id) => this.snapshot.byId.get(id)!).filter(Boolean)
+    if (shapes.length === 0) return 0
+    this.memClipboard = shapes
+    try {
+      await navigator.clipboard?.writeText(JSON.stringify({ mark: CLIPBOARD_MARK, shapes }))
+    } catch {
+      /* クリップボード権限が無い場合はメモリだけ */
+    }
+    return shapes.length
+  }
+  async cut(ids: string[] = this.snapshot.selection): Promise<number> {
+    const n = await this.copy(ids)
+    if (n) this.deleteShapes(ids.filter((id) => !this.snapshot.byId.get(id)?.locked))
+    return n
+  }
+  /** クリップボードの図形を貼り付ける(位置は少しずらす、または指定位置の中心へ) */
+  async paste(at?: Point, text?: string): Promise<string[]> {
+    if (this.snapshot.readonly) return []
+    let shapes: Shape[] = this.memClipboard
+    // 明示的にテキストが渡された(paste イベント)場合はそれを、無ければメモリを優先。
+    // システムのクリップボード読み取りは権限待ちで固まることがあるので 500ms で打ち切る
+    let raw = text ?? ''
+    if (!raw && shapes.length === 0 && navigator.clipboard?.readText) {
+      raw = await Promise.race([
+        navigator.clipboard.readText().catch(() => ''),
+        new Promise<string>((r) => setTimeout(() => r(''), 500))
+      ])
+    }
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { mark?: string; shapes?: Shape[] }
+        if (parsed.mark === CLIPBOARD_MARK && Array.isArray(parsed.shapes)) shapes = parsed.shapes
+      } catch {
+        /* 図形以外のテキスト */
+      }
+    }
+    if (shapes.length === 0) return []
+    const all = boundsOf(shapes)!
+    const off = at ? { x: at.x - (all.x + all.w / 2), y: at.y - (all.y + all.h / 2) } : { x: 24, y: 24 }
+    const idMap = new Map(shapes.map((s) => [s.id, newId()]))
+    const created: string[] = []
+    const groupMap = new Map<string, string>()
+    for (const s of shapes) {
+      const copy = { ...s, id: idMap.get(s.id)!, x: s.x + off.x, y: s.y + off.y, locked: false } as Shape
+      // ページ・重なり順・作成者は貼り付け先で付け直す
+      delete (copy as Partial<Shape>).page
+      delete (copy as Partial<Shape>).z
+      if (s.groupId) {
+        if (!groupMap.has(s.groupId)) groupMap.set(s.groupId, `g_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
+        copy.groupId = groupMap.get(s.groupId)!
+      }
+      if (copy.type === 'arrow') {
+        // 吸着先も一緒に貼る場合だけ吸着を保つ
+        copy.startBind = copy.startBind && idMap.has(copy.startBind.id) ? { ...copy.startBind, id: idMap.get(copy.startBind.id)! } : null
+        copy.endBind = copy.endBind && idMap.has(copy.endBind.id) ? { ...copy.endBind, id: idMap.get(copy.endBind.id)! } : null
+      }
+      if (copy.type === 'request-card') {
+        copy.no = ''
+        copy.kintoneRecordId = ''
+        copy.linkedShapeIds = copy.linkedShapeIds.map((x) => idMap.get(x) ?? x).filter((x) => idMap.has(x) || this.snapshot.byId.has(x))
+      }
+      this.createShape(copy as unknown as Parameters<typeof this.createShape>[0])
+      created.push(copy.id)
+    }
+    this.select(created)
+    return created
+  }
+
+  /** 文字を含む図形を検索(文字・付箋・ラベル・依頼カード) */
+  find(query: string): Shape[] {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    return this.snapshot.allShapes.filter((s) => {
+      const texts: string[] = []
+      if (s.type === 'text' || s.type === 'note') texts.push(s.text)
+      if (s.type === 'rect' || s.type === 'ellipse') texts.push(s.label)
+      if (s.type === 'image') texts.push(s.name)
+      if (s.type === 'request-card') texts.push(s.no, s.title, s.dept, s.partNo, s.lot, s.requester, s.note, s.assignee)
+      return texts.some((t) => t && t.toLowerCase().includes(q))
+    })
+  }
 
   duplicate(ids: string[]): string[] {
     const created: string[] = []
@@ -531,6 +727,9 @@ export class BoardEditor {
             if (p[k] !== undefined) (patch as Record<string, unknown>)[k] = p[k]
           }
         }
+        if (p.dash !== undefined && (s.type === 'arrow' || s.type === 'rect' || s.type === 'ellipse')) (patch as { dash: LineDash }).dash = p.dash
+        if (p.geoKind !== undefined && s.type === 'rect') (patch as { kind: GeoKind }).kind = p.geoKind
+        if (p.fontSize !== undefined && (s.type === 'rect' || s.type === 'ellipse')) (patch as { fontSize: number }).fontSize = p.fontSize
         return { id: s.id, patch }
       })
     )
@@ -550,11 +749,25 @@ export class BoardEditor {
   // ---- カメラ ----------------------------------------------------------
   setViewport(w: number, h: number): void {
     this.viewport = { w, h }
+    this.publishView()
   }
-  setCamera(c: Partial<Camera>): void {
+  getViewport(): { w: number; h: number } {
+    return this.viewport
+  }
+  setCamera(c: Partial<Camera>, opts: { keepFollow?: boolean } = {}): void {
     const camera = { ...this.snapshot.camera, ...c }
     camera.scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, camera.scale))
-    this.patch({ camera })
+    this.patch({ camera, following: opts.keepFollow ? this.snapshot.following : null })
+    this.publishView()
+  }
+  private viewTimer: number | null = null
+  private publishView(): void {
+    if (this.viewTimer !== null) return
+    this.viewTimer = window.setTimeout(() => {
+      this.viewTimer = null
+      const c = this.snapshot.camera
+      this.provider.awareness.setLocalStateField('view', { x: c.x, y: c.y, scale: c.scale, w: this.viewport.w, h: this.viewport.h })
+    }, 80)
   }
   /** 画面上の点を中心にズーム */
   zoomBy(factor: number, screen?: Point): void {
