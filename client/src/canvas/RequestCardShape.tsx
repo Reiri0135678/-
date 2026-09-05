@@ -10,6 +10,7 @@ import {
 } from 'tldraw'
 import {
   requestCardDefaultProps,
+  requestCardMigrations,
   requestCardProps,
   type RequestCardProps
 } from '@shared/request-card'
@@ -27,6 +28,7 @@ export type RequestCardShape = TLShape<'request-card'>
 export class RequestCardShapeUtil extends BaseBoxShapeUtil<RequestCardShape> {
   static override type = 'request-card' as const
   static override props: RecordProps<RequestCardShape> = requestCardProps
+  static override migrations = requestCardMigrations
 
   override getDefaultProps(): RequestCardShape['props'] {
     return { ...requestCardDefaultProps }
@@ -64,6 +66,10 @@ export class RequestCardShapeUtil extends BaseBoxShapeUtil<RequestCardShape> {
             <span>{p.lot || '-'}</span>
             <b>数量</b>
             <span>{p.qty || '-'}</span>
+          </div>
+          <div className="qc-card__foot">
+            <span>{p.requester || '(依頼者未設定)'}</span>
+            <span>{p.requestedAt}</span>
           </div>
         </div>
       </HTMLContainer>

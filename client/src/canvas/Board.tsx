@@ -100,9 +100,11 @@ export interface BoardProps {
   demo?: boolean
   onStatus?: (s: BoardStatus) => void
   onPeers?: (n: number) => void
+  /** マウント時に Editor を外側へ渡す(サイドバー等が購読するため) */
+  onEditor?: (editor: Editor | null) => void
 }
 
-export function Board({ roomId, userName, demo = false, onStatus, onPeers }: BoardProps): JSX.Element {
+export function Board({ roomId, userName, demo = false, onStatus, onPeers, onEditor }: BoardProps): JSX.Element {
   const store = useSync({
     uri: syncUri(roomId),
     assets: qcAssetStore,
@@ -139,6 +141,8 @@ export function Board({ roomId, userName, demo = false, onStatus, onPeers }: Boa
         // E2E テストと開発時の検証用
         ;(window as unknown as { __qcEditor?: Editor }).__qcEditor = editor
         if (demo) seedDemo(editor)
+        onEditor?.(editor)
+        return () => onEditor?.(null)
       }}
     >
       {onPeers && <PeerCounter onPeers={onPeers} />}

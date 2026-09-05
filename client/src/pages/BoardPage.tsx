@@ -3,13 +3,16 @@ import { useEffect, useState } from 'react'
 import { navigate } from '../App'
 import { listRooms } from '../api'
 import { getUserName } from '../user'
+import type { Editor } from 'tldraw'
 import { Board } from '../canvas/Board'
+import { RequestPanel } from '../panel/RequestPanel'
 
 export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
   const userName = getUserName()
   const [title, setTitle] = useState(roomId)
   const [status, setStatus] = useState<'connecting' | 'online' | 'offline' | 'error'>('connecting')
   const [peers, setPeers] = useState(0)
+  const [editor, setEditor] = useState<Editor | null>(null)
 
   useEffect(() => {
     if (!userName) navigate('/')
@@ -38,9 +41,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
         </span>
       </header>
       <aside className="app__sidebar">
-        <h2>依頼リスト(予定)</h2>
-        <p>ここに検査依頼のスプレッドシート式リストと画像一覧を配置予定。</p>
-        <p>キャンバス上の「依頼カード」と双方向に連動させる想定。</p>
+        {editor ? <RequestPanel editor={editor} /> : <p className="muted">読み込み中…</p>}
       </aside>
       <main className="app__board">
         <Board
@@ -49,6 +50,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
           demo={demo}
           onStatus={setStatus}
           onPeers={setPeers}
+          onEditor={setEditor}
         />
       </main>
     </div>

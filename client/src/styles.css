@@ -37,7 +37,7 @@ button { font: inherit; }
 .error { color: #b91c1c; font-size: 12px; }
 
 /* ---- ボード画面 ---- */
-.app { display: grid; grid-template-rows: 44px 1fr; grid-template-columns: 240px 1fr; height: 100%; }
+.app { display: grid; grid-template-rows: 44px 1fr; grid-template-columns: 300px 1fr; height: 100%; }
 .app__header {
   grid-column: 1 / -1;
   display: flex; align-items: center; gap: 12px; padding: 0 14px;
@@ -90,3 +90,33 @@ button { font: inherit; }
 .qc-card__status[data-status='完了'] { background: #dcfce7; }
 .qc-card__row { display: flex; gap: 6px; color: #4b5563; }
 .qc-card__row b { color: var(--qc-text); min-width: 3em; }
+
+/* ---- サイドバー: 依頼パネル ---- */
+.app__sidebar { padding: 0; }
+.panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.panel__head { display: flex; align-items: center; justify-content: space-between; }
+.panel__head h2 { margin: 0; }
+.muted { color: #6b7280; font-size: 12px; line-height: 1.5; margin: 0; }
+.btn { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--qc-border); background: #fff; cursor: pointer; }
+.btn--primary { background: var(--qc-accent); border-color: var(--qc-accent); color: #fff; }
+.btn--danger { color: #b91c1c; }
+.counts { display: flex; flex-wrap: wrap; gap: 4px; }
+.counts__item { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: #e5e7eb; }
+.counts__item[data-status='受付'] { background: #dbeafe; }
+.counts__item[data-status='検査中'] { background: #fef3c7; }
+.counts__item[data-status='完了'] { background: #dcfce7; }
+.list { width: 100%; border-collapse: collapse; font-size: 12px; }
+.list th { text-align: left; color: #6b7280; font-weight: 500; padding: 4px 4px; border-bottom: 1px solid var(--qc-border); }
+.list td { padding: 5px 4px; border-bottom: 1px solid #eef0f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+.list tbody tr { cursor: pointer; }
+.list tbody tr:hover { background: #f3f4f6; }
+.list tbody tr[data-selected='true'] { background: #eef2ff; }
+.editor { display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--qc-border); border-radius: 10px; background: #fafafa; }
+.editor .field { font-size: 12px; gap: 3px; }
+.editor .field input, .editor .field select, .editor .field textarea {
+  font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--qc-border); border-radius: 6px; background: #fff;
+}
+.editor .field textarea { resize: vertical; }
+
+/* ---- カード脚注 ---- */
+.qc-card__foot { margin-top: auto; display: flex; justify-content: space-between; font-size: 10px; color: #6b7280; }

@@ -78,11 +78,77 @@ try {
   const seen2 = await waitFor(() => a.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'note')))
   console.log('[e2e] B→A note synced:', seen2)
 
+  // A がサイドバーでカードを編集 → B に届く
+  await a.evaluate(() => {
+    const ed = window.__qcEditor
+    const card = ed.getCurrentPageShapes().find((s) => s.type === 'request-card')
+    ed.select(card.id)
+  })
+  await a.waitForSelector('[data-testid="card-editor"]')
+  await a.selectOption('[data-field="status"]', '検査中')
+  await a.fill('[data-field="lot"]', 'L-EDITED')
+  const edited = await waitFor(() =>
+    b.evaluate(() =>
+      window.__qcEditor
+        .getCurrentPageShapes()
+        .some((s) => s.type === 'request-card' && s.props.status === '検査中' && s.props.lot === 'L-EDITED')
+    )
+  )
+  console.log('[e2e] A sidebar edit → B synced:', edited)
+
+  // サイドバーの「+ 依頼」で作ったカードに依頼者と依頼日が入る
+  await b.click('[data-testid="add-card"]')
+  const stamped = await waitFor(() =>
+    b.evaluate(() =>
+      window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.props.requestedAt))
+    )
+  )
+  console.log('[e2e] add-card stamps requester/date:', stamped)
+  const rows = await waitFor(async () => {
+    const n = await a.locator('[data-testid="card-row"]').count()
+    return n >= 2 ? n : null
+  })
+  console.log('[e2e] rows in A list:', rows)
+
+  // B が画像をドロップ → サーバーに保存され A にも画像が出る
+  await b.evaluate(async () => {
+    const c = document.createElement('canvas')
+    c.width = 120
+    c.height = 80
+    const ctx = c.getContext('2d')
+    ctx.fillStyle = '#2563eb'
+    ctx.fillRect(0, 0, 120, 80)
+    const blob = await new Promise((r) => c.toBlob(r, 'image/png'))
+    const dt = new DataTransfer()
+    dt.items.add(new File([blob], 'drawing.png', { type: 'image/png' }))
+    const target = document.querySelector('.tl-container')
+    target.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 700, clientY: 500 }))
+  })
+  const imgSrc = await waitFor(() =>
+    a.evaluate(() => {
+      const ed = window.__qcEditor
+      const img = ed.getCurrentPageShapes().find((s) => s.type === 'image')
+      if (!img?.props.assetId) return null
+      const asset = ed.getAsset(img.props.assetId)
+      return asset?.props.src || null
+    })
+  )
+  const imgRes = await fetch(`${BASE}${imgSrc}`)
+  console.log('[e2e] image dropped by B visible in A:', imgSrc, 'server GET', imgRes.status, imgRes.headers.get('content-length'), 'bytes')
+  if (!imgRes.ok) throw new Error('uploaded image not served')
+
   // 相手の存在(コラボレーター)が見える
   const peers = await waitFor(() => a.evaluate(() => window.__qcEditor.getCollaborators().length))
   console.log('[e2e] peers seen by A:', peers)
 
-  await a.evaluate(() => window.__qcEditor.zoomToFit({ animation: { duration: 0 } }))
+  await a.evaluate(() => {
+    window.__qcEditor.selectNone()
+    window.__qcEditor.zoomToFit({ animation: { duration: 0 } })
+  })
+  await b.evaluate(() => {
+    window.__qcEditor.selectNone()
+    window.__qcEditor.zoomToFit({ animation: { duration: 0 } })
+  })
   await a.waitForTimeout(500)
   await a.screenshot({ path: join(shotDir, 'e2e-a.png') })
   await b.screenshot({ path: join(shotDir, 'e2e-b.png') })
