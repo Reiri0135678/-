@@ -1,17 +1,17 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import type { Editor } from 'tldraw'
 import {
   REQUEST_STATUSES,
   todayString,
   toCsv,
   toRequestRecord,
+  type RequestCardShape,
   type RequestRecord,
   type RequestStatus
-} from '@shared/request-card'
+} from '@shared/shapes'
 import { kintoneStatus, kintoneSync, type KintoneStatus } from '../api'
-import type { RequestCardShape } from '../canvas/RequestCardShape'
-import { focusShape, updateCard, useCards, useSingleSelection } from './useCards'
+import type { BoardEditor as Editor } from '../canvas/editor'
+import { addCardAtCenter, focusShape, updateCard, useCards, useSingleSelection } from './useCards'
 
 type SortKey = keyof RequestRecord
 interface Column {
@@ -100,19 +100,9 @@ export function RequestSheet({
     }
   }
 
-  const addCard = () => {
-    const c = editor.getViewportPageBounds().center
-    editor.createShape<RequestCardShape>({
-      type: 'request-card',
-      x: c.x - 110,
-      y: c.y - 66,
-      props: { requester: editor.user.getName(), requestedAt: todayString() }
-    })
-    const created = editor.getCurrentPageShapes().at(-1)
-    if (created) editor.select(created.id)
-  }
+  const addCard = () => addCardAtCenter(editor)
 
-  const counts = REQUEST_STATUSES.map((st) => [st, cards.filter((c) => c.props.status === st).length] as const)
+  const counts = REQUEST_STATUSES.map((st) => [st, cards.filter((c) => c.status === st).length] as const)
   const kintoneLabel =
     kstatus?.mode === 'mock' ? 'kintone へ送信(モック)' : kstatus?.mode === 'configured' ? 'kintone へ送信' : 'kintone 未設定'
 
@@ -207,7 +197,7 @@ export function RequestSheet({
                       column={c}
                       value={String(rec[c.key] ?? '')}
                       readonly={readonly}
-                      onChange={(v) => updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape['props']>)}
+                      onChange={(v) => updateCard(editor, card.id, { [c.key]: v } as Partial<RequestCardShape>)}
                     />
                   </td>
                 ))}

@@ -180,9 +180,8 @@ const wss = new WebSocketServer({ noServer: true })
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url ?? '/', 'http://localhost')
   const m = url.pathname.match(/^\/api\/connect\/([^/]+)$/)
-  const sessionId = url.searchParams.get('sessionId')
   const user = auth.userFromRequest(req)
-  if (!m || !sessionId || !user) {
+  if (!m || !user) {
     socket.destroy()
     return
   }
@@ -195,7 +194,7 @@ server.on('upgrade', (req, socket, head) => {
           ws.close(4004, 'NOT_FOUND')
           return
         }
-        room.handleSocketConnect({ sessionId, socket: ws, isReadonly: !canWrite(user) })
+        room.connect(ws, user.name, !canWrite(user))
       })
       .catch((err) => {
         console.error('[ws] connect failed', err)
@@ -203,6 +202,12 @@ server.on('upgrade', (req, socket, head) => {
       })
   })
 })
+
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    rooms.closeAll().finally(() => process.exit(0))
+  })
+}
 
 server.listen(PORT, async () => {
   console.log(

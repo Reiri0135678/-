@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import type { RequestRecord } from '../../shared/request-card'
+import type { RequestRecord } from '../../shared/shapes'
 
 /**
  * kintone 連携。

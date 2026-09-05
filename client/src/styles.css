@@ -62,19 +62,20 @@ button { font: inherit; }
 /* ---- 独自ツールバー ---- */
 .qc-toolbar {
   position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
-  display: flex; flex-direction: column; gap: 4px; padding: 6px;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px;
+  max-height: calc(100% - 16px); overflow: auto; scrollbar-width: none;
   background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 10px;
   box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 300;
 }
 .qc-toolbar__btn {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  width: 56px; padding: 6px 2px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--qc-text); cursor: pointer; font-size: 10px;
+  display: flex; flex-direction: column; align-items: center; gap: 1px;
+  width: 50px; padding: 4px 2px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--qc-text); cursor: pointer; font-size: 10px; line-height: 1.1;
 }
 .qc-toolbar__btn:hover { background: #eef2ff; }
 .qc-toolbar__btn[data-active='true'] { background: var(--qc-accent); color: #fff; }
-.qc-toolbar__icon { font-size: 18px; line-height: 1; }
-.qc-toolbar__sep { height: 1px; background: var(--qc-border); margin: 2px 4px; }
+.qc-toolbar__icon { font-size: 16px; line-height: 1; }
+.qc-toolbar__sep { height: 1px; background: var(--qc-border); margin: 1px 4px; }
 
 /* ---- 検査依頼カード図形 ---- */
 .qc-card {
@@ -180,3 +181,25 @@ button { font: inherit; }
 .app[data-embed='true'] .app__header { height: 36px; }
 .app[data-embed='true'] { grid-template-rows: 36px 1fr; }
 .app[data-embed='true'][data-drawer='true'] { grid-template-rows: 36px 1fr 240px; }
+
+/* ---- 自作キャンバス ---- */
+.board { position: absolute; inset: 0; overflow: hidden; background: #f7f8fa;
+  background-image: radial-gradient(#d9dde3 1px, transparent 1px); background-size: 24px 24px; user-select: none; touch-action: none; }
+.board-loading { display: grid; place-items: center; height: 100%; color: #6b7280; font-size: 13px; }
+.board-banner { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); padding: 6px 14px; border-radius: 999px;
+  font-size: 12px; background: #fef3c7; color: #92400e; box-shadow: 0 2px 8px rgba(0,0,0,.08); z-index: 320; }
+.board-banner[data-status='offline'] { background: #fee2e2; color: #991b1b; }
+.qc-toolbar__btn:disabled { opacity: .35; cursor: not-allowed; }
+.style-panel { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; padding: 8px;
+  background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 300; }
+.style-panel__row { display: flex; gap: 6px; align-items: center; }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--qc-border); cursor: pointer; padding: 0; }
+.swatch[data-active='true'] { box-shadow: 0 0 0 2px var(--qc-accent); }
+.swatch--note { border-radius: 4px; }
+.chip { font: inherit; font-size: 12px; min-width: 28px; height: 26px; padding: 0 8px; border-radius: 6px; border: 1px solid var(--qc-border); background: #fff; cursor: pointer; }
+.chip[data-active='true'] { background: var(--qc-accent); border-color: var(--qc-accent); color: #fff; }
+.chip--wide { min-width: 52px; }
+.zoom-bar { position: absolute; right: 12px; bottom: 12px; display: flex; gap: 4px; padding: 6px; background: var(--qc-panel);
+  border: 1px solid var(--qc-border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 300; }
+.text-editor { position: absolute; margin: 0; padding: 0; border: 1px dashed var(--qc-accent); outline: none; resize: none; overflow: hidden;
+  font-family: 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif; z-index: 310; box-sizing: content-box; }

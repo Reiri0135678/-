@@ -1,6 +1,6 @@
 {
   "name": "qc-board",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "品質管理室 検査依頼デジタル化アプリ(多人数同時編集ホワイトボード)",
   "private": true,
   "type": "module",
@@ -14,19 +14,20 @@
     "test:e2e": "node scripts/e2e-sync.mjs"
   },
   "dependencies": {
-    "@tldraw/sync": "5.4.0",
-    "@tldraw/sync-core": "5.4.0",
-    "@tldraw/tlschema": "5.4.0",
-    "@tldraw/validate": "5.4.0",
     "express": "^5.2.1",
+    "konva": "^10.3.3",
+    "lib0": "^0.2.117",
+    "perfect-freehand": "^1.2.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "tldraw": "5.4.0",
+    "react-konva": "^19.2.6",
     "tsx": "^4.23.13",
-    "ws": "^8.21.3"
+    "ws": "^8.21.3",
+    "y-protocols": "^1.0.7",
+    "y-websocket": "^3.1.0",
+    "yjs": "^13.6.32"
   },
   "devDependencies": {
-    "@tldraw/assets": "5.4.0",
     "@types/express": "^5.0.0",
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.0",

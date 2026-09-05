@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import type { Editor } from 'tldraw'
+import type { BoardEditor as Editor } from '../canvas/editor'
 import { navigate } from '../App'
 import { listRooms, me, type Me } from '../api'
 import { Board, type BoardStatus } from '../canvas/Board'
@@ -88,6 +88,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
         <Board
           roomId={roomId}
           userName={user.name}
+          readonly={readonly}
           demo={demo}
           onStatus={setStatus}
           onPeers={setPeers}
@@ -110,8 +111,8 @@ function SelectionNotifier({ editor, roomId }: { editor: Editor; roomId: string 
   const sel = useSingleSelection(editor)
   const card = sel?.type === 'request-card' ? sel : null
   const shapeId = card?.id ?? null
-  const partNo = card ? (card.props as { partNo: string }).partNo : undefined
-  const status = card ? (card.props as { status: string }).status : undefined
+  const partNo = card?.partNo
+  const status = card?.status
   useEffect(() => {
     notifyHost({ event: 'card-selected', roomId, shapeId, partNo, status })
   }, [roomId, shapeId, partNo, status])

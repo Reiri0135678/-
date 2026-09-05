@@ -81,30 +81,43 @@ try {
 
   // A が依頼カードを置く → B に届く
   await a.evaluate(() => {
-    const ed = window.__qcEditor
-    ed.createShapes([{ type: 'request-card', x: 100, y: 100, props: { partNo: 'E2E-001', lot: 'L1', qty: '3', status: '受付' } }])
+    window.__qcEditor.createShape({ type: 'request-card', x: 100, y: 100, partNo: 'E2E-001', lot: 'L1', qty: '3', status: '受付' })
   })
-  ok('A→B カード同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.partNo === 'E2E-001'))))
+  ok('A→B カード同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.partNo === 'E2E-001'))))
+
+  // B がペンで描く → A に届く(自作キャンバスの描画同期)
+  await b.evaluate(() => {
+    window.__qcEditor.createShape({ type: 'draw', x: 50, y: 300, w: 100, h: 40, points: [0, 0, 30, 20, 60, 5, 100, 40] })
+  })
+  ok('B→A ペン描画同期', await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'draw' && s.points.length === 8))))
 
   // A がサイドバーでカードを編集 → B に届く
   await a.evaluate(() => {
     const ed = window.__qcEditor
-    ed.select(ed.getCurrentPageShapes().find((s) => s.type === 'request-card').id)
+    ed.select(ed.getShapes().find((s) => s.type === 'request-card').id)
   })
   await a.waitForSelector('[data-testid="card-editor"]')
+  await a.waitForTimeout(400) // 取り消し単位(300ms)を分けるため
   await a.selectOption('[data-testid="card-editor"] [data-field="status"]', '検査中')
   await a.fill('[data-testid="card-editor"] [data-field="lot"]', 'L-EDITED')
-  ok('A サイドバー編集 → B 同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.status === '検査中' && s.props.lot === 'L-EDITED'))))
+  ok('A サイドバー編集 → B 同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.status === '検査中' && s.lot === 'L-EDITED'))))
+
+  // 取り消し: A が Ctrl+Z するとロットが戻り、Ctrl+Shift+Z でやり直す
+  await a.click('.board')
+  await a.keyboard.press('Control+z')
+  ok('Ctrl+Z で自分の編集が戻る', await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.lot !== 'L-EDITED'))))
+  await a.keyboard.press('Control+Shift+z')
+  ok('Ctrl+Shift+Z でやり直し', await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.lot === 'L-EDITED'))))
 
   // B が一覧の「+ 依頼」で作成 → 依頼者と日付が入る
   await b.click('[data-testid="sheet-add"]')
-  ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.props.requestedAt)))))
+  ok('+ 依頼 で依頼者・依頼日が自動記録', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.requester === '佐藤' && /^\d{4}-\d{2}-\d{2}$/.test(s.requestedAt)))))
 
   // 一覧(スプレッドシート): 2 行、セル編集が B に同期、検索で絞り込み
   ok('A の一覧に 2 行', (await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) >= 2 ? 2 : null))) === 2)
   const firstPart = a.locator('[data-testid="sheet-row"] input[data-col="partNo"]').first()
   await firstPart.fill('SHEET-EDIT')
-  ok('一覧セル編集 → B 同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.partNo === 'SHEET-EDIT'))))
+  ok('一覧セル編集 → B 同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.partNo === 'SHEET-EDIT'))))
   await a.fill('[data-testid="sheet-search"]', 'SHEET-EDIT')
   ok('検索で 1 行に絞り込み', (await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === 1 ? 1 : null))) === 1)
   await a.fill('[data-testid="sheet-search"]', '')
@@ -130,13 +143,10 @@ try {
     const blob = await new Promise((r) => c.toBlob(r, 'image/png'))
     const dt = new DataTransfer()
     dt.items.add(new File([blob], 'drawing.png', { type: 'image/png' }))
-    document.querySelector('.tl-container').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 900, clientY: 500 }))
+    document.querySelector('.board').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: 900, clientY: 500 }))
   })
-  const imgSrc = await waitFor(() => a.evaluate(() => {
-    const ed = window.__qcEditor
-    const img = ed.getCurrentPageShapes().find((s) => s.type === 'image')
-    return img?.props.assetId ? ed.getAsset(img.props.assetId)?.props.src : null
-  }))
+  const imgSrc = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'image')?.src || null))
+  ok('画像サイズが元画像に合う', await a.evaluate(() => { const i = window.__qcEditor.getShapes().find((s) => s.type === 'image'); return i.w === 120 && i.h === 80 }))
   ok('画像がサーバーに保存され A に見える', imgSrc.startsWith('/api/uploads/'))
   ok('画像はログイン無しでは取得不可', (await fetch(`${BASE}${imgSrc}`)).status === 401)
   await a.waitForSelector('[data-testid="gallery"] .gallery__item')
@@ -145,18 +155,18 @@ try {
   // 図面の紐付け: A がカードを選び「図面を紐付け」→ ギャラリーをクリック
   await a.evaluate(() => {
     const ed = window.__qcEditor
-    ed.select(ed.getCurrentPageShapes().find((s) => s.type === 'request-card' && s.props.partNo === 'SHEET-EDIT').id)
+    ed.select(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'SHEET-EDIT').id)
   })
   await a.click('[data-testid="start-link"]')
   await a.click('[data-testid="gallery"] .gallery__item >> nth=0')
   await a.waitForSelector('[data-testid="linked-images"] li')
-  ok('カードに図面が紐付く(B でも見える)', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().some((s) => s.type === 'request-card' && s.props.linkedShapeIds.length === 1))))
+  ok('カードに図面が紐付く(B でも見える)', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.linkedShapeIds.length === 1))))
 
   // kintone(モック)へ送信 → レコード番号がカードに書き戻され B にも届く
   await a.click('[data-testid="sheet-kintone"]')
   const msg = await (await a.waitForSelector('[data-testid="sync-msg"]')).textContent()
   ok(`kintone 送信結果: ${msg}`, /新規 2 件/.test(msg))
-  ok('kintone レコード番号が B のカードに書き戻る', await waitFor(() => b.evaluate(() => window.__qcEditor.getCurrentPageShapes().filter((s) => s.type === 'request-card').every((s) => /^\d+$/.test(s.props.kintoneRecordId)))))
+  ok('kintone レコード番号が B のカードに書き戻る', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().filter((s) => s.type === 'request-card').every((s) => /^\d+$/.test(s.kintoneRecordId)))))
   await a.click('[data-testid="sheet-kintone"]')
   const msg2 = await waitFor(async () => {
     const t = await a.locator('[data-testid="sync-msg"]').textContent()
@@ -169,7 +179,12 @@ try {
 
   // 閲覧者: 読み取り専用で接続され、書き込みが通らない
   const v = await open('閲覧者', 'pw-view')
-  ok('閲覧者は readonly', await waitFor(() => v.evaluate(() => window.__qcEditor.getIsReadonly())))
+  ok('閲覧者は readonly', await waitFor(() => v.evaluate(() => window.__qcEditor.isReadonly())))
+  // 閲覧者が無理に書き込んでもサーバーが捨てる(他の人に届かない)
+  const before = await a.evaluate(() => window.__qcEditor.getShapes().length)
+  await v.evaluate(() => { window.__qcEditor.getSnapshot().readonly = false; window.__qcEditor.createShape({ type: 'note', x: 0, y: 0, text: 'viewer' }) })
+  await a.waitForTimeout(800)
+  ok('閲覧者の書き込みはサーバーで拒否される', (await a.evaluate(() => window.__qcEditor.getShapes().length)) === before)
   ok('閲覧者のヘッダーに「閲覧のみ」', (await v.locator('.badge--warn').count()) === 1)
   ok('閲覧者には + 依頼 が無い', (await v.locator('[data-testid="sheet-add"]').count()) === 0)
   await v.context().close()
@@ -204,7 +219,7 @@ try {
     ok(`埋め込み: ホストがイベント受信 (${[...new Set(events)].join(',')})`, true)
     await host.evaluate(() => {
       const ed = window.__qcEditor
-      ed.select(ed.getCurrentPageShapes().find((s) => s.type === 'request-card').id)
+      ed.select(ed.getShapes().find((s) => s.type === 'request-card').id)
     })
     ok('埋め込み: カード選択がホストへ通知', await waitFor(() => host.evaluate(() => window.__events.some((e) => e.event === 'card-selected' && e.shapeId))))
     await host.goto(`${BASE}/`)
@@ -218,7 +233,7 @@ try {
   for (const p of [a, b]) {
     await p.evaluate(() => {
       window.__qcEditor.selectNone()
-      window.__qcEditor.zoomToFit({ animation: { duration: 0 } })
+      window.__qcEditor.zoomToFit()
     })
   }
   await a.waitForTimeout(500)
@@ -229,9 +244,25 @@ try {
   // 永続化
   const files = await waitFor(() => {
     const f = readdirSync(join(dataDir, 'rooms'))
-    return f.some((x) => x.endsWith('.snapshot.json')) ? f : null
+    return f.some((x) => x.endsWith('.yjs')) ? f : null
   })
-  ok(`永続化: ${files.filter((f) => f.endsWith('.snapshot.json'))}`, true)
+  ok(`永続化: ${files.filter((f) => f.endsWith('.yjs'))}`, true)
+
+  // 再起動後も内容が残る(永続化ファイルからの復元)
+  {
+    const ctx = await (await chromium.launch({ executablePath: process.env.CHROMIUM_PATH, args: ['--no-sandbox'] })).newContext()
+    const page = await ctx.newPage()
+    await page.goto(`${BASE}/`)
+    await page.fill('input[placeholder="例: 山田"]', '山田')
+    await page.fill('input[type="password"]', 'pw-yamada')
+    await page.click('button[type="submit"]')
+    await page.waitForSelector('.rooms button')
+    await page.click('.rooms button >> nth=0')
+    await page.waitForFunction(() => !!window.__qcEditor && document.querySelector('.dot--online'))
+    const n = await waitFor(() => page.evaluate(() => { const n = window.__qcEditor.getShapes().length; return n > 0 ? n : null }))
+    ok(`再接続で図形が復元される (${n} 件)`, n >= 4)
+    await ctx.browser().close()
+  }
   exitCode = 0
   console.log(`[e2e] OK  screenshots in ${shotDir}`)
 } catch (e) {

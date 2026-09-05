@@ -1,13 +1,16 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import type { Editor, TLImageShape, TLShapeId } from 'tldraw'
-import { REQUEST_STATUSES, todayString, type RequestStatus } from '@shared/request-card'
-import type { RequestCardShape } from '../canvas/RequestCardShape'
-import { focusShape, imageName, imageSrc, updateCard, useCards, useImages, useSingleSelection } from './useCards'
+import { REQUEST_STATUSES, type ImageShape, type RequestCardShape, type RequestStatus } from '@shared/shapes'
+import type { BoardEditor as Editor } from '../canvas/editor'
+import { addCardAtCenter, focusShape, updateCard, useCards, useImages, useSingleSelection } from './useCards'
+
+type TLShapeId = string
+const imageSrc = (_e: Editor, img: ImageShape) => img.src || null
+const imageName = (_e: Editor, img: ImageShape) => img.name || '画像'
 
 /**
  * 左サイドバー: 選択中の依頼カードの編集フォーム + 図面・写真の一覧。
- * tldraw の React コンテキスト外にあるので editor を props で受け取り useValue で購読する。
+ * キャンバスの外にあるので editor を props で受け取り、スナップショットを購読する。
  */
 export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolean }): JSX.Element {
   const cards = useCards(editor)
@@ -22,13 +25,13 @@ export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolea
 
   const link = (cardId: TLShapeId, imageId: TLShapeId) => {
     const c = editor.getShape<RequestCardShape>(cardId)
-    if (!c || c.props.linkedShapeIds.includes(imageId)) return
-    updateCard(editor, cardId, { linkedShapeIds: [...c.props.linkedShapeIds, imageId] })
+    if (!c || c.linkedShapeIds.includes(imageId)) return
+    updateCard(editor, cardId, { linkedShapeIds: [...c.linkedShapeIds, imageId] })
   }
   const unlink = (cardId: TLShapeId, imageId: TLShapeId) => {
     const c = editor.getShape<RequestCardShape>(cardId)
     if (!c) return
-    updateCard(editor, cardId, { linkedShapeIds: c.props.linkedShapeIds.filter((x) => x !== imageId) })
+    updateCard(editor, cardId, { linkedShapeIds: c.linkedShapeIds.filter((x) => x !== imageId) })
   }
 
   // 紐付けモード中にキャンバス上の画像を選択したら紐付けて終了
@@ -44,17 +47,7 @@ export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolea
     if (linkingFor && !linkingCard) setLinkingFor(null)
   }, [linkingFor, linkingCard])
 
-  const addCard = () => {
-    const c = editor.getViewportPageBounds().center
-    editor.createShape<RequestCardShape>({
-      type: 'request-card',
-      x: c.x - 110,
-      y: c.y - 66,
-      props: { requester: editor.user.getName(), requestedAt: todayString() }
-    })
-    const created = editor.getCurrentPageShapes().at(-1)
-    if (created) editor.select(created.id)
-  }
+  const addCard = () => addCardAtCenter(editor)
 
   return (
     <div className="panel">
@@ -90,7 +83,7 @@ export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolea
         <ul className="gallery" data-testid="gallery">
           {images.map((img) => {
             const src = imageSrc(editor, img)
-            const linkedCards = cards.filter((c) => c.props.linkedShapeIds.includes(img.id))
+            const linkedCards = cards.filter((c) => c.linkedShapeIds.includes(img.id))
             const canLink = !!linkingFor && !linkedCards.some((c) => c.id === linkingFor)
             return (
               <li
@@ -140,23 +133,23 @@ function CardEditor({
   onCancelLink: () => void
   onUnlink: (imageId: TLShapeId) => void
 }): JSX.Element {
-  const p = card.props
-  const update = (patch: Partial<RequestCardShape['props']>) => updateCard(editor, card.id, patch)
-  const field = (label: string, key: keyof typeof p, placeholder = '') => (
+  const p = card
+  const update = (patch: Partial<RequestCardShape>) => updateCard(editor, card.id, patch)
+  const field = (label: string, key: 'title' | 'dept' | 'partNo' | 'lot' | 'qty' | 'requester', placeholder = '') => (
     <label className="field">
       <span>{label}</span>
       <input
         value={String(p[key])}
         placeholder={placeholder}
         disabled={readonly}
-        onChange={(e) => update({ [key]: e.target.value } as Partial<RequestCardShape['props']>)}
+        onChange={(e) => update({ [key]: e.target.value } as Partial<RequestCardShape>)}
         data-field={key}
       />
     </label>
   )
   const linked = p.linkedShapeIds
-    .map((id) => editor.getShape(id as TLShapeId))
-    .filter((s): s is TLImageShape => !!s && s.type === 'image')
+    .map((id) => editor.getShape(id))
+    .filter((s): s is ImageShape => !!s && s.type === 'image')
 
   return (
     <div className="editor" data-testid="card-editor">

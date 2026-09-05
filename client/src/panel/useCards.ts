@@ -1,53 +1,53 @@
-import { useValue, type Editor, type TLImageShape, type TLShapeId } from 'tldraw'
-import type { RequestCardShape } from '../canvas/RequestCardShape'
+import { useMemo } from 'react'
+import type { ImageShape, RequestCardShape, Shape } from '@shared/shapes'
+import type { BoardEditor } from '../canvas/editor'
+import { useEditorSnapshot } from '../canvas/hooks'
 
 /** ボード上の依頼カード一覧(リアクティブ) */
-export function useCards(editor: Editor): RequestCardShape[] {
-  return useValue(
-    'request cards',
-    () => editor.getCurrentPageShapes().filter((s): s is RequestCardShape => s.type === 'request-card'),
-    [editor]
-  )
+export function useCards(editor: BoardEditor): RequestCardShape[] {
+  const snap = useEditorSnapshot(editor)
+  return useMemo(() => snap.shapes.filter((s): s is RequestCardShape => s.type === 'request-card'), [snap.shapes])
 }
 
 /** ボード上の画像図形一覧(リアクティブ) */
-export function useImages(editor: Editor): TLImageShape[] {
-  return useValue(
-    'images',
-    () => editor.getCurrentPageShapes().filter((s): s is TLImageShape => s.type === 'image'),
-    [editor]
-  )
+export function useImages(editor: BoardEditor): ImageShape[] {
+  const snap = useEditorSnapshot(editor)
+  return useMemo(() => snap.shapes.filter((s): s is ImageShape => s.type === 'image'), [snap.shapes])
 }
 
 /** 単一選択されている図形(なければ null) */
-export function useSingleSelection(editor: Editor) {
-  return useValue(
-    'single selection',
-    () => {
-      const sel = editor.getSelectedShapes()
-      return sel.length === 1 ? sel[0]! : null
-    },
-    [editor]
-  )
+export function useSingleSelection(editor: BoardEditor): Shape | null {
+  const snap = useEditorSnapshot(editor)
+  return snap.selection.length === 1 ? (snap.byId.get(snap.selection[0]!) ?? null) : null
 }
 
-export function imageSrc(editor: Editor, img: TLImageShape): string | null {
-  if (!img.props.assetId) return null
-  const asset = editor.getAsset(img.props.assetId)
-  return asset && asset.type === 'image' ? asset.props.src : null
+export function focusShape(editor: BoardEditor, id: string): void {
+  editor.zoomTo(id)
 }
 
-export function imageName(editor: Editor, img: TLImageShape): string {
-  if (!img.props.assetId) return '画像'
-  const asset = editor.getAsset(img.props.assetId)
-  return asset && asset.type === 'image' ? asset.props.name || '画像' : '画像'
+export function updateCard(editor: BoardEditor, id: string, patch: Partial<RequestCardShape>): void {
+  editor.updateShape<RequestCardShape>(id, patch)
 }
 
-export function focusShape(editor: Editor, id: TLShapeId): void {
-  editor.select(id)
-  editor.zoomToSelection({ animation: { duration: 200 } })
+/** 画面中央に依頼カードを作って選択する */
+export function addCardAtCenter(editor: BoardEditor): void {
+  const snap = editor.getSnapshot()
+  void snap
+  const el = document.querySelector('.board') as HTMLElement | null
+  const w = el?.clientWidth ?? 800
+  const h = el?.clientHeight ?? 600
+  const c = editor.screenToPage({ x: w / 2, y: h / 2 })
+  const s = editor.createShape<RequestCardShape>({
+    type: 'request-card',
+    x: c.x - 110,
+    y: c.y - 66,
+    requester: editor.userName,
+    requestedAt: today()
+  })
+  editor.select(s.id)
 }
 
-export function updateCard(editor: Editor, id: TLShapeId, patch: Partial<RequestCardShape['props']>): void {
-  editor.updateShape<RequestCardShape>({ id, type: 'request-card', props: patch })
+function today(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
