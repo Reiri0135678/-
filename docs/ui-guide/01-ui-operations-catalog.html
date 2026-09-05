@@ -8,7 +8,7 @@
   :root {
     --bg: #f6f7f9; --card: #fff; --text: #1d1f23; --muted: #6b7280;
     --line: #e5e7eb; --accent: #2563eb;
-    --tierA: #16a34a; --tierB: #d97706; --tierC: #dc2626;
+    --tierA: #16a34a; --tierB: #d97706; --tierC: #dc2626; --tierD: #7c3aed;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
@@ -27,6 +27,7 @@
   section[data-tier="A"] h2 { border-color: var(--tierA); }
   section[data-tier="B"] h2 { border-color: var(--tierB); }
   section[data-tier="C"] h2 { border-color: var(--tierC); }
+  section[data-tier="D"] h2 { border-color: var(--tierD); }
   .item { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: grid; grid-template-columns: 56px 1fr; gap: 4px 12px; }
   .item.hidden { display: none; }
   .num { font-weight: 700; color: var(--muted); font-size: 14px; grid-row: 1 / span 3; padding-top: 2px; }
@@ -37,7 +38,7 @@
   .api code { background: #f1f3f5; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
   .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 4px; margin-left: 6px; vertical-align: middle; color: #fff; }
   .demo-link { margin-left: 8px; font-size: 12px; text-decoration: none; color: var(--accent); font-weight: 600; }
-  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); }
+  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); } .tag-D { background: var(--tierD); }
   footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
   @media (max-width: 600px) { .item { grid-template-columns: 40px 1fr; } }
 </style>
@@ -51,18 +52,20 @@
     <span class="chip" data-tier="A">A: 一般</span>
     <span class="chip" data-tier="B">B: カスタマイズ</span>
     <span class="chip" data-tier="C">C: プロ志向</span>
+    <span class="chip" data-tier="D">D: 業務アプリ設計</span>
     <span class="count" id="count"></span>
   </div>
 </header>
 
 <main>
   <div class="intro">
-    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a>）へ飛べる。
+    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a>）へ飛べる。
     <table>
       <tr><th style="width:120px">層</th><th>意味</th><th>実装の主な手段</th></tr>
       <tr><td><span class="tag tag-A">A</span> 一般</td><td>ほぼ全てのアプリで使う基本操作・演出。ブラウザ標準で大半が賄える</td><td>CSS / 標準DOM API</td></tr>
       <tr><td><span class="tag tag-B">B</span> カスタマイズ</td><td>標準挙動を自前で制御・拡張するもの。業務アプリの「使いやすさ」はここで決まる</td><td>Pointer Events / Observer系 / rAF</td></tr>
       <tr><td><span class="tag tag-C">C</span> プロ志向</td><td>エディタ・キャンバス・グリッド等、ツール系アプリに必要な高度操作</td><td>座標変換 / 状態機械 / Canvas / Electron連携</td></tr>
+      <tr><td><span class="tag tag-D">D</span> 業務アプリ設計</td><td>A〜Cの部品を組み合わせた設計パターン（第3弾）。番号は提案リストの通りで飛び番あり</td><td>状態オブジェクト集約 / localStorage / BroadcastChannel</td></tr>
     </table>
   </div>
   <div id="list"></div>
@@ -139,10 +142,19 @@ const ITEMS = [
   { tier:'C', ja:'コンテナクエリ / レスポンシブ', en:'Container queries', desc:'画面幅ではなく「置かれた枠の幅」でレイアウトを切り替える。ドッキングパネル内のUIに必須。', api:'<code>container-type</code>, <code>@container (min-width: …)</code>' },
   { tier:'C', ja:'Electron: フレームレスウィンドウ操作', en:'Electron frameless window drag', desc:'自前タイトルバーでウィンドウをドラッグ移動させる領域と、ボタン等の除外領域を指定する。', api:'<code>-webkit-app-region: drag / no-drag</code>' },
   { tier:'C', ja:'Electron: ネイティブメニュー / ショートカット', en:'Electron native menu / accelerators', desc:'OSのメニューバーやグローバルショートカットを Renderer のUIと連動させる。', api:'<code>Menu</code>, <code>accelerator</code>, IPC（<code>ipcRenderer</code>）' },
+  // ===== D: 業務アプリの設計パターン（第3弾） =====
+  { tier:'D', no:71, ja:'大規模グリッドの複合', en:'Virtual grid + sticky + reorder + range copy', desc:'仮想スクロール・固定列・見出しドラッグでの列順変更・セル範囲のTSVコピーを1つに組み上げる。データと表示列順を分離する。', api:'23+24+32+11 の合成, <code>navigator.clipboard</code>' },
+  { tier:'D', no:74, ja:'検索の型', en:'Incremental / Debounce / Highlight / Fuzzy', desc:'打鍵停止後に実行するデバウンス、一致箇所の強調、順序一致をスコア化するあいまい検索。API検索にもデバウンス必須。', api:'<code>setTimeout</code> デバウンス, <code>&lt;mark&gt;</code>, スコアリング' },
+  { tier:'D', no:75, ja:'フォームの型', en:'Stepper / Conditional / Autosave / Leave guard', desc:'段階入力、回答に応じた項目の出し分け、下書きの自動保存と復元、未保存離脱の警告。状態を1オブジェクトに集約する。', api:'<code>localStorage</code>, <code>beforeunload</code>' },
+  { tier:'D', no:76, ja:'バッチ操作UI', en:'Bulk edit with preview and partial failure', desc:'複数選択→一括変更→プレビュー→確定→チャンク実行→進捗→部分失敗の再試行。kintone の100件上限に合わせた分割。', api:'<code>Promise.all</code> チャンク, <code>&lt;progress&gt;</code>' },
+  { tier:'D', no:77, ja:'差分表示', en:'Field diff / Word-level diff', desc:'版同士を比べ、項目単位の変更を色分けし、長文は単語単位のLCS差分で削除・追加を示す。', api:'LCS, <code>&lt;del&gt;</code> / <code>&lt;ins&gt;</code>' },
+  { tier:'D', no:80, ja:'ドッキングレイアウト完成形', en:'Dock layout with tabs / float / persist', desc:'ゾーン間のタブ移動、境界リサイズ、分離ウィンドウ化、レイアウトJSONの保存・復元。33の完成形。', api:'レイアウトJSON → 再描画, <code>elementFromPoint</code>, <code>localStorage</code>' },
+  { tier:'D', no:81, ja:'ワークスペース永続化', en:'Workspace persistence', desc:'開いていたタブ・絞り込み・選択・スクロール位置を保存し、再起動時に「昨日の続き」から始められるようにする。', api:'状態オブジェクト + デバウンス保存, 描画後に <code>scrollTop</code> 復元' },
+  { tier:'D', no:85, ja:'マルチウィンドウ同期', en:'Multi-window sync', desc:'複数ウィンドウ間で状態を即時同期する。ブラウザ/renderer 間は BroadcastChannel、Electron ではメインが状態を持ち IPC で配信。', api:'<code>BroadcastChannel</code>, <code>storage</code> イベント, <code>webContents.send</code>' },
 ];
 
-const TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html' };
-const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）' };
+const TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html' };
+const TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・抜粋）' };
 
 const listEl = document.getElementById('list');
 const qEl = document.getElementById('q');
@@ -152,7 +164,7 @@ let tierFilter = 'all';
 function render() {
   listEl.innerHTML = '';
   let n = 0;
-  for (const t of ['A','B','C']) {
+  for (const t of ['A','B','C','D']) {
     const sec = document.createElement('section');
     sec.dataset.tier = t;
     sec.innerHTML = `<h2>${TIER_NAME[t]}</h2>`;
@@ -164,10 +176,10 @@ function render() {
       el.dataset.tier = t;
       el.dataset.text = (it.ja + ' ' + it.en + ' ' + it.desc + ' ' + it.api).toLowerCase();
       el.innerHTML = `
-        <div class="num">${String(i + 1).padStart(2, '0')}</div>
+        <div class="num">${String(it.no ?? i + 1).padStart(2, '0')}</div>
         <div class="name">${it.ja}<small>${it.en}</small><span class="tag tag-${t}">${t}</span></div>
         <div class="desc">${it.desc}</div>
-        <div class="api">実装手段：${it.api} <a class="demo-link" href="${TIER_FILE[t]}#n${String(i + 1).padStart(2, '0')}">▶ デモ</a></div>`;
+        <div class="api">実装手段：${it.api} <a class="demo-link" href="${TIER_FILE[t]}#n${String(it.no ?? i + 1).padStart(2, '0')}">▶ デモ</a></div>`;
       sec.appendChild(el);
     });
     listEl.appendChild(sec);

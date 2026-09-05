@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第3弾 D：業務アプリの上位UI（71〜85 抜粋）動くデモ</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierD { background: #7c3aed; }
+  table.mini { border-collapse: collapse; font-size: 12.5px; background: #fff; }
+  table.mini th, table.mini td { border: 1px solid #e5e7eb; padding: 3px 8px; }
+  table.mini th { background: #f1f5f9; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>D：業務アプリの上位UI <span class="tier tierD">71 / 74 / 75 / 76 / 77 / 80 / 81 / 85</span></h1>
+  <nav><a href="01-ui-operations-catalog.html">← カタログ</a><a href="02-basic.html">A</a><a href="03-custom.html">B</a><a href="04-pro.html">C</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">D層は「操作の語彙」ではなく「業務アプリとしての設計パターン」。第2弾の部品（仮想スクロール23・選択11・分割パネル33・楽観的更新57など）を組み合わせて、kintone連携やMission Bridgeの骨格になる形に組み上げる。番号は前回提示したリストに合わせている。</div>
+
+<!-- ===================== 71 ===================== -->
+<section class="demo" id="n71">
+  <h2><span class="no">71</span>大規模グリッドの複合 <small>仮想スクロール＋固定列＋列並べ替え＋範囲コピー</small></h2>
+  <p class="what">数千〜数万行を扱う一覧の完成形。①行は仮想化（23）②先頭列は固定（24）③見出しをドラッグで列順変更（32の応用）④セル範囲をドラッグ選択して <kbd>Ctrl</kbd>+<kbd>C</kbd> でTSVとしてコピー（Excelにそのまま貼れる）。データは列順とは独立に保持し、表示時に「列順の配列」を通して並べる。</p>
+  <p class="how"><b>操作：</b>スクロール／見出しをドラッグして列を入れ替え／セルをドラッグ選択して Ctrl+C。コピー内容は下に表示。</p>
+  <div class="stage">
+    <div class="row"><span class="readout" id="s71-out">-</span></div>
+    <div id="s71-view" class="s71-view" tabindex="0">
+      <div id="s71-head" class="s71-head"></div>
+      <div id="s71-spacer"><div id="s71-rows"></div></div>
+    </div>
+    <textarea id="s71-clip" class="s71-clip" readonly placeholder="Ctrl+C でコピーした TSV がここに表示される"></textarea>
+  </div>
+  <style data-code>
+    .s71-view { position: relative; height: 240px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; user-select: none; font-size: 12.5px; }
+    .s71-head { position: sticky; top: 0; z-index: 3; display: flex; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; width: max-content; min-width: 100%; }
+    .s71-head div { flex: 0 0 110px; padding: 4px 8px; font-weight: 600; cursor: grab; border-right: 1px solid #e5e7eb; box-sizing: border-box; }
+    .s71-head div.drag { opacity: .5; }
+    .s71-head div.over { box-shadow: inset 3px 0 0 var(--accent); }
+    .s71-head div:first-child, .s71-row div:first-child { position: sticky; left: 0; z-index: 2; background: #f8fafc; cursor: default; }
+    .s71-row { display: flex; height: 26px; line-height: 26px; width: max-content; min-width: 100%; }
+    .s71-row div { flex: 0 0 110px; padding: 0 8px; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; white-space: nowrap; overflow: hidden; box-sizing: border-box; }
+    .s71-row div.sel { background: var(--accent-soft); }
+    .s71-clip { width: 100%; height: 60px; margin-top: 6px; font: 12px ui-monospace, monospace; }
+  </style>
+  <script data-code>
+    (() => {
+      const ROWS = 5000, H = 26, COLS = ['品番', '品名', '在庫', '単価', '納期', '担当', '拠点', '備考'];
+      const data = Array.from({ length: ROWS }, (_, r) => [`P-${String(r + 1).padStart(5, '0')}`, `部品${r + 1}`, String((r * 37) % 500), String(100 + (r % 9) * 50), `2026-10-${String(r % 28 + 1).padStart(2, '0')}`, ['佐藤', '鈴木', '高橋'][r % 3], ['本社', '第2工場'][r % 2], r % 7 === 0 ? '要確認' : '']);
+      let order = COLS.map((_, i) => i);           // 表示上の列順（データ側は不変）
+      const view = $('#s71-view'), head = $('#s71-head'), spacer = $('#s71-spacer'), rows = $('#s71-rows'), out = $('#s71-out'), clip = $('#s71-clip');
+      spacer.style.height = ROWS * H + 'px';
+      let sel = null; // {r1,c1,r2,c2} c は「表示上の列位置」
+      const norm = s => ({ r1: Math.min(s.r1, s.r2), r2: Math.max(s.r1, s.r2), c1: Math.min(s.c1, s.c2), c2: Math.max(s.c1, s.c2) });
+      const inSel = (r, c) => { if (!sel) return false; const n = norm(sel); return r >= n.r1 && r <= n.r2 && c >= n.c1 && c <= n.c2; };
+      const renderHead = () => head.innerHTML = order.map((ci, pos) => `<div draggable="false" data-pos="${pos}">${COLS[ci]}</div>`).join('');
+      const render = () => {
+        const start = Math.floor(view.scrollTop / H), count = Math.ceil(view.clientHeight / H) + 2;
+        rows.style.transform = `translateY(${start * H}px)`;
+        let html = '';
+        for (let r = start; r < Math.min(start + count, ROWS); r++)
+          html += `<div class="s71-row" data-r="${r}">` + order.map((ci, pos) => `<div data-c="${pos}" class="${inSel(r, pos) ? 'sel' : ''}">${data[r][ci]}</div>`).join('') + '</div>';
+        rows.innerHTML = html;
+        out.textContent = `${ROWS.toLocaleString()} 行 / DOM ${rows.children.length} 行 / 列順 [${order.map(i => COLS[i]).join(',')}]` + (sel ? ` / 選択 ${norm(sel).r2 - norm(sel).r1 + 1}×${norm(sel).c2 - norm(sel).c1 + 1}` : '');
+      };
+      view.addEventListener('scroll', render);
+      // 列の並べ替え（見出しドラッグ）
+      let hdrag = null;
+      head.addEventListener('pointerdown', e => { const h = e.target.closest('[data-pos]'); if (!h || h.dataset.pos === '0') return; hdrag = { from: +h.dataset.pos, el: h }; h.classList.add('drag'); head.setPointerCapture(e.pointerId); });
+      head.addEventListener('pointermove', e => { if (!hdrag) return; const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-pos]'); $$('div', head).forEach(d => d.classList.toggle('over', d === t && t !== hdrag.el)); });
+      head.addEventListener('pointerup', e => {
+        if (!hdrag) return;
+        const t = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-pos]');
+        if (t && +t.dataset.pos !== hdrag.from && t.dataset.pos !== '0') { const [m] = order.splice(hdrag.from, 1); order.splice(+t.dataset.pos, 0, m); sel = null; }
+        hdrag = null; renderHead(); render();
+      });
+      // 範囲選択
+      let selecting = false;
+      const cellAt = e => { const c = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-c]'); const row = c?.closest('[data-r]'); return row ? { r: +row.dataset.r, c: +c.dataset.c } : null; };
+      rows.addEventListener('pointerdown', e => { const p = cellAt(e); if (!p) return; sel = { r1: p.r, c1: p.c, r2: p.r, c2: p.c }; selecting = true; view.setPointerCapture(e.pointerId); render(); });
+      view.addEventListener('pointermove', e => { if (!selecting) return; const p = cellAt(e); if (p) { sel.r2 = p.r; sel.c2 = p.c; render(); } });
+      view.addEventListener('pointerup', () => selecting = false);
+      // Ctrl+C → TSV（DOMに無い行もデータから直接組み立てる）
+      view.addEventListener('keydown', e => {
+        if (!sel || !(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'c') return;
+        e.preventDefault(); const n = norm(sel); const lines = [];
+        for (let r = n.r1; r <= n.r2; r++) lines.push(order.slice(n.c1, n.c2 + 1).map(ci => data[r][ci]).join('\t'));
+        const tsv = lines.join('\n'); clip.value = tsv;
+        navigator.clipboard?.writeText(tsv).catch(() => {}); // file:// では失敗することがあるので表示も残す
+      });
+      renderHead(); render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 74 ===================== -->
+<section class="demo" id="n74">
+  <h2><span class="no">74</span>検索の型 <small>インクリメンタル / デバウンス / ハイライト / あいまい検索</small></h2>
+  <p class="what">入力のたびに検索するが、①<b>デバウンス</b>（打鍵が止まって250ms後に実行）で無駄な処理を省き、②一致箇所を <code>&lt;mark&gt;</code> で強調し、③あいまい検索は「文字が順番に現れるか」をスコア化して並べる（先頭一致・連続一致を高得点に）。kintone API へ投げる場合もデバウンスは必須。</p>
+  <p class="how"><b>操作：</b>「部品12」「p12鈴」「高橋 倉庫」などを入力。「p12鈴」は部分一致では0件、あいまいでは「P-0012 部品12 鈴木…」が上位に来る。</p>
+  <div class="stage">
+    <div class="row"><input id="s74-q" type="search" placeholder="検索…" style="width:220px"><label><input type="radio" name="s74" value="sub" checked> 部分一致</label><label><input type="radio" name="s74" value="fuzzy"> あいまい（スコア順）</label><span class="readout" id="s74-out">-</span></div>
+    <div id="s74-list" class="s74-list"></div>
+  </div>
+  <style data-code>
+    .s74-list { height: 170px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .s74-list div { padding: 3px 10px; border-bottom: 1px solid #f1f5f9; display: flex; justify-content: space-between; }
+    .s74-list mark { background: #fde68a; padding: 0; }
+    .s74-list small { color: var(--muted); }
+  </style>
+  <script data-code>
+    (() => {
+      const N = 3000, recs = Array.from({ length: N }, (_, i) => `P-${String(i + 1).padStart(4, '0')} 部品${i + 1} ${['佐藤', '鈴木', '高橋'][i % 3]} ${['本社', '第2工場', '倉庫'][i % 3]}`);
+      const q = $('#s74-q'), list = $('#s74-list'), out = $('#s74-out');
+      const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
+      const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      // 部分一致：位置で <mark>
+      const sub = (text, needle) => { const i = text.toLowerCase().indexOf(needle); return i < 0 ? null : { score: 1000 - i, html: esc(text.slice(0, i)) + '<mark>' + esc(text.slice(i, i + needle.length)) + '</mark>' + esc(text.slice(i + needle.length)) }; };
+      // あいまい：文字を順に探し、連続・先頭で加点
+      const fuzzy = (text, needle) => {
+        const t = text.toLowerCase(); let ti = 0, score = 0, prev = -2, html = '';
+        for (const ch of needle) {
+          const i = t.indexOf(ch, ti); if (i < 0) return null;
+          score += (i === prev + 1 ? 8 : 1) + (i === 0 ? 10 : 0) - (i - ti) * 0.1; // 連続+8、先頭+10、飛び越し減点
+          html += esc(text.slice(ti, i)) + '<mark>' + esc(text[i]) + '</mark>'; prev = i; ti = i + 1;
+        }
+        return { score: score - text.length * 0.01, html: html + esc(text.slice(ti)) };  // 同点なら短い方を上に
+      };
+      const run = () => {
+        const needle = q.value.trim().toLowerCase(), t0 = performance.now();
+        const mode = $('input[name=s74]:checked').value;
+        if (!needle) { list.innerHTML = recs.slice(0, 50).map(r => `<div>${esc(r)}</div>`).join(''); out.textContent = `全 ${N} 件（先頭50表示）`; return; }
+        const hits = [];
+        for (const r of recs) { const m = (mode === 'sub' ? sub : fuzzy)(r, needle); if (m) hits.push({ ...m, r }); }
+        hits.sort((a, b) => b.score - a.score);
+        list.innerHTML = hits.slice(0, 100).map(h => `<div><span>${h.html}</span><small>${h.score.toFixed(1)}</small></div>`).join('') || '<div style="color:#6b7280">該当なし</div>';
+        out.textContent = `${hits.length} 件 / ${(performance.now() - t0).toFixed(1)}ms（上位100表示）`;
+      };
+      q.addEventListener('input', debounce(run, 250));  // ← 打鍵が止まってから実行
+      $$('input[name=s74]').forEach(r => r.addEventListener('change', run));
+      run();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 75 ===================== -->
+<section class="demo" id="n75">
+  <h2><span class="no">75</span>フォームの型 <small>ステッパー / 条件分岐 / 途中保存 / 離脱警告</small></h2>
+  <p class="what">長い入力を①段階に分け（ステッパー）②回答に応じて項目を出し分け（条件分岐）③入力のたびに下書きを保存し（<code>localStorage</code>）④未保存のまま離れようとしたら警告する（<code>beforeunload</code>）。状態は「1つのオブジェクト」に集約し、画面はそれを描画するだけにすると分岐が破綻しない。</p>
+  <p class="how"><b>操作：</b>入力して次へ。「分納あり」を選ぶと項目が増える。ページを再読込しても下書きが復元される。入力途中でタブを閉じようとすると警告が出る。</p>
+  <div class="stage">
+    <div class="s75-steps" id="s75-steps"></div>
+    <div id="s75-body" class="s75-body"></div>
+    <div class="row"><button id="s75-prev">← 戻る</button><button id="s75-next" class="primary">次へ →</button><button id="s75-clear">下書きを破棄</button><span class="readout" id="s75-out">-</span></div>
+  </div>
+  <style data-code>
+    .s75-steps { display: flex; gap: 6px; margin-bottom: 10px; font-size: 12px; }
+    .s75-steps span { flex: 1; padding: 4px 8px; border-radius: 4px; background: #e2e8f0; text-align: center; }
+    .s75-steps span.on { background: var(--accent); color: #fff; } .s75-steps span.done { background: #bbf7d0; }
+    .s75-body { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 8px; font-size: 13px; min-height: 90px; }
+    .s75-body label { display: block; margin-bottom: 6px; } .s75-body input[type=text], .s75-body select { margin-left: 6px; }
+    .s75-body .err { color: #dc2626; font-size: 12px; }
+  </style>
+  <script data-code>
+    (() => {
+      const KEY = 'ui-guide.s75.draft';
+      const STEPS = ['顧客', '納品', '確認'];
+      let form = { step: 0, customer: '', qty: '', split: 'no', splitCount: '', note: '' };
+      let dirty = false;
+      try { Object.assign(form, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch {}   // 復元
+      const steps = $('#s75-steps'), body = $('#s75-body'), out = $('#s75-out');
+      const save = () => { localStorage.setItem(KEY, JSON.stringify(form)); out.textContent = `下書き保存 ${new Date().toLocaleTimeString()}`; };
+      const validate = () => form.step === 0 && !form.customer ? '顧客名は必須' : form.step === 1 && !(+form.qty > 0) ? '数量は1以上' : form.step === 1 && form.split === 'yes' && !(+form.splitCount > 1) ? '分納回数は2以上' : '';
+      const render = () => {
+        steps.innerHTML = STEPS.map((s, i) => `<span class="${i === form.step ? 'on' : i < form.step ? 'done' : ''}">${i + 1}. ${s}</span>`).join('');
+        body.innerHTML = [
+          `<label>顧客名 <input type="text" data-k="customer" value="${form.customer}"></label><label>備考 <input type="text" data-k="note" value="${form.note}"></label>`,
+          `<label>数量 <input type="text" data-k="qty" value="${form.qty}"></label>
+           <label>分納 <select data-k="split"><option value="no" ${form.split === 'no' ? 'selected' : ''}>なし</option><option value="yes" ${form.split === 'yes' ? 'selected' : ''}>あり</option></select></label>
+           ${form.split === 'yes' ? `<label>分納回数 <input type="text" data-k="splitCount" value="${form.splitCount}"></label>` : ''}`,   // ← 条件分岐
+          `<b>確認</b><br>顧客: ${form.customer} / 数量: ${form.qty} / 分納: ${form.split === 'yes' ? form.splitCount + '回' : 'なし'} / 備考: ${form.note || '-'}<br><br><button id="s75-submit" class="primary">送信</button>`
+        ][form.step] + `<div class="err" id="s75-err"></div>`;
+        $('#s75-prev').disabled = form.step === 0; $('#s75-next').hidden = form.step === 2;
+        $('#s75-submit')?.addEventListener('click', () => { localStorage.removeItem(KEY); dirty = false; form = { step: 0, customer: '', qty: '', split: 'no', splitCount: '', note: '' }; out.textContent = '送信完了（下書き削除）'; render(); });
+      };
+      body.addEventListener('input', e => { const k = e.target.dataset.k; if (!k) return; form[k] = e.target.value; dirty = true; save(); if (k === 'split') render(); });
+      $('#s75-next').onclick = () => { const err = validate(); if (err) { $('#s75-err').textContent = err; return; } form.step++; save(); render(); };
+      $('#s75-prev').onclick = () => { form.step--; save(); render(); };
+      $('#s75-clear').onclick = () => { localStorage.removeItem(KEY); dirty = false; form = { step: 0, customer: '', qty: '', split: 'no', splitCount: '', note: '' }; out.textContent = '破棄'; render(); };
+      window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });  // 離脱警告（文言はブラウザ固定）
+      render(); if (localStorage.getItem(KEY)) out.textContent = '下書きを復元しました';
+    })();
+  </script>
+</section>
+
+<!-- ===================== 76 ===================== -->
+<section class="demo" id="n76">
+  <h2><span class="no">76</span>バッチ操作UI <small>複数選択 → 一括変更 → プレビュー → 確定 → 進捗と部分失敗</small></h2>
+  <p class="what">一括更新は「取り消しにくい」ので、確定前にプレビュー（何が何に変わるか）を必ず見せる。実行中は進捗を出し、一部失敗しても止めずに完走させ、最後に「失敗分だけ再試行」を提供する。kintone の <code>PUT /k/v1/records.json</code>（100件上限）に合わせてチャンク分割する形。</p>
+  <p class="how"><b>操作：</b>行をチェック → ステータスを選ぶ → プレビュー → 実行。約20%が失敗するので再試行を試す。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s76-all"> 全選択</label><select id="s76-status"><option value="">変更後ステータス…</option><option>受注</option><option>製造中</option><option>出荷済</option></select><button id="s76-preview">プレビュー</button><span class="readout" id="s76-out">-</span></div>
+    <div class="row" style="align-items:flex-start">
+      <table class="mini" id="s76-t" style="flex:1"></table>
+      <div id="s76-panel" style="flex:1;font-size:13px"></div>
+    </div>
+  </div>
+  <script data-code>
+    (() => {
+      const recs = Array.from({ length: 8 }, (_, i) => ({ id: 1001 + i, name: `受注 #${1001 + i}`, status: ['受注', '製造中', '受注', '出荷済'][i % 4] }));
+      const t = $('#s76-t'), panel = $('#s76-panel'), out = $('#s76-out'), sel = new Set();
+      const fakeUpdate = rec => new Promise((ok, ng) => setTimeout(() => Math.random() < 0.2 ? ng(new Error('timeout')) : ok(), 150 + Math.random() * 200));
+      const render = () => t.innerHTML = '<tr><th></th><th>ID</th><th>名称</th><th>ステータス</th></tr>' + recs.map(r => `<tr><td><input type="checkbox" data-id="${r.id}" ${sel.has(r.id) ? 'checked' : ''}></td><td>${r.id}</td><td>${r.name}</td><td>${r.status}</td></tr>`).join('');
+      t.addEventListener('change', e => { const id = +e.target.dataset.id; e.target.checked ? sel.add(id) : sel.delete(id); out.textContent = `${sel.size} 件選択`; });
+      $('#s76-all').onchange = e => { recs.forEach(r => e.target.checked ? sel.add(r.id) : sel.delete(r.id)); render(); out.textContent = `${sel.size} 件選択`; };
+      $('#s76-preview').onclick = () => {
+        const to = $('#s76-status').value; if (!to || !sel.size) { out.textContent = '選択とステータスが必要'; return; }
+        const changes = recs.filter(r => sel.has(r.id) && r.status !== to).map(r => ({ r, from: r.status, to }));
+        panel.innerHTML = `<b>プレビュー（${changes.length} 件が変わる、${sel.size - changes.length} 件は変更なし）</b><table class="mini">` + changes.map(c => `<tr><td>${c.r.name}</td><td>${c.from}</td><td>→</td><td>${c.to}</td></tr>`).join('') + `</table><div class="row" style="margin-top:6px"><button id="s76-run" class="primary">実行</button></div><progress id="s76-p" max="${changes.length}" value="0" style="width:100%" hidden></progress><div id="s76-res"></div>`;
+        $('#s76-run').onclick = () => run(changes);
+      };
+      async function run(changes) {
+        const p = $('#s76-p'), res = $('#s76-res'); p.hidden = false; p.value = 0; $('#s76-run').disabled = true;
+        const failed = [];
+        const CHUNK = 3;                                                     // API上限に合わせて分割
+        for (let i = 0; i < changes.length; i += CHUNK) {
+          const chunk = changes.slice(i, i + CHUNK);
+          await Promise.all(chunk.map(c => fakeUpdate(c.r).then(() => { c.r.status = c.to; }).catch(err => failed.push({ ...c, err }))));
+          p.value = Math.min(changes.length, i + CHUNK); render();
+        }
+        res.innerHTML = `<b>完了：成功 ${changes.length - failed.length} / 失敗 ${failed.length}</b>` + (failed.length ? `<ul style="margin:4px 0">${failed.map(f => `<li>${f.r.name}（${f.err.message}）</li>`).join('')}</ul><button id="s76-retry">失敗分だけ再試行</button>` : '');
+        $('#s76-retry')?.addEventListener('click', () => run(failed.map(f => ({ r: f.r, from: f.from, to: f.to }))));
+      }
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 77 ===================== -->
+<section class="demo" id="n77">
+  <h2><span class="no">77</span>差分表示 <small>変更前後のハイライト / 変更履歴の切替</small></h2>
+  <p class="what">レコードの版（リビジョン）を並べ、①項目単位で「変更あり」を色分けし、②長文は単語単位の差分（LCS）で削除・追加を示す。kintone の変更履歴を「何がどう変わったか」まで見せる形。差分アルゴリズムは単語配列のLCSで十分（数百語規模なら瞬時）。</p>
+  <p class="how"><b>操作：</b>比較する版を左右で選ぶ。</p>
+  <div class="stage">
+    <div class="row">比較元 <select id="s77-a"></select> → 比較先 <select id="s77-b"></select></div>
+    <table class="mini" id="s77-t" style="width:100%"></table>
+  </div>
+  <style data-code>
+    #s77-t td.chg { background: #fef3c7; }
+    #s77-t del { background: #fecaca; text-decoration: line-through; } #s77-t ins { background: #bbf7d0; text-decoration: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const revs = [
+        { rev: 1, at: '09-01 10:12', by: '佐藤', f: { 顧客: '株式会社サンプル', 数量: '100', 納期: '2026-09-20', 備考: '通常納品。梱包は 標準 仕様で 依頼。' } },
+        { rev: 2, at: '09-02 15:40', by: '鈴木', f: { 顧客: '株式会社サンプル', 数量: '120', 納期: '2026-09-20', 備考: '通常納品。梱包は 強化 仕様で 依頼。分納可。' } },
+        { rev: 3, at: '09-04 09:05', by: '高橋', f: { 顧客: '株式会社サンプル 本社', 数量: '120', 納期: '2026-09-25', 備考: '梱包は 強化 仕様で 依頼。分納可。' } },
+      ];
+      const a = $('#s77-a'), b = $('#s77-b'), t = $('#s77-t');
+      a.innerHTML = b.innerHTML = revs.map(r => `<option value="${r.rev}">rev${r.rev} ${r.at} ${r.by}</option>`).join('');
+      a.value = 1; b.value = 3;
+      const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      // 単語単位の差分（LCS）
+      const wordDiff = (x, y) => {
+        const A = x.split(/(\s+)/), B = y.split(/(\s+)/), n = A.length, m = B.length;
+        const L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+        for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+        let i = 0, j = 0, html = '';
+        while (i < n && j < m) {
+          if (A[i] === B[j]) { html += esc(A[i]); i++; j++; }
+          else if (L[i + 1][j] >= L[i][j + 1]) { html += `<del>${esc(A[i])}</del>`; i++; }
+          else { html += `<ins>${esc(B[j])}</ins>`; j++; }
+        }
+        while (i < n) html += `<del>${esc(A[i++])}</del>`; while (j < m) html += `<ins>${esc(B[j++])}</ins>`;
+        return html;
+      };
+      const render = () => {
+        const ra = revs.find(r => r.rev == a.value), rb = revs.find(r => r.rev == b.value);
+        t.innerHTML = '<tr><th>項目</th><th>比較元</th><th>比較先</th><th>差分</th></tr>' + Object.keys(ra.f).map(k => {
+          const chg = ra.f[k] !== rb.f[k];
+          return `<tr><td>${k}</td><td class="${chg ? 'chg' : ''}">${esc(ra.f[k])}</td><td class="${chg ? 'chg' : ''}">${esc(rb.f[k])}</td><td>${chg ? wordDiff(ra.f[k], rb.f[k]) : '<span style="color:#9ca3af">変更なし</span>'}</td></tr>`;
+        }).join('');
+      };
+      a.onchange = b.onchange = render; render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 80 ===================== -->
+<section class="demo" id="n80">
+  <h2><span class="no">80</span>ドッキングレイアウト完成形 <small>タブ移動 / 分割リサイズ / 分離（フローティング） / レイアウト保存</small></h2>
+  <p class="what">IDE風の骨格。「パネル（内容）」と「ゾーン（置き場所）」を分けて考え、レイアウト状態を1つのJSONで持つ：<code>{ zones: { left:[...], center:[...], right:[...] }, float:[...], widths:[...] }</code>。描画はこのJSONから毎回組み立て直す。保存・復元はJSONを <code>localStorage</code> に入れるだけ。</p>
+  <p class="how"><b>操作：</b>タブを別ゾーンへドラッグ／境界をドラッグ／タブの「⧉」で分離、フローティングの「⊡」で戻す／「保存」→再読込で復元。</p>
+  <div class="stage tall" style="padding:0">
+    <div class="row" style="padding:6px 8px;border-bottom:1px solid #e5e7eb;background:#fff"><button id="s80-save">レイアウト保存</button><button id="s80-reset">初期化</button><span class="readout" id="s80-out">-</span></div>
+    <div id="s80-dock" class="s80-dock"></div>
+    <div id="s80-float"></div>
+  </div>
+  <style data-code>
+    .s80-dock { display: grid; height: 300px; grid-template-columns: var(--cols); position: relative; user-select: none; }
+    .s80-zone { display: flex; flex-direction: column; min-width: 0; background: #fff; }
+    .s80-zone.over { outline: 2px dashed var(--accent); outline-offset: -2px; }
+    .s80-tabs { display: flex; background: #f1f5f9; border-bottom: 1px solid #cbd5e1; min-height: 28px; }
+    .s80-tab { padding: 4px 10px; font-size: 12px; border-right: 1px solid #cbd5e1; cursor: grab; display: flex; gap: 6px; align-items: center; touch-action: none; }
+    .s80-tab.on { background: #fff; font-weight: 600; } .s80-tab.drag { opacity: .4; }
+    .s80-tab i { font-style: normal; cursor: pointer; color: var(--muted); }
+    .s80-content { flex: 1; padding: 10px; font-size: 13px; color: var(--muted); overflow: auto; }
+    .s80-gutter { background: #cbd5e1; cursor: col-resize; touch-action: none; }
+    .s80-win { position: absolute; width: 220px; background: #fff; border: 1px solid #94a3b8; border-radius: 8px; box-shadow: 0 12px 30px rgba(0,0,0,.25); overflow: hidden; z-index: 10; }
+    .s80-win .s80-tabs { cursor: move; touch-action: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const KEY = 'ui-guide.s80.layout';
+      const PANELS = { list: '一覧', detail: '詳細', log: 'ログ', props: 'プロパティ', tree: 'ツリー' };
+      const DEFAULT = () => ({ zones: { left: ['tree'], center: ['list', 'detail'], right: ['props', 'log'] }, active: { left: 'tree', center: 'list', right: 'props' }, float: [], widths: [180, 180] });
+      let L; try { L = JSON.parse(localStorage.getItem(KEY)) || DEFAULT(); } catch { L = DEFAULT(); }
+      const dock = $('#s80-dock'), fl = $('#s80-float'), out = $('#s80-out');
+      const render = () => {
+        dock.style.setProperty('--cols', `${L.widths[0]}px 6px 1fr 6px ${L.widths[1]}px`);
+        dock.innerHTML = ['left', 'center', 'right'].map((z, i) => `${i ? `<div class="s80-gutter" data-g="${i - 1}"></div>` : ''}<div class="s80-zone" data-zone="${z}">
+          <div class="s80-tabs">${L.zones[z].map(p => `<div class="s80-tab ${L.active[z] === p ? 'on' : ''}" data-p="${p}" data-zone="${z}">${PANELS[p]}<i data-pop="${p}" title="分離">⧉</i></div>`).join('')}</div>
+          <div class="s80-content">${L.active[z] && L.zones[z].includes(L.active[z]) ? PANELS[L.active[z]] + ' の内容' : '（空）'}</div></div>`).join('');
+        fl.innerHTML = L.float.map(f => `<div class="s80-win" data-p="${f.p}" style="left:${f.x}px;top:${f.y}px"><div class="s80-tabs"><div class="s80-tab on" data-p="${f.p}" data-float="1">${PANELS[f.p]}<i data-dock="${f.p}" title="ドックへ戻す">⊡</i></div></div><div class="s80-content">${PANELS[f.p]} の内容（分離）</div></div>`).join('');
+        out.textContent = JSON.stringify({ zones: L.zones, float: L.float.map(f => f.p) });
+      };
+      const removeEverywhere = p => { for (const z in L.zones) L.zones[z] = L.zones[z].filter(x => x !== p); L.float = L.float.filter(f => f.p !== p); };
+      // タブ操作：クリックで切替、ドラッグでゾーン移動、⧉で分離、⊡で戻す
+      let drag = null;
+      dock.parentElement.addEventListener('pointerdown', e => {
+        if (e.target.dataset.pop) { const p = e.target.dataset.pop; removeEverywhere(p); L.float.push({ p, x: 60 + L.float.length * 20, y: 60 + L.float.length * 20 }); render(); return; }
+        if (e.target.dataset.dock) { const p = e.target.dataset.dock; removeEverywhere(p); L.zones.center.push(p); L.active.center = p; render(); return; }
+        const g = e.target.closest('[data-g]'); if (g) { drag = { type: 'gutter', g: +g.dataset.g, x: e.clientX, w: [...L.widths] }; g.setPointerCapture(e.pointerId); return; }
+        const tab = e.target.closest('.s80-tab');
+        if (tab && tab.dataset.float) { const win = tab.closest('.s80-win'), f = L.float.find(f => f.p === tab.dataset.p); drag = { type: 'win', f, dx: e.clientX - f.x, dy: e.clientY - f.y, win }; tab.setPointerCapture(e.pointerId); return; }
+        if (tab) { L.active[tab.dataset.zone] = tab.dataset.p; render(); drag = { type: 'tab', p: tab.dataset.p, from: tab.dataset.zone, moved: false }; $(`.s80-tab[data-p="${tab.dataset.p}"]`, dock)?.setPointerCapture(e.pointerId); }
+      });
+      dock.parentElement.addEventListener('pointermove', e => {
+        if (!drag) return;
+        if (drag.type === 'gutter') { const d = e.clientX - drag.x; L.widths[drag.g] = Math.max(100, drag.w[drag.g] + (drag.g === 0 ? d : -d)); dock.style.setProperty('--cols', `${L.widths[0]}px 6px 1fr 6px ${L.widths[1]}px`); }
+        else if (drag.type === 'win') { drag.f.x = e.clientX - drag.dx; drag.f.y = e.clientY - drag.dy; drag.win.style.left = drag.f.x + 'px'; drag.win.style.top = drag.f.y + 'px'; }
+        else if (drag.type === 'tab') { drag.moved = true; const z = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-zone]'); $$('.s80-zone', dock).forEach(el => el.classList.toggle('over', el === z && z.dataset.zone !== drag.from)); $(`.s80-tab[data-p="${drag.p}"]`, dock)?.classList.add('drag'); }
+      });
+      dock.parentElement.addEventListener('pointerup', e => {
+        if (drag?.type === 'tab' && drag.moved) {
+          const z = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-zone]')?.dataset.zone;
+          if (z && z !== drag.from) { removeEverywhere(drag.p); L.zones[z].push(drag.p); L.active[z] = drag.p; if (L.active[drag.from] === drag.p) L.active[drag.from] = L.zones[drag.from][0]; }
+          render();
+        }
+        drag = null; $$('.s80-zone', dock).forEach(el => el.classList.remove('over')); $$('.s80-tab', dock).forEach(t => t.classList.remove('drag'));
+      });
+      $('#s80-save').onclick = () => { localStorage.setItem(KEY, JSON.stringify(L)); out.textContent = '保存しました（再読込で復元）'; };
+      $('#s80-reset').onclick = () => { localStorage.removeItem(KEY); L = DEFAULT(); render(); };
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 81 ===================== -->
+<section class="demo" id="n81">
+  <h2><span class="no">81</span>ワークスペース永続化 <small>画面状態の保存と復元</small></h2>
+  <p class="what">「どのタブを開いていたか」「どこまでスクロールしていたか」「何を選んでいたか」「絞り込み条件」を1つのオブジェクトにまとめ、変更のたびに（デバウンスして）保存する。起動時にそれを読み、描画してから <code>scrollTop</code> を戻す。ユーザーは「昨日の続き」から始められる。</p>
+  <p class="how"><b>操作：</b>タブ・絞り込み・選択・スクロールを変えてからページを再読込（F5）。同じ状態に戻る。</p>
+  <div class="stage">
+    <div class="row"><button data-tab="orders">受注</button><button data-tab="parts">部品</button><input id="s81-filter" type="text" placeholder="絞り込み" style="width:120px"><button id="s81-clear">状態を消す</button></div>
+    <div id="s81-list" class="s81-list"></div>
+    <div class="readout" id="s81-out" style="margin-top:6px;white-space:pre-wrap"></div>
+  </div>
+  <style data-code>
+    .s81-list { height: 130px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .s81-list div { padding: 3px 10px; border-bottom: 1px solid #f1f5f9; cursor: default; } .s81-list div.sel { background: var(--accent-soft); }
+  </style>
+  <script data-code>
+    (() => {
+      const KEY = 'ui-guide.s81.workspace';
+      let ws = { tab: 'orders', filter: '', selected: null, scroll: 0 };
+      try { Object.assign(ws, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch {}
+      const list = $('#s81-list'), out = $('#s81-out'), filter = $('#s81-filter');
+      const debounce = (fn, ms) => { let t; return () => { clearTimeout(t); t = setTimeout(fn, ms); }; };
+      const persist = debounce(() => { localStorage.setItem(KEY, JSON.stringify(ws)); out.textContent = 'saved: ' + JSON.stringify(ws); }, 200);
+      const rows = tab => Array.from({ length: 60 }, (_, i) => tab === 'orders' ? `受注 #${1001 + i}` : `部品 P-${String(i + 1).padStart(3, '0')}`);
+      const render = () => {
+        $$('[data-tab]').forEach(b => b.classList.toggle('primary', b.dataset.tab === ws.tab));
+        filter.value = ws.filter;
+        list.innerHTML = rows(ws.tab).filter(r => r.includes(ws.filter)).map(r => `<div class="${r === ws.selected ? 'sel' : ''}">${r}</div>`).join('');
+        list.scrollTop = ws.scroll;                     // 描画後にスクロール位置を戻す
+        out.textContent = 'state: ' + JSON.stringify(ws);
+      };
+      $$('[data-tab]').forEach(b => b.onclick = () => { ws.tab = b.dataset.tab; ws.scroll = 0; ws.selected = null; render(); persist(); });
+      filter.addEventListener('input', () => { ws.filter = filter.value; ws.scroll = 0; render(); persist(); });
+      list.addEventListener('click', e => { if (e.target.tagName === 'DIV') { ws.selected = e.target.textContent; render(); persist(); } });
+      list.addEventListener('scroll', () => { ws.scroll = list.scrollTop; persist(); });
+      $('#s81-clear').onclick = () => { localStorage.removeItem(KEY); ws = { tab: 'orders', filter: '', selected: null, scroll: 0 }; render(); };
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 85 ===================== -->
+<section class="demo" id="n85">
+  <h2><span class="no">85</span>マルチウィンドウ同期 <small>BroadcastChannel / Electron IPC</small></h2>
+  <p class="what">同じアプリを複数ウィンドウ（タブ）で開いたとき、片方の変更をもう片方へ即時に反映する。ブラウザ／Electron renderer 同士なら <code>BroadcastChannel</code> が最も簡単（同一オリジン内で全ウィンドウに届く）。Electron でメインプロセスが「真実の状態」を持つ設計なら、IPC で全ウィンドウへ配信する。</p>
+  <p class="how"><b>操作：</b>「別ウィンドウで開く」でこのページをもう1つ開き、片方でカウンタや選択を変えると、もう片方に即反映される。</p>
+  <div class="stage">
+    <div class="row"><button id="s85-open">別ウィンドウで開く</button><button id="s85-inc">カウンタ +1</button><select id="s85-sel"><option>受注</option><option>製造中</option><option>出荷済</option></select><span class="readout" id="s85-out">-</span></div>
+    <div class="log" id="s85-log"></div>
+  </div>
+  <script data-code>
+    (() => {
+      // 経路1: BroadcastChannel（同一オリジンの全ウィンドウへ）。経路2: localStorage の storage イベント（file:// など BroadcastChannel が届かない環境の保険）
+      const ch = new BroadcastChannel('ui-guide.s85'), KEY = 'ui-guide.s85.msg';
+      const me = Math.random().toString(36).slice(2, 6), log = $('#s85-log'), out = $('#s85-out'), sel = $('#s85-sel'), seen = new Set();
+      let state = { count: 0, status: '受注' };
+      const apply = (s, from) => { state = s; sel.value = s.status; out.textContent = `count=${s.count} status=${s.status} (this window: ${me})`; if (from) logTo(log, `← ${from} から受信: ${JSON.stringify(s)}`); };
+      const send = msg => { msg.id = me + ':' + Date.now() + Math.random(); ch.postMessage(msg); try { localStorage.setItem(KEY, JSON.stringify(msg)); } catch {} };
+      const receive = msg => {
+        if (!msg || msg.from === me || seen.has(msg.id)) return; seen.add(msg.id);   // 2経路で届いても1回だけ処理
+        if (msg.type === 'hello') { send({ from: me, state }); return; }             // 新規ウィンドウには現状を返す
+        apply(msg.state, msg.from);
+      };
+      ch.onmessage = e => receive(e.data);
+      window.addEventListener('storage', e => { if (e.key === KEY && e.newValue) receive(JSON.parse(e.newValue)); });
+      const publish = () => { send({ from: me, state }); apply(state); logTo(log, `→ 送信: ${JSON.stringify(state)}`); };
+      send({ type: 'hello', from: me });                        // 起動時：誰かいれば状態をもらう
+      $('#s85-inc').onclick = () => { state.count++; publish(); };
+      sel.onchange = () => { state.status = sel.value; publish(); };
+      $('#s85-open').onclick = () => window.open(location.href.split('#')[0] + '#n85', '_blank', 'width=900,height=600');
+      apply(state);
+    })();
+  </script>
+  <script data-code="main.js（Electron：メインが状態を持ち全ウィンドウへ配信する場合）" type="text/plain">
+    const { ipcMain, BrowserWindow } = require('electron');
+    let state = { count: 0, status: '受注' };
+    ipcMain.handle('state:get', () => state);
+    ipcMain.on('state:set', (event, next) => {
+      state = next;
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send('state:changed', state); // 送信元も含め全員に配信
+    });
+  </script>
+</section>
+
+</main>
+</div>
+</body>
+</html>
