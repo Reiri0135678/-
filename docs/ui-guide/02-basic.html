@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第2弾 A：一般的なUI操作（01〜22）動くデモ</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+</head>
+<body>
+<header class="top">
+  <h1>A：一般的なUI操作 <span class="tier tierA">01〜22</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="03-custom.html">B：カスタマイズ →</a><a href="04-pro.html">C：プロ志向 →</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">各項目は「動作の意味」→「操作してみる」→「動いているコード」の順。コードは表示用の写しではなく、このページで実際に動いているものをそのまま表示している。</div>
+
+<!-- ===================== 01 ===================== -->
+<section class="demo" id="n01">
+  <h2><span class="no">01</span>スクロール <small>Scroll</small></h2>
+  <p class="what">内容が枠より大きいとき、枠の中で表示位置を動かす。「枠（ビューポート）は動かず、中身が動く」。</p>
+  <p class="how"><b>操作：</b>枠内でホイール／ドラッグ／ボタン。右の数値が <code>scrollTop</code>。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="s01-top">先頭へ（smooth）</button>
+      <button id="s01-mid">50行目へ（即時）</button>
+      <button id="s01-end">末尾へ（smooth）</button>
+      <span class="readout" id="s01-out">scrollTop: 0</span>
+    </div>
+    <div id="s01-box" class="s01-box"></div>
+  </div>
+  <style data-code>
+    .s01-box { height: 160px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s01-box div { padding: 4px 10px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s01-box'), out = $('#s01-out');
+      for (let i = 1; i <= 100; i++) box.insertAdjacentHTML('beforeend', `<div>行 ${i}</div>`);
+      // scroll イベントは高頻度で発火する。重い処理は入れない。
+      box.addEventListener('scroll', () => out.textContent = `scrollTop: ${Math.round(box.scrollTop)}`);
+      $('#s01-top').onclick = () => box.scrollTo({ top: 0, behavior: 'smooth' });
+      $('#s01-mid').onclick = () => box.children[49].scrollIntoView({ block: 'start' });
+      $('#s01-end').onclick = () => box.scrollTo({ top: box.scrollHeight, behavior: 'smooth' });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 02 ===================== -->
+<section class="demo" id="n02">
+  <h2><span class="no">02</span>パン <small>Pan</small></h2>
+  <p class="what">中身を「掴んで」平行移動する。スクロールと違い、境界がなく（無限に動かせる）、ドラッグ量＝移動量になる。地図・図面・キャンバスの基本操作。</p>
+  <p class="how"><b>操作：</b>方眼をドラッグ。<code>transform: translate()</code> に差分を足すだけ。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s02-view" class="s02-view">
+      <div id="s02-world" class="s02-world grid-bg">
+        <div class="s02-item" style="left:60px;top:40px">A</div>
+        <div class="s02-item" style="left:300px;top:150px">B</div>
+        <div class="s02-item" style="left:520px;top:60px">C</div>
+      </div>
+      <span class="readout" id="s02-out" style="position:absolute;left:8px;top:8px">tx: 0, ty: 0</span>
+    </div>
+  </div>
+  <style data-code>
+    .s02-view { position: relative; height: 260px; overflow: hidden; cursor: grab; touch-action: none; user-select: none; }
+    .s02-view.dragging { cursor: grabbing; }
+    .s02-world { position: absolute; inset: -2000px; transform-origin: 0 0; } /* 見た目上"無限"にする */
+    .s02-item { position: absolute; margin: 2000px; width: 60px; height: 60px; background: var(--accent); color: #fff; border-radius: 8px; display: grid; place-items: center; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s02-view'), world = $('#s02-world'), out = $('#s02-out');
+      let tx = 0, ty = 0, dragging = null;
+      view.addEventListener('pointerdown', e => {
+        dragging = { x: e.clientX - tx, y: e.clientY - ty }; // 押した瞬間の「オフセット」を覚える
+        view.setPointerCapture(e.pointerId);
+        view.classList.add('dragging');
+      });
+      view.addEventListener('pointermove', e => {
+        if (!dragging) return;
+        tx = e.clientX - dragging.x;
+        ty = e.clientY - dragging.y;
+        world.style.transform = `translate(${tx}px, ${ty}px)`;
+        out.textContent = `tx: ${Math.round(tx)}, ty: ${Math.round(ty)}`;
+      });
+      view.addEventListener('pointerup', () => { dragging = null; view.classList.remove('dragging'); });
+      view.addEventListener('pointercancel', () => { dragging = null; view.classList.remove('dragging'); });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 03 ===================== -->
+<section class="demo" id="n03">
+  <h2><span class="no">03</span>ズーム <small>Zoom</small></h2>
+  <p class="what">表示倍率を変える。ここでは「枠の中心」を基準に拡大縮小する最も単純な形。ホイール位置を基準にする本格版は <a href="04-pro.html#n44">44</a>。</p>
+  <p class="how"><b>操作：</b>枠内でホイール（トラックパッドはピンチ＝<code>ctrlKey</code> 付き wheel）、またはボタン。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="s03-minus">−</button><button id="s03-plus">＋</button><button id="s03-reset">100%</button>
+      <span class="readout" id="s03-out">scale: 1.00</span>
+    </div>
+    <div id="s03-view" class="s03-view grid-bg"><div id="s03-content" class="s03-content"><div class="box">ZOOM</div></div></div>
+  </div>
+  <style data-code>
+    .s03-view { height: 180px; display: grid; place-items: center; overflow: hidden; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s03-content { transition: transform .12s ease-out; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s03-view'), content = $('#s03-content'), out = $('#s03-out');
+      let scale = 1;
+      const apply = () => {
+        scale = Math.min(5, Math.max(0.2, scale)); // 上下限を必ず設ける
+        content.style.transform = `scale(${scale})`;
+        out.textContent = `scale: ${scale.toFixed(2)}`;
+      };
+      // passive:false にしないと preventDefault が効かずページごとスクロールしてしまう
+      view.addEventListener('wheel', e => {
+        e.preventDefault();
+        const factor = Math.exp(-e.deltaY * 0.002); // 乗算で変えると上下対称になる
+        scale *= factor; apply();
+      }, { passive: false });
+      $('#s03-plus').onclick = () => { scale *= 1.25; apply(); };
+      $('#s03-minus').onclick = () => { scale /= 1.25; apply(); };
+      $('#s03-reset').onclick = () => { scale = 1; apply(); };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 04 ===================== -->
+<section class="demo" id="n04">
+  <h2><span class="no">04</span>クリック / タップ <small>Click / Tap</small></h2>
+  <p class="what">最も基本の操作だが、1回の操作で複数のイベントが順に発火する。マウスとタッチで順序・種類が違うことを見て覚える。</p>
+  <p class="how"><b>操作：</b>青い箱をクリック／タップ。発火順がログに出る。<code>pointer*</code> を使えば入力装置を問わず1系統で書ける。</p>
+  <div class="stage">
+    <div class="row"><div id="s04-target" class="box">押す</div><button id="s04-clear">ログ消去</button></div>
+    <div class="log" id="s04-log"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const t = $('#s04-target'), log = $('#s04-log');
+      ['pointerdown','pointerup','mousedown','mouseup','touchstart','touchend','click']
+        .forEach(type => t.addEventListener(type, e => logTo(log, `${type}` + (e.pointerType ? ` (pointerType=${e.pointerType})` : ''))));
+      $('#s04-clear').onclick = () => log.textContent = '';
+    })();
+  </script>
+</section>
+
+<!-- ===================== 05 ===================== -->
+<section class="demo" id="n05">
+  <h2><span class="no">05</span>ダブルクリック / 長押し <small>Double click / Long press</small></h2>
+  <p class="what">ダブルクリックは標準イベントがある。長押しは標準イベントが無いので「押してから一定時間、動かさずに離さない」をタイマーで判定する。</p>
+  <p class="how"><b>操作：</b>左はダブルクリック。右は500ms押し続ける（動かすとキャンセル）。</p>
+  <div class="stage">
+    <div class="row">
+      <div id="s05-dbl" class="box">dblclick</div>
+      <div id="s05-long" class="box s05-long">長押し</div>
+      <span class="readout" id="s05-out">-</span>
+    </div>
+  </div>
+  <style data-code>
+    .s05-long { background: linear-gradient(to top, #1e40af var(--p, 0%), var(--accent) 0); }
+  </style>
+  <script data-code>
+    (() => {
+      const out = $('#s05-out'), lp = $('#s05-long');
+      $('#s05-dbl').addEventListener('dblclick', () => out.textContent = 'ダブルクリック検出');
+      let timer = null, start = 0, raf = 0;
+      const cancel = () => { clearTimeout(timer); cancelAnimationFrame(raf); timer = null; lp.style.setProperty('--p', '0%'); };
+      lp.addEventListener('pointerdown', e => {
+        start = performance.now();
+        const tick = () => { lp.style.setProperty('--p', Math.min(100, (performance.now() - start) / 5) + '%'); raf = requestAnimationFrame(tick); };
+        tick();
+        timer = setTimeout(() => { cancel(); out.textContent = '長押し検出（500ms）'; }, 500);
+      });
+      lp.addEventListener('pointerup', cancel);
+      lp.addEventListener('pointerleave', cancel);
+      lp.addEventListener('pointermove', e => { if (timer && (Math.abs(e.movementX) + Math.abs(e.movementY)) > 4) cancel(); });
+      lp.addEventListener('contextmenu', e => e.preventDefault()); // タッチ長押しのOSメニュー抑止
+    })();
+  </script>
+</section>
+
+<!-- ===================== 06 ===================== -->
+<section class="demo" id="n06">
+  <h2><span class="no">06</span>ホバー <small>Hover</small></h2>
+  <p class="what">ポインタが要素上にある状態。タッチ端末には「ホバー」が存在しないため、ホバーでしか出ない情報を作らない。</p>
+  <p class="how"><b>操作：</b>箱にポインタを乗せる。<code>@media (hover: hover)</code> でホバー可能な環境か判定できる。</p>
+  <div class="stage">
+    <div class="row"><div id="s06-target" class="box s06">hover</div><span class="readout" id="s06-out"></span></div>
+  </div>
+  <style data-code>
+    @media (hover: hover) { .s06:hover { transform: translateY(-4px); box-shadow: 0 8px 16px rgba(37,99,235,.35); } }
+    .s06 { transition: transform .15s, box-shadow .15s; }
+  </style>
+  <script data-code>
+    (() => {
+      const t = $('#s06-target'), out = $('#s06-out');
+      const canHover = matchMedia('(hover: hover)').matches;
+      out.textContent = `この環境のホバー: ${canHover ? '可能' : '不可（タッチ主体）'}`;
+      t.addEventListener('pointerenter', () => t.textContent = 'enter');
+      t.addEventListener('pointerleave', () => t.textContent = 'leave');
+    })();
+  </script>
+</section>
+
+<!-- ===================== 07 ===================== -->
+<section class="demo" id="n07">
+  <h2><span class="no">07</span>フォーカス <small>Focus</small></h2>
+  <p class="what">キーボード入力を受け取る要素は常に1つ。Tabで順に移動する。<code>:focus-visible</code> はキーボード操作時だけ枠を出すので、マウス時に枠が邪魔にならない。</p>
+  <p class="how"><b>操作：</b>最初のボタンを押した後 <kbd>Tab</kbd> / <kbd>Shift</kbd>+<kbd>Tab</kbd>。<code>div</code> は <code>tabindex="0"</code> を付けて初めてフォーカスできる。</p>
+  <div class="stage">
+    <div class="row s07">
+      <button>1</button><button>2</button><div class="box" tabindex="0" style="width:60px;height:34px">div(tabindex=0)</div><input type="text" placeholder="4" style="width:80px">
+      <button id="s07-go">プログラムから4へ</button>
+      <span class="readout" id="s07-out">activeElement: -</span>
+    </div>
+  </div>
+  <style data-code>
+    .s07 :focus-visible { outline: 3px solid #f59e0b; outline-offset: 2px; }
+  </style>
+  <script data-code>
+    (() => {
+      const out = $('#s07-out');
+      document.addEventListener('focusin', () => {
+        const a = document.activeElement;
+        out.textContent = `activeElement: ${a.tagName.toLowerCase()}${a.textContent ? '「' + a.textContent.trim().slice(0, 12) + '」' : ''}`;
+      });
+      $('#s07-go').onclick = () => $('.s07 input').focus();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 08 ===================== -->
+<section class="demo" id="n08">
+  <h2><span class="no">08</span>ドラッグ&ドロップ <small>Drag and Drop（HTML標準API）</small></h2>
+  <p class="what">要素を掴んで別の場所へ移す。ここはブラウザ標準のDnD API版。見た目のゴーストはブラウザ任せで簡単だが、タッチ非対応・細かい制御不可。自作版は <a href="03-custom.html#n32">32</a>。</p>
+  <p class="how"><b>操作：</b>左のカードを右へドラッグ。<code>dragover</code> で <code>preventDefault()</code> しないとドロップできない、が最大の罠。</p>
+  <div class="stage">
+    <div class="row" style="align-items:stretch">
+      <div class="s08-zone" id="s08-a"><div draggable="true" class="s08-card">受注 #1001</div><div draggable="true" class="s08-card">受注 #1002</div><div draggable="true" class="s08-card">受注 #1003</div></div>
+      <div class="s08-zone" id="s08-b"></div>
+    </div>
+  </div>
+  <style data-code>
+    .s08-zone { flex: 1; min-height: 120px; background: #fff; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 8px; }
+    .s08-zone.over { border-color: var(--accent); background: var(--accent-soft); }
+    .s08-card { padding: 6px 10px; margin-bottom: 6px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; cursor: grab; font-size: 13px; }
+    .s08-card.dragging { opacity: .4; }
+  </style>
+  <script data-code>
+    (() => {
+      let dragged = null;
+      $$('.s08-card').forEach(card => {
+        card.addEventListener('dragstart', e => { dragged = card; card.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+        card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      });
+      $$('.s08-zone').forEach(zone => {
+        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); }); // ← 必須
+        zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+        zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('over'); if (dragged) zone.appendChild(dragged); });
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 09 ===================== -->
+<section class="demo" id="n09">
+  <h2><span class="no">09</span>スワイプ / フリック <small>Swipe / Flick</small></h2>
+  <p class="what">指（ポインタ）を素早く払う操作。「移動距離」と「速度」の両方を見て判定する。距離だけだとゆっくりのドラッグと区別がつかない。</p>
+  <p class="how"><b>操作：</b>灰色の帯を左右に素早く払う。マウスでもドラッグで再現できる。</p>
+  <div class="stage">
+    <div id="s09-area" class="s09-area">ここを払う</div>
+    <div class="row"><span class="readout" id="s09-out">-</span></div>
+  </div>
+  <style data-code>
+    .s09-area { height: 90px; background: #e2e8f0; border-radius: 8px; display: grid; place-items: center; color: var(--muted); touch-action: pan-y; user-select: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const area = $('#s09-area'), out = $('#s09-out');
+      let s = null;
+      area.addEventListener('pointerdown', e => s = { x: e.clientX, y: e.clientY, t: performance.now() });
+      area.addEventListener('pointerup', e => {
+        if (!s) return;
+        const dx = e.clientX - s.x, dy = e.clientY - s.y, dt = performance.now() - s.t;
+        const v = Math.abs(dx) / dt; // px/ms
+        let r = `dx=${Math.round(dx)}px dt=${Math.round(dt)}ms v=${v.toFixed(2)}px/ms → `;
+        if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy) && v > 0.3) r += dx > 0 ? 'スワイプ右' : 'スワイプ左';
+        else r += '判定なし（距離不足 or 遅い）';
+        out.textContent = r; s = null;
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section class="demo" id="n10">
+  <h2><span class="no">10</span>リサイズ <small>Resize</small></h2>
+  <p class="what">つまみ（ハンドル）をドラッグして大きさを変える。サイズ変化の検知は <code>ResizeObserver</code> が正解（<code>window.resize</code> は要素の変化を拾えない）。</p>
+  <p class="how"><b>操作：</b>右下の角をドラッグ。最小サイズで止まる。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div id="s10-panel" class="s10-panel">パネル<div id="s10-handle" class="s10-handle"></div></div>
+      <span class="readout" id="s10-out"></span>
+    </div>
+  </div>
+  <style data-code>
+    .s10-panel { position: relative; width: 200px; height: 100px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; font-size: 13px; }
+    .s10-handle { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; background: linear-gradient(135deg, transparent 50%, #94a3b8 50%); border-radius: 0 0 6px 0; touch-action: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const panel = $('#s10-panel'), handle = $('#s10-handle'), out = $('#s10-out');
+      new ResizeObserver(entries => {
+        const r = entries[0].contentRect;
+        out.textContent = `ResizeObserver: ${Math.round(r.width)} × ${Math.round(r.height)}`;
+      }).observe(panel);
+      let st = null;
+      handle.addEventListener('pointerdown', e => {
+        st = { x: e.clientX, y: e.clientY, w: panel.offsetWidth, h: panel.offsetHeight };
+        handle.setPointerCapture(e.pointerId);
+      });
+      handle.addEventListener('pointermove', e => {
+        if (!st) return;
+        panel.style.width = Math.max(120, st.w + e.clientX - st.x) + 'px';
+        panel.style.height = Math.max(60, st.h + e.clientY - st.y) + 'px';
+      });
+      handle.addEventListener('pointerup', () => st = null);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 11 ===================== -->
+<section class="demo" id="n11">
+  <h2><span class="no">11</span>選択 <small>Select（単一 / Ctrl追加 / Shift範囲）</small></h2>
+  <p class="what">項目を選ぶ。Excelやエクスプローラと同じ修飾キー慣習（<kbd>Ctrl</kbd>=追加/解除、<kbd>Shift</kbd>=範囲）に合わせると業務ユーザーは説明なしで使える。</p>
+  <p class="how"><b>操作：</b>行をクリック。Ctrl/⌘ や Shift を押しながらクリック。</p>
+  <div class="stage">
+    <div id="s11-list" class="s11-list" role="listbox" aria-multiselectable="true"></div>
+    <div class="row"><span class="readout" id="s11-out">選択: なし</span></div>
+  </div>
+  <style data-code>
+    .s11-list { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; user-select: none; }
+    .s11-list div { padding: 5px 10px; font-size: 13px; border-bottom: 1px solid #f1f5f9; cursor: default; }
+    .s11-list div[aria-selected="true"] { background: var(--accent-soft); color: #1e3a8a; }
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s11-list'), out = $('#s11-out');
+      for (let i = 1; i <= 8; i++) list.insertAdjacentHTML('beforeend', `<div role="option" aria-selected="false">品目 ${i}</div>`);
+      const items = $$('div', list);
+      let anchor = 0; const selected = new Set();
+      const paint = () => {
+        items.forEach((el, i) => el.setAttribute('aria-selected', selected.has(i)));
+        out.textContent = '選択: ' + ([...selected].sort((a, b) => a - b).map(i => i + 1).join(', ') || 'なし');
+      };
+      list.addEventListener('click', e => {
+        const i = items.indexOf(e.target); if (i < 0) return;
+        if (e.shiftKey) {                 // 範囲：アンカーからここまで
+          selected.clear();
+          for (let k = Math.min(anchor, i); k <= Math.max(anchor, i); k++) selected.add(k);
+        } else if (e.ctrlKey || e.metaKey) { // 追加/解除
+          selected.has(i) ? selected.delete(i) : selected.add(i); anchor = i;
+        } else {                           // 単一
+          selected.clear(); selected.add(i); anchor = i;
+        }
+        paint();
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 12 ===================== -->
+<section class="demo" id="n12">
+  <h2><span class="no">12</span>フェードイン / フェードアウト <small>Fade in / out</small></h2>
+  <p class="what">不透明度（opacity）を時間で補間する。最も安価で自然な出現・消失。注意点は「opacity:0 でも要素はそこに在る（クリックできる）」こと。消した後は <code>display:none</code> か <code>visibility:hidden</code> にする。</p>
+  <p class="how"><b>操作：</b>トグル。<code>transitionend</code> で「完全に消えた瞬間」を拾って非表示化している。</p>
+  <div class="stage">
+    <div class="row"><button id="s12-btn">フェード切替</button><span class="readout" id="s12-out">state: visible</span></div>
+    <div id="s12-box" class="box s12">通知パネル</div>
+  </div>
+  <style data-code>
+    .s12 { width: 160px; transition: opacity .4s ease; }
+    .s12.hidden { opacity: 0; pointer-events: none; }  /* 消えている間は操作不可に */
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s12-box'), out = $('#s12-out');
+      $('#s12-btn').onclick = () => {
+        box.classList.toggle('hidden');
+        out.textContent = 'state: transitioning...';
+      };
+      box.addEventListener('transitionend', () => out.textContent = 'state: ' + (box.classList.contains('hidden') ? 'hidden（ここで display:none にしてよい）' : 'visible'));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 13 ===================== -->
+<section class="demo" id="n13">
+  <h2><span class="no">13</span>スライドイン / スライドアウト <small>Slide in / out</small></h2>
+  <p class="what">画面端から滑り込む。<code>left</code> や <code>margin</code> ではなく <code>transform</code> を動かす（レイアウト計算が走らず滑らか）。ドロワー・サイドパネル・通知の基本。</p>
+  <p class="how"><b>操作：</b>ボタンで右からパネルが出る。背景クリックでも閉じる。</p>
+  <div class="stage tall" style="padding:0">
+    <div class="s13-frame">
+      <div class="row" style="padding:10px"><button id="s13-open">パネルを開く</button></div>
+      <div id="s13-backdrop" class="s13-backdrop"></div>
+      <div id="s13-panel" class="s13-panel"><b>設定パネル</b><p style="font-size:13px">transform: translateX(100%) → 0</p><button id="s13-close">閉じる</button></div>
+    </div>
+  </div>
+  <style data-code>
+    .s13-frame { position: relative; height: 260px; overflow: hidden; }
+    .s13-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 240px; background: #fff; border-left: 1px solid #cbd5e1; padding: 14px; box-shadow: -8px 0 24px rgba(0,0,0,.08);
+      transform: translateX(100%); transition: transform .3s cubic-bezier(.2,.8,.2,1); }
+    .s13-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.25); opacity: 0; pointer-events: none; transition: opacity .3s; }
+    .s13-frame.open .s13-panel { transform: translateX(0); }
+    .s13-frame.open .s13-backdrop { opacity: 1; pointer-events: auto; }
+  </style>
+  <script data-code>
+    (() => {
+      const frame = $('.s13-frame');
+      $('#s13-open').onclick = () => frame.classList.add('open');
+      $('#s13-close').onclick = $('#s13-backdrop').onclick = () => frame.classList.remove('open');
+    })();
+  </script>
+</section>
+
+<!-- ===================== 14 ===================== -->
+<section class="demo" id="n14">
+  <h2><span class="no">14</span>トランジション / イージング <small>Transition / Easing</small></h2>
+  <p class="what">状態AからBへ「時間をかけて」変える仕組みがトランジション。その途中の速度配分がイージング。UIでは <b>ease-out</b>（速く出て静かに止まる）が基本。ease-in は「反応が遅い」と感じさせる。</p>
+  <p class="how"><b>操作：</b>ボタンで4つの玉を同時に走らせ、違いを見る。</p>
+  <div class="stage">
+    <div class="row"><button id="s14-run">走らせる</button></div>
+    <div class="s14-lane"><span>linear</span><div class="s14-ball" style="transition-timing-function:linear"></div></div>
+    <div class="s14-lane"><span>ease-out</span><div class="s14-ball" style="transition-timing-function:ease-out"></div></div>
+    <div class="s14-lane"><span>ease-in</span><div class="s14-ball" style="transition-timing-function:ease-in"></div></div>
+    <div class="s14-lane"><span>cubic-bezier(.2,.8,.2,1)</span><div class="s14-ball" style="transition-timing-function:cubic-bezier(.2,.8,.2,1)"></div></div>
+  </div>
+  <style data-code>
+    .s14-lane { position: relative; height: 30px; margin-bottom: 4px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; }
+    .s14-lane span { position: absolute; left: 8px; top: 5px; font-size: 12px; color: var(--muted); }
+    .s14-ball { position: absolute; top: 4px; left: 4px; width: 22px; height: 22px; border-radius: 50%; background: var(--accent);
+      transition-property: transform; transition-duration: .9s; }
+    .s14-lane.go .s14-ball { transform: translateX(calc(100% * 14)); }
+  </style>
+  <script data-code>
+    (() => {
+      $('#s14-run').onclick = () => {
+        const lanes = $$('.s14-lane');
+        lanes.forEach(l => l.classList.remove('go'));
+        void document.body.offsetWidth; // 再フロー強制：クラスを外した状態を確定させてから再付与
+        lanes.forEach(l => l.classList.add('go'));
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 15 ===================== -->
+<section class="demo" id="n15">
+  <h2><span class="no">15</span>モーダル / ダイアログ <small>Modal / Dialog</small></h2>
+  <p class="what">背後の操作を止めて前面で確認・入力させる。標準の <code>&lt;dialog&gt;</code> を <code>showModal()</code> で開くと、背景の暗幕・Escで閉じる・フォーカス閉じ込め・背面の不活性化が全部ついてくる。</p>
+  <p class="how"><b>操作：</b>開いて <kbd>Esc</kbd> や暗幕クリックで閉じる。戻り値は <code>returnValue</code> で受け取る。</p>
+  <div class="stage">
+    <div class="row"><button id="s15-open" class="primary">削除確認を開く</button><span class="readout" id="s15-out">returnValue: -</span></div>
+    <dialog id="s15-dlg" class="s15-dlg">
+      <form method="dialog">
+        <p><b>レコードを削除しますか？</b></p>
+        <p style="font-size:13px;color:var(--muted)">この操作は取り消せません。</p>
+        <div class="row" style="justify-content:flex-end"><button value="cancel">キャンセル</button><button value="delete" class="primary">削除</button></div>
+      </form>
+    </dialog>
+  </div>
+  <style data-code>
+    .s15-dlg { border: none; border-radius: 10px; padding: 18px 20px; width: 320px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+    .s15-dlg::backdrop { background: rgba(15,23,42,.45); }
+  </style>
+  <script data-code>
+    (() => {
+      const dlg = $('#s15-dlg'), out = $('#s15-out');
+      $('#s15-open').onclick = () => dlg.showModal();
+      dlg.addEventListener('close', () => out.textContent = 'returnValue: ' + (dlg.returnValue || '(Esc)'));
+      dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close('backdrop'); }); // 暗幕クリックで閉じる
+    })();
+  </script>
+</section>
+
+<!-- ===================== 16 ===================== -->
+<section class="demo" id="n16">
+  <h2><span class="no">16</span>トースト / スナックバー <small>Toast / Snackbar</small></h2>
+  <p class="what">操作結果を隅に短時間表示し、自動で消える。作業を中断させない通知。読み上げ対応のため <code>aria-live</code> を付ける。</p>
+  <p class="how"><b>操作：</b>連打すると積み上がる。ホバー中は消えない（読む時間を確保）。</p>
+  <div class="stage">
+    <div class="row"><button id="s16-ok">保存成功を通知</button><button id="s16-ng">エラーを通知</button></div>
+    <div id="s16-host" class="s16-host" aria-live="polite"></div>
+  </div>
+  <style data-code>
+    .s16-host { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 8px; }
+    .s16-toast { min-width: 200px; padding: 10px 14px; border-radius: 8px; color: #fff; background: #0f172a; font-size: 13px; box-shadow: 0 8px 20px rgba(0,0,0,.2);
+      animation: s16-in .25s ease-out; }
+    .s16-toast.error { background: #dc2626; }
+    .s16-toast.leaving { animation: s16-out .25s ease-in forwards; }
+    @keyframes s16-in { from { opacity: 0; transform: translateY(12px); } }
+    @keyframes s16-out { to { opacity: 0; transform: translateY(12px); } }
+  </style>
+  <script data-code>
+    (() => {
+      const host = $('#s16-host');
+      function toast(msg, { error = false, ms = 2500 } = {}) {
+        const el = document.createElement('div');
+        el.className = 's16-toast' + (error ? ' error' : ''); el.textContent = msg;
+        host.appendChild(el);
+        let timer;
+        const arm = () => timer = setTimeout(() => { el.classList.add('leaving'); el.addEventListener('animationend', () => el.remove(), { once: true }); }, ms);
+        el.addEventListener('pointerenter', () => clearTimeout(timer)); // 読んでいる間は消さない
+        el.addEventListener('pointerleave', arm);
+        arm();
+      }
+      let n = 0;
+      $('#s16-ok').onclick = () => toast(`レコード #${++n} を保存しました`);
+      $('#s16-ng').onclick = () => toast('保存に失敗しました（通信エラー）', { error: true, ms: 4000 });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 17 ===================== -->
+<section class="demo" id="n17">
+  <h2><span class="no">17</span>ツールチップ / ポップオーバー <small>Tooltip / Popover</small></h2>
+  <p class="what">補足情報を小さく浮かせて出す。難しいのは位置決め：画面端では上下・左右を反転させる。<code>getBoundingClientRect()</code> で対象の位置を取り、はみ出すなら反対側へ。</p>
+  <p class="how"><b>操作：</b>ボタンにホバー／フォーカス。右端のボタンでは反転する。</p>
+  <div class="stage">
+    <div class="row" style="justify-content:space-between">
+      <button data-tip="左側のボタン。上に出る。">左</button>
+      <button data-tip="中央。これも上。">中央</button>
+      <button data-tip="右端は幅が足りないので左寄せに補正される。">右端</button>
+    </div>
+    <div id="s17-tip" class="s17-tip" role="tooltip" hidden></div>
+  </div>
+  <style data-code>
+    .s17-tip { position: absolute; max-width: 200px; padding: 6px 10px; background: #0f172a; color: #fff; font-size: 12px; border-radius: 6px; pointer-events: none; z-index: 5; }
+  </style>
+  <script data-code>
+    (() => {
+      const tip = $('#s17-tip'), stage = tip.parentElement;
+      const show = btn => {
+        tip.textContent = btn.dataset.tip; tip.hidden = false;
+        const b = btn.getBoundingClientRect(), s = stage.getBoundingClientRect(), t = tip.getBoundingClientRect();
+        let left = b.left - s.left + b.width / 2 - t.width / 2;   // 中央揃え
+        left = Math.max(4, Math.min(left, s.width - t.width - 4)); // 枠内に収める
+        let top = b.top - s.top - t.height - 6;                     // 上に出す
+        if (top < 0) top = b.bottom - s.top + 6;                    // 上に余白が無ければ下へ
+        tip.style.left = left + 'px'; tip.style.top = top + 'px';
+      };
+      $$('[data-tip]', stage).forEach(btn => {
+        btn.addEventListener('pointerenter', () => show(btn));
+        btn.addEventListener('focus', () => show(btn));
+        btn.addEventListener('pointerleave', () => tip.hidden = true);
+        btn.addEventListener('blur', () => tip.hidden = true);
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 18 ===================== -->
+<section class="demo" id="n18">
+  <h2><span class="no">18</span>アコーディオン / 折りたたみ <small>Accordion / Collapse</small></h2>
+  <p class="what">セクションの開閉。<code>height: auto</code> へは CSS transition が効かない、が定番の壁。解決策は grid の <code>0fr → 1fr</code>（JS不要・内容の高さを知らなくてよい）。</p>
+  <p class="how"><b>操作：</b>見出しをクリック。</p>
+  <div class="stage">
+    <div class="s18">
+      <button class="s18-head" aria-expanded="false">出荷条件 <span>▾</span></button>
+      <div class="s18-body"><div>納期は受注後5営業日。分納可。梱包は標準仕様。</div></div>
+    </div>
+    <div class="s18">
+      <button class="s18-head" aria-expanded="false">支払条件 <span>▾</span></button>
+      <div class="s18-body"><div>月末締め翌月末払い。<br>手形不可。</div></div>
+    </div>
+  </div>
+  <style data-code>
+    .s18 { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+    .s18-head { width: 100%; text-align: left; border: none; border-radius: 0; display: flex; justify-content: space-between; }
+    .s18-head span { transition: transform .25s; }
+    .s18-head[aria-expanded="true"] span { transform: rotate(180deg); }
+    .s18-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .25s ease; }
+    .s18-body > div { overflow: hidden; padding: 0 12px; font-size: 13px; }
+    .s18-head[aria-expanded="true"] + .s18-body { grid-template-rows: 1fr; }
+    .s18-head[aria-expanded="true"] + .s18-body > div { padding-bottom: 10px; }
+  </style>
+  <script data-code>
+    (() => {
+      $$('.s18-head').forEach(h => h.onclick = () => h.setAttribute('aria-expanded', h.getAttribute('aria-expanded') !== 'true'));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 19 ===================== -->
+<section class="demo" id="n19">
+  <h2><span class="no">19</span>タブ <small>Tabs</small></h2>
+  <p class="what">同じ領域を複数のビューで切り替える。WAI-ARIAの作法：タブ列は <code>role=tablist</code>、Tabキーでは選択中タブに止まり、<kbd>←</kbd><kbd>→</kbd> で隣へ移動。</p>
+  <p class="how"><b>操作：</b>クリック、またはタブにフォーカスして矢印キー。</p>
+  <div class="stage">
+    <div class="s19-tabs" role="tablist">
+      <button role="tab" aria-selected="true" aria-controls="s19-p1" id="s19-t1">基本情報</button>
+      <button role="tab" aria-selected="false" aria-controls="s19-p2" id="s19-t2" tabindex="-1">明細</button>
+      <button role="tab" aria-selected="false" aria-controls="s19-p3" id="s19-t3" tabindex="-1">履歴</button>
+    </div>
+    <div role="tabpanel" id="s19-p1" class="s19-panel">顧客名・納品先などの基本情報。</div>
+    <div role="tabpanel" id="s19-p2" class="s19-panel" hidden>品目・数量・単価の明細。</div>
+    <div role="tabpanel" id="s19-p3" class="s19-panel" hidden>変更履歴のタイムライン。</div>
+  </div>
+  <style data-code>
+    .s19-tabs { display: flex; gap: 2px; border-bottom: 1px solid #cbd5e1; }
+    .s19-tabs [role=tab] { border: none; border-bottom: 2px solid transparent; border-radius: 0; background: none; margin-bottom: -1px; }
+    .s19-tabs [role=tab][aria-selected="true"] { border-bottom-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .s19-panel { padding: 12px 4px; font-size: 13px; }
+  </style>
+  <script data-code>
+    (() => {
+      const tabs = $$('.s19-tabs [role=tab]');
+      const select = i => tabs.forEach((t, k) => {
+        const on = k === i;
+        t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1;
+        document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+        if (on) t.focus();
+      });
+      tabs.forEach((t, i) => {
+        t.addEventListener('click', () => select(i));
+        t.addEventListener('keydown', e => {
+          if (e.key === 'ArrowRight') select((i + 1) % tabs.length);
+          if (e.key === 'ArrowLeft') select((i - 1 + tabs.length) % tabs.length);
+        });
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 20 ===================== -->
+<section class="demo" id="n20">
+  <h2><span class="no">20</span>ドロップダウン / メニュー <small>Dropdown / Menu</small></h2>
+  <p class="what">ボタン押下で選択肢を展開する。自作するときの必須処理は3つ：外側クリックで閉じる、Escで閉じる、項目選択で閉じる。</p>
+  <p class="how"><b>操作：</b>ボタンを押し、外をクリックや <kbd>Esc</kbd> で閉じる。</p>
+  <div class="stage" style="min-height:170px">
+    <div class="s20-wrap">
+      <button id="s20-btn" aria-haspopup="menu" aria-expanded="false">操作 ▾</button>
+      <div id="s20-menu" class="s20-menu" role="menu" hidden>
+        <button role="menuitem">複製</button><button role="menuitem">CSV出力</button><button role="menuitem" style="color:#dc2626">削除</button>
+      </div>
+    </div>
+    <div class="row"><span class="readout" id="s20-out">選択: -</span></div>
+  </div>
+  <style data-code>
+    .s20-wrap { position: relative; display: inline-block; margin-bottom: 8px; }
+    .s20-menu { position: absolute; top: 100%; left: 0; margin-top: 4px; min-width: 140px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; box-shadow: 0 10px 24px rgba(0,0,0,.12); z-index: 5; }
+    .s20-menu button { display: block; width: 100%; text-align: left; border: none; border-radius: 4px; }
+  </style>
+  <script data-code>
+    (() => {
+      const btn = $('#s20-btn'), menu = $('#s20-menu'), out = $('#s20-out');
+      const set = open => { menu.hidden = !open; btn.setAttribute('aria-expanded', open); };
+      btn.onclick = () => set(menu.hidden);
+      document.addEventListener('click', e => { if (!btn.contains(e.target) && !menu.contains(e.target)) set(false); }); // 外側クリック
+      document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+      $$('[role=menuitem]', menu).forEach(m => m.onclick = () => { out.textContent = '選択: ' + m.textContent; set(false); });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 21 ===================== -->
+<section class="demo" id="n21">
+  <h2><span class="no">21</span>ページネーション / 無限スクロール <small>Pagination / Infinite scroll</small></h2>
+  <p class="what">大量データを分割して取得・表示する2方式。ページ番号は「位置が分かる」、無限スクロールは「操作が要らない」。kintoneのレコード取得（offset/limit、またはカーソルAPI）はこの下で動く。</p>
+  <p class="how"><b>操作：</b>左は番号で切替。右は末尾までスクロールすると <code>IntersectionObserver</code> が「番兵」を検知して追加読み込みする。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1">
+        <div id="s21-page" class="s21-list"></div>
+        <div class="row" id="s21-pager"></div>
+      </div>
+      <div style="flex:1">
+        <div id="s21-inf" class="s21-list" style="height:150px;overflow:auto"></div>
+        <span class="readout" id="s21-out">読込: 0件</span>
+      </div>
+    </div>
+  </div>
+  <style data-code>
+    .s21-list { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; margin-bottom: 6px; }
+    .s21-list div { padding: 3px 10px; border-bottom: 1px solid #f1f5f9; }
+    .s21-list .sentinel { color: var(--muted); text-align: center; }
+  </style>
+  <script data-code>
+    (() => {
+      // 疑似API：offset/limit で取る（kintone の records.json と同じ形）
+      const fetchRecords = (offset, limit) => new Promise(r => setTimeout(() => r(
+        Array.from({ length: limit }, (_, i) => `レコード ${offset + i + 1}`)), 300));
+
+      // --- ページネーション ---
+      const page = $('#s21-page'), pager = $('#s21-pager'), PER = 5, TOTAL = 23;
+      async function goto(p) {
+        page.innerHTML = '<div>読込中…</div>';
+        const rows = await fetchRecords((p - 1) * PER, Math.min(PER, TOTAL - (p - 1) * PER));
+        page.innerHTML = rows.map(r => `<div>${r}</div>`).join('');
+        pager.innerHTML = '';
+        for (let i = 1; i <= Math.ceil(TOTAL / PER); i++) {
+          const b = document.createElement('button'); b.textContent = i; if (i === p) b.className = 'primary';
+          b.onclick = () => goto(i); pager.appendChild(b);
+        }
+      }
+      goto(1);
+
+      // --- 無限スクロール ---
+      const inf = $('#s21-inf'), out = $('#s21-out');
+      const sentinel = document.createElement('div'); sentinel.className = 'sentinel'; sentinel.textContent = '…';
+      inf.appendChild(sentinel);
+      let loaded = 0, busy = false;
+      const io = new IntersectionObserver(async ([e]) => {
+        if (!e.isIntersecting || busy) return;
+        busy = true;
+        const rows = await fetchRecords(loaded, 10); loaded += rows.length;
+        rows.forEach(r => sentinel.insertAdjacentHTML('beforebegin', `<div>${r}</div>`));
+        out.textContent = `読込: ${loaded}件`; busy = false;
+        if (loaded >= 60) { io.disconnect(); sentinel.textContent = '終端'; }
+      }, { root: inf });
+      io.observe(sentinel);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 22 ===================== -->
+<section class="demo" id="n22">
+  <h2><span class="no">22</span>ローディング表示 <small>Loading / Skeleton / Spinner</small></h2>
+  <p class="what">待ち時間を可視化する。スピナーは「何か待っている」しか伝えないが、スケルトン（内容の形の灰色）は「何が来るか」を先に見せるので体感が速い。</p>
+  <p class="how"><b>操作：</b>再読込で2秒待ち。どちらの待ち方が楽か比べる。</p>
+  <div class="stage">
+    <div class="row"><button id="s22-reload">再読込（2秒）</button></div>
+    <div class="row" style="align-items:flex-start">
+      <div class="s22-card" id="s22-spin"><div class="s22-spinner"></div></div>
+      <div class="s22-card" id="s22-skel"><div class="s22-line w60"></div><div class="s22-line"></div><div class="s22-line w80"></div></div>
+    </div>
+  </div>
+  <style data-code>
+    .s22-card { flex: 1; min-height: 90px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; font-size: 13px; display: grid; align-content: start; gap: 8px; }
+    .s22-spinner { width: 26px; height: 26px; border: 3px solid #e5e7eb; border-top-color: var(--accent); border-radius: 50%; animation: s22-spin .8s linear infinite; justify-self: center; align-self: center; margin-top: 18px; }
+    @keyframes s22-spin { to { transform: rotate(360deg); } }
+    .s22-line { height: 12px; border-radius: 6px; background: linear-gradient(90deg, #e5e7eb 25%, #f3f4f6 50%, #e5e7eb 75%); background-size: 200% 100%; animation: s22-shimmer 1.2s infinite; }
+    .s22-line.w60 { width: 60%; } .s22-line.w80 { width: 80%; }
+    @keyframes s22-shimmer { to { background-position: -200% 0; } }
+  </style>
+  <script data-code>
+    (() => {
+      const spin = $('#s22-spin'), skel = $('#s22-skel');
+      const loading = [spin.innerHTML, skel.innerHTML];
+      const loaded = ['<b>受注 #1001</b><div>株式会社サンプル</div><div>納期 2026-09-12</div>', '<b>受注 #1001</b><div>株式会社サンプル</div><div>納期 2026-09-12</div>'];
+      const load = () => {
+        spin.innerHTML = loading[0]; skel.innerHTML = loading[1];
+        spin.setAttribute('aria-busy', 'true'); skel.setAttribute('aria-busy', 'true');
+        setTimeout(() => { spin.innerHTML = loaded[0]; skel.innerHTML = loaded[1]; spin.removeAttribute('aria-busy'); skel.removeAttribute('aria-busy'); }, 2000);
+      };
+      $('#s22-reload').onclick = load; load();
+    })();
+  </script>
+</section>
+
+</main>
+</div>
+</body>
+</html>

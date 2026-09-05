@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kintone 連携リファレンス</title>
+<link rel="stylesheet" href="assets/guide.css">
+<style>
+  .tierF { background: #475569; }
+  main.single { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .ref { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+  .ref h2 { margin: 0 0 6px; font-size: 16px; } .ref p { font-size: 13.5px; margin: 0 0 8px; }
+  pre { background: var(--code); color: #e2e8f0; padding: 10px 12px; border-radius: 8px; font-size: 12px; overflow: auto; margin: 6px 0; line-height: 1.5; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; }
+  table.cmp th, table.cmp td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>kintone 連携リファレンス <span class="tier tierF">UI操作との対応</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="12-electron.html">Electron</a><a href="05-advanced.html">D</a></nav>
+</header>
+<main class="single">
+  <div class="lead">デモの中で「kintone ならこう」と書いた箇所を、API 側の制約とセットでまとめる。<b>UI の作りは API の上限で決まる</b>（1回で取れる件数、1回で更新できる件数、リビジョン）。数値は執筆時点の把握であり、<b>必ず公式 REST API リファレンスで確認</b>すること。このページは参照用で、コードは実行されない。</div>
+
+  <div class="ref"><h2>0. 呼び出しの置き場所（Electron の場合）</h2>
+    <p>renderer から kintone へ直接 <code>fetch</code> すると、オリジン（<code>file://</code> や <code>app://</code>）からの CORS で拒否される。<b>main プロセスで通信し、IPC で結果を返す</b>（12 の構成）。トークンも main にだけ置ける。</p>
+<pre>// main.js
+ipcMain.handle('kintone:request', async (e, { method, path, params, body }) => {
+  const url = new URL(path, `https://${SUBDOMAIN}.cybozu.com`);
+  if (method === 'GET' &amp;&amp; params) url.search = new URLSearchParams(params);
+  const res = await net.fetch(url, { method, headers: { 'X-Cybozu-API-Token': token(), 'Content-Type': 'application/json' }, body: body &amp;&amp; JSON.stringify(body) });
+  const json = await res.json();
+  if (!res.ok) throw Object.assign(new Error(json.message || res.statusText), { code: json.code, status: res.status, errors: json.errors });
+  return json;
+});</pre></div>
+
+  <div class="ref"><h2>1. 一覧の取得 <small>← 21 ページネーション / 23 仮想スクロール / 71 大規模グリッド</small></h2>
+    <p>取得は <code>GET /k/v1/records.json</code>。1回の <code>limit</code> は最大 500、<code>offset</code> は上限あり（大きな値で拒否される）。数千件を超えるなら<b>カーソル API</b>（作成→取得を繰り返す）か、<code>$id</code> でソートして「前回の最後の id より大きい」を条件にする方法。取り切ったデータは 23/71 の仮想スクロールで描く（DOM は表示分だけ）。</p>
+<pre>// 方式A: offset/limit（件数が少ない・ページ番号 UI に向く）… 21 の pager と同じ
+GET /k/v1/records.json?app=1&amp;query=order by $id asc limit 500 offset 0
+
+// 方式B: id 基準（offset 上限を避ける。全件取得に向く）
+let last = 0, all = [];
+while (true) {
+  const { records } = await api({ method: 'GET', path: '/k/v1/records.json', params: { app: 1, query: `$id > ${last} order by $id asc limit 500` } });
+  all.push(...records); if (records.length < 500) break; last = records.at(-1).$id.value;
+}
+// 方式C: カーソル API（POST /k/v1/records/cursor.json で作成 → GET で繰り返し取得 → 使い終わったら DELETE）</pre>
+    <p>UI 側：取得中は 22 のスケルトン、取得済み件数と総件数（<code>totalCount: true</code> を付けると返る）を 40 の進捗で出す。</p></div>
+
+  <div class="ref"><h2>2. 更新とリビジョン <small>← 57 楽観的更新 / 78 競合解決</small></h2>
+    <p>レコードは <code>$revision</code> を持つ。<code>PUT</code> 時に <code>revision</code> を付けると、サーバ側が進んでいれば<b>エラーで拒否</b>される（省略または -1 で無視）。これが 78 の「楽観ロック」。手順：①開いた時の revision を保持 ②保存時に付けて PUT ③拒否されたら最新を GET して 3方向マージ（<code>ui-kit/merge.js</code>）→ 再 PUT。</p>
+<pre>// 1件更新
+PUT /k/v1/record.json  { app: 1, id: 1001, revision: 5, record: { 数量: { value: '120' } } }
+// 拒否された場合（HTTP 409 系。エラーコードは公式で確認）→ 78 のフロー
+const server = await api({ method: 'GET', path: '/k/v1/record.json', params: { app: 1, id } });
+const { merged, conflicts } = threeWayMerge(base, mine, flatten(server.record));
+if (conflicts.length) { /* ダイアログで選ばせる */ }
+await api({ method: 'PUT', path: '/k/v1/record.json', body: { app: 1, id, revision: server.record.$revision.value, record: toKintone(merged) } });</pre>
+    <p>57 の楽観的更新と組み合わせるなら：画面は先に変え、PUT 失敗（競合含む）で巻き戻してから 78 へ。</p></div>
+
+  <div class="ref"><h2>3. 一括更新 <small>← 76 バッチ操作</small></h2>
+    <p><code>PUT /k/v1/records.json</code> は 1回 <b>最大 100 件</b>（POST 追加・DELETE 削除も同様）。101 件以上は 76 のようにチャンク分割し、チャンクごとに進捗を進める。1回のリクエスト内は全件成功か全件失敗（原子的）なので、「部分失敗」はチャンク単位で起きる。複数種類の操作をまとめて原子的に行いたいときは <code>bulkRequest</code>（1回の中に複数リクエスト、上限あり）。</p>
+<pre>for (const chunk of chunks(changes, 100)) {
+  try { await api({ method: 'PUT', path: '/k/v1/records.json', body: { app: 1, records: chunk.map(c => ({ id: c.id, revision: c.revision, record: c.record })) } }); done += chunk.length; }
+  catch (err) { failed.push({ chunk, err }); }           // 76: 失敗チャンクだけ再試行
+  progress.value = done;
+}</pre></div>
+
+  <div class="ref"><h2>4. 検索 <small>← 74 検索の型</small></h2>
+    <p>サーバ検索は <code>query</code> パラメータ（<code>like</code>、<code>in</code>、<code>and/or</code>、<code>order by</code>）。入力のたびに投げないよう 74 のデバウンス（250ms 以上）を入れ、前のリクエストが返る前に次が出たら古い結果を捨てる（連番で判定）。取得済みデータの絞り込みなら手元で <code>ui-kit/search.js</code>。</p>
+<pre>let seq = 0;
+const run = debounce(async (text) => {
+  const my = ++seq;
+  const res = await api({ method: 'GET', path: '/k/v1/records.json', params: { app: 1, query: `品名 like "${escapeQuery(text)}" order by $id desc limit 100` } });
+  if (my !== seq) return;                                 // 古い応答は捨てる
+  render(res.records);
+}, 300);</pre></div>
+
+  <div class="ref"><h2>5. オフラインと再送 <small>← 79</small></h2>
+    <p>現場端末で通信が切れる前提なら、更新を <code>ui-kit/offline-queue.js</code> に積む。job には <b>app, id, revision, record</b> を入れ、送信時に revision 不一致なら 78 のフローへ回す（課題12）。Electron では main 再起動後もキューが残るよう、<code>storage</code> にファイル保存の実装を渡す。</p></div>
+
+  <div class="ref"><h2>6. フィールド型と UI 部品の対応</h2>
+    <table class="cmp">
+      <tr><th style="width:200px">kintone フィールド</th><th>値の形</th><th>向く UI（番号）</th></tr>
+      <tr><td>文字列（1行）／数値</td><td><code>{ value: '…' }</code></td><td>38 インライン編集、56 グリッド</td></tr>
+      <tr><td>ドロップダウン／ラジオ</td><td><code>{ value: '選択肢' }</code></td><td>20 ドロップダウン、36 コマンドパレット（選択肢が多い時）</td></tr>
+      <tr><td>チェックボックス／複数選択</td><td><code>{ value: ['a','b'] }</code></td><td>11 選択（Ctrl/Shift）</td></tr>
+      <tr><td>日付／日時</td><td><code>'2026-09-12'</code> / ISO 8601</td><td>84 タイムライン、75 フォーム</td></tr>
+      <tr><td>ユーザー選択</td><td><code>{ value: [{ code, name }] }</code></td><td>74 あいまい検索つき選択</td></tr>
+      <tr><td>テーブル（サブテーブル）</td><td><code>{ value: [{ id, value: {…} }] }</code></td><td>56 グリッド、32 並べ替え</td></tr>
+      <tr><td>添付ファイル</td><td><code>{ value: [{ fileKey, name }] }</code></td><td>59 ファイルドロップ → アップロード API → fileKey を付けて PUT</td></tr>
+      <tr><td>関連レコード／ルックアップ</td><td>参照先の値</td><td>83 スマートプレビュー（ホバーで参照先を先読み）</td></tr>
+      <tr><td>$id / $revision</td><td>システム値</td><td>78 競合解決、82 ルーティング（URL に id）</td></tr>
+    </table>
+  </div>
+
+  <div class="ref"><h2>7. 上限の早見表（要公式確認）</h2>
+    <table class="cmp">
+      <tr><th style="width:280px">操作</th><th>上限（把握値）</th><th>UI 側の対応</th></tr>
+      <tr><td>GET records の limit</td><td>500 件/回</td><td>21 ページング、23 仮想スクロール</td></tr>
+      <tr><td>GET records の offset</td><td>上限あり（大きい値は拒否）</td><td>id 基準取得かカーソル API</td></tr>
+      <tr><td>POST / PUT / DELETE records</td><td>100 件/回</td><td>76 チャンク分割と進捗</td></tr>
+      <tr><td>bulkRequest</td><td>複数リクエストを1回で原子的に（件数上限あり）</td><td>76 の「全部成功か全部失敗」が必要な時</td></tr>
+      <tr><td>同時リクエスト数</td><td>ドメインごとに上限あり</td><td>並列度を絞る（76 の Promise.all は数件まで）</td></tr>
+      <tr><td>query の文字列長／like</td><td>上限あり。前方一致のみ等の制約</td><td>74 で手元検索と併用</td></tr>
+    </table>
+  </div>
+  <p class="note">エラー時の JSON には <code>code</code>・<code>message</code>・<code>errors</code>（項目ごとの詳細）が入る。75 の作法どおり「どの項目が、なぜ」を画面に出し、該当項目へフォーカスを移す。</p>
+</main>
+</body>
+</html>
