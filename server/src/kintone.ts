@@ -24,7 +24,8 @@ export interface SyncResult {
 }
 
 interface Adapter {
-  findExisting(shapeIds: string[]): Promise<Map<string, string>>
+  /** 既存レコードを探し、shapeId → レコード番号 を返す */
+  findExisting(records: RequestRecord[]): Promise<Map<string, string>>
   create(records: RequestRecord[]): Promise<string[]>
   update(records: Array<{ id: string; record: RequestRecord }>): Promise<void>
 }
@@ -43,8 +44,8 @@ export class Kintone {
     if (!existsSync(this.configFile)) return
     try {
       const c = JSON.parse(await readFile(this.configFile, 'utf8')) as KintoneConfig
-      if (!c.baseUrl || !c.appId || !c.apiToken || !c.fields?.shapeId) {
-        console.error('[kintone] 設定に baseUrl / appId / apiToken / fields.shapeId が必要です')
+      if (!c.baseUrl || !c.appId || !c.apiToken || !(c.fields?.shapeId || c.fields?.no)) {
+        console.error('[kintone] 設定に baseUrl / appId / apiToken と、fields.shapeId または fields.no が必要です')
         return
       }
       this.config = c
@@ -63,7 +64,7 @@ export class Kintone {
     const adapter: Adapter | null = this.mock ?? (this.config ? new RestAdapter(this.config) : null)
     if (!adapter) throw new Error('kintone が設定されていません(config/kintone.json)')
 
-    const existing = await adapter.findExisting(records.map((r) => r.shapeId))
+    const existing = await adapter.findExisting(records)
     const toCreate = records.filter((r) => !existing.has(r.shapeId))
     const toUpdate = records
       .filter((r) => existing.has(r.shapeId))
@@ -103,28 +104,39 @@ class RestAdapter implements Adapter {
     return json
   }
 
+  /** 外部キー: fields.shapeId があれば shape id、無ければ受付番号 */
+  private keyOf(r: RequestRecord): string {
+    return this.c.fields.shapeId ? r.shapeId : r.no
+  }
+  private keyCode(): string {
+    return (this.c.fields.shapeId ?? this.c.fields.no)!
+  }
+
   private toFields(r: RequestRecord): Record<string, { value: string }> {
     const out: Record<string, { value: string }> = {}
     for (const [key, code] of Object.entries(this.c.fields) as Array<[keyof RequestRecord, string]>) {
       if (!code || key === 'kintoneRecordId') continue
       const v = r[key]
       // 日付フィールドに空文字は送れないので省く
-      if (key === 'requestedAt' && !v) continue
-      out[code] = { value: String(v ?? '') }
+      if ((key === 'requestedAt' || key === 'dueDate') && !v) continue
+      out[code] = { value: typeof v === 'boolean' ? (v ? '1' : '0') : String(v ?? '') }
     }
     return out
   }
 
-  async findExisting(shapeIds: string[]): Promise<Map<string, string>> {
+  async findExisting(records: RequestRecord[]): Promise<Map<string, string>> {
     const found = new Map<string, string>()
-    const code = this.c.fields.shapeId!
-    for (let i = 0; i < shapeIds.length; i += CHUNK) {
-      const chunk = shapeIds.slice(i, i + CHUNK)
+    const code = this.keyCode()
+    const keys = records.map((r) => this.keyOf(r)).filter(Boolean)
+    for (let i = 0; i < keys.length; i += CHUNK) {
+      const chunk = keys.slice(i, i + CHUNK)
       const query = `${code} in (${chunk.map((s) => `"${s.replace(/"/g, '')}"`).join(',')}) limit 500`
       // GET はクエリ文字列。X-HTTP-Method-Override で POST ボディに載せる(URL 長対策)
       const json = await this.callGet({ app: this.c.appId, query, fields: ['$id', code] })
       for (const rec of json.records ?? []) {
-        found.set(rec[code].value, rec.$id.value)
+        const key = rec[code].value as string
+        const r = records.find((x) => this.keyOf(x) === key)
+        if (r) found.set(r.shapeId, rec.$id.value)
       }
     }
     return found
@@ -164,11 +176,11 @@ class MockAdapter implements Adapter {
   private seq = 1000
   readonly store = new Map<string, { id: string; record: RequestRecord }>()
 
-  async findExisting(shapeIds: string[]): Promise<Map<string, string>> {
+  async findExisting(records: RequestRecord[]): Promise<Map<string, string>> {
     const m = new Map<string, string>()
-    for (const s of shapeIds) {
-      const hit = this.store.get(s)
-      if (hit) m.set(s, hit.id)
+    for (const r of records) {
+      const hit = this.store.get(r.shapeId)
+      if (hit) m.set(r.shapeId, hit.id)
     }
     return m
   }

@@ -85,3 +85,51 @@ export async function redeemToken(token: string): Promise<Me> {
     })
   )
 }
+
+// ---- 依頼フォーム・履歴 -------------------------------------------------
+export interface RequestInput {
+  title: string
+  dept: string
+  partNo: string
+  lot: string
+  qty: string
+  note: string
+  dueDate: string
+  priority: '通常' | '至急'
+  requester?: string
+  images: Array<{ id: string; name: string; w: number; h: number }>
+}
+
+export async function submitRequest(roomId: string, input: RequestInput): Promise<{ id: string; no: string }> {
+  return json(
+    await fetch(`/api/rooms/${encodeURIComponent(roomId)}/requests`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input)
+    })
+  )
+}
+
+/** 画像をアップロードして id を返す(依頼フォーム・キャンバス共通) */
+export async function uploadImage(file: File): Promise<{ id: string; src: string }> {
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : ''
+  const id = `u_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}${ext}`.replace(/[^A-Za-z0-9_.-]/g, '_')
+  const r = await fetch(`/api/uploads/${id}`, { method: 'PUT', body: file })
+  if (!r.ok) throw new Error(`upload failed: ${r.status}`)
+  return { id, src: `/api/uploads/${id}` }
+}
+
+export interface HistoryEntry {
+  ts: number
+  user: string
+  shapeId: string
+  shapeType: string
+  action: 'create' | 'update' | 'delete'
+  fields: Record<string, unknown>
+  no?: string
+}
+
+export async function fetchHistory(roomId: string, shapeId?: string): Promise<HistoryEntry[]> {
+  const q = shapeId ? `?shapeId=${encodeURIComponent(shapeId)}` : ''
+  return json(await fetch(`/api/rooms/${encodeURIComponent(roomId)}/history${q}`))
+}

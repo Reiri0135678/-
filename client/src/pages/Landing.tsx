@@ -35,6 +35,8 @@ export function Landing(): JSX.Element {
       const u = await login(name, mode === 'password' ? password : undefined)
       setUserName(u.name)
       setUser(u)
+      const next = new URLSearchParams(window.location.search).get('next')
+      if (next && next.startsWith('/')) navigate(next)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
@@ -108,8 +110,13 @@ export function Landing(): JSX.Element {
             <h2>ボード</h2>
             <ul className="rooms">
               {rooms.map((r) => (
-                <li key={r.id}>
+                <li key={r.id} className="rooms__row">
                   <button onClick={() => navigate(`/b/${encodeURIComponent(r.id)}`)}>{r.name}</button>
+                  {canWrite && (
+                    <button className="btn rooms__form" onClick={() => navigate(`/form/${encodeURIComponent(r.id)}`)} data-testid={`form-link-${r.id}`}>
+                      依頼を出す
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>

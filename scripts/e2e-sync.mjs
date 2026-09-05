@@ -84,6 +84,8 @@ try {
     window.__qcEditor.createShape({ type: 'request-card', x: 100, y: 100, partNo: 'E2E-001', lot: 'L1', qty: '3', status: '受付' })
   })
   ok('A→B カード同期', await waitFor(() => b.evaluate(() => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.partNo === 'E2E-001'))))
+  const no1 = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'request-card')?.no || null))
+  ok(`サーバーが受付番号を採番 (${no1})`, /^QC-\d{4}-0001$/.test(no1))
 
   // B がペンで描く → A に届く(自作キャンバスの描画同期)
   await b.evaluate(() => {
@@ -188,6 +190,102 @@ try {
   ok('閲覧者のヘッダーに「閲覧のみ」', (await v.locator('.badge--warn').count()) === 1)
   ok('閲覧者には + 依頼 が無い', (await v.locator('[data-testid="sheet-add"]').count()) === 0)
   await v.context().close()
+
+  // 依頼フォーム: B がボードを開かずに依頼を出す(画像添付・至急)
+  {
+    const png = await b.evaluate(async () => {
+      const c = document.createElement('canvas')
+      c.width = 200
+      c.height = 100
+      const ctx = c.getContext('2d')
+      ctx.fillStyle = '#16a34a'
+      ctx.fillRect(0, 0, 200, 100)
+      return c.toDataURL('image/png').split(',')[1]
+    })
+    const { writeFileSync } = await import('node:fs')
+    const pngPath = join(dataDir, 'zumen.png')
+    writeFileSync(pngPath, Buffer.from(png, 'base64'))
+    const rooms = await (await fetch(`${BASE}/api/rooms`, { headers: { cookie: await cookieOf(b) } })).json()
+    await b.goto(`${BASE}/form/${rooms[0].id}`)
+    await b.waitForSelector('[data-testid="request-form"]')
+    await b.fill('[data-field="partNo"]', 'FORM-777')
+    await b.fill('[data-field="lot"]', 'LF1')
+    await b.fill('[data-field="qty"]', '8')
+    await b.fill('[data-field="dept"]', '製造3課')
+    await b.fill('[data-field="title"]', '外径寸法の確認')
+    await b.fill('[data-field="dueDate"]', '2026-09-30')
+    await b.selectOption('[data-field="priority"]', '至急')
+    await b.fill('[data-field="note"]', 'φ20 の外径')
+    await b.setInputFiles('[data-testid="form-files"]', pngPath)
+    await b.waitForSelector('[data-testid="form-gallery"] .gallery__item')
+    await b.click('[data-testid="form-submit"]')
+    const no = await (await b.waitForSelector('[data-testid="form-no"]')).textContent()
+    ok(`依頼フォーム送信 → 受付番号 (${no})`, /^QC-\d{4}-\d{4}$/.test(no))
+    const card = await waitFor(() => a.evaluate(() => window.__qcEditor.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777') || null))
+    ok('フォームのカードが A のボードに現れる(至急・図面 1 枚・依頼者=佐藤)', card.priority === '至急' && card.linkedShapeIds.length === 1 && card.requester === '佐藤' && card.dueDate === '2026-09-30' && card.no === no)
+    const img = await a.evaluate((id) => window.__qcEditor.getShape(id), card.linkedShapeIds[0])
+    ok('添付画像が元サイズ比で置かれる', img && img.type === 'image' && img.w === 200 && img.h === 100)
+    await b.screenshot({ path: join(shotDir, 'e2e-form-done.png') })
+    await b.click('[data-testid="form-again"]')
+    await b.waitForSelector('[data-testid="request-form"]')
+    await b.screenshot({ path: join(shotDir, 'e2e-form.png') })
+    // B をボードに戻す
+    await b.goto(`${BASE}/b/${rooms[0].id}`)
+    await b.waitForFunction(() => !!window.__qcEditor && document.querySelector('.dot--online'))
+  }
+
+  // 変更履歴: サーバーのログに誰が何を変えたかが残る
+  {
+    const rooms = await (await fetch(`${BASE}/api/rooms`, { headers: { cookie: await cookieOf(a) } })).json()
+    const hist = await (await fetch(`${BASE}/api/rooms/${rooms[0].id}/history`, { headers: { cookie: await cookieOf(a) } })).json()
+    const users = new Set(hist.map((h) => h.user))
+    ok(`履歴 ${hist.length} 件、操作者: ${[...users].join(',')}`, hist.length > 5 && users.has('山田') && users.has('佐藤') && users.has('system') && !users.has('server'))
+    ok('履歴に受付番号の採番(system)が残る', hist.some((h) => h.user === 'system' && h.action === 'update' && h.fields.no))
+    ok('履歴に一覧セル編集(山田: 品番)が残る', hist.some((h) => h.user === '山田' && h.action === 'update' && h.fields.partNo === 'SHEET-EDIT'))
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.select(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'SHEET-EDIT').id)
+    })
+    await a.waitForSelector('[data-testid="card-editor"]')
+    await a.click('[data-testid="toggle-history"]')
+    const n = await waitFor(async () => {
+      const items = await a.locator('[data-testid="history"] li b').count()
+      return items >= 3 ? items : null
+    })
+    ok(`サイドバーにカードの履歴 ${n} 件`, n >= 3)
+  }
+
+  // 取消とアーカイブ: カードは消えず「取消」になる。完了・取消はアーカイブでボードから外れる
+  {
+    const before = await a.evaluate(() => window.__qcEditor.getShapes().filter((s) => s.type === 'request-card').length)
+    await a.click('[data-testid="cancel-card"]')
+    ok('「取消」でカードは消えず状態が取消になる', await waitFor(() => b.evaluate((n) => { const cs = window.__qcEditor.getShapes().filter((s) => s.type === 'request-card'); return cs.length === n && cs.some((s) => s.partNo === 'SHEET-EDIT' && s.status === '取消') }, before)))
+    // Delete キーでも取消(物理削除しない)
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.select(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777').id)
+    })
+    await a.click('.board', { position: { x: 5, y: 5 } })
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.select(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777').id)
+    })
+    await a.keyboard.press('Delete')
+    ok('Delete キーでも物理削除されず取消になる', await waitFor(() => a.evaluate((n) => { const cs = window.__qcEditor.getShapes().filter((s) => s.type === 'request-card'); return cs.length === n && cs.find((s) => s.partNo === 'FORM-777')?.status === '取消' }, before)))
+    await a.evaluate(() => {
+      const ed = window.__qcEditor
+      ed.updateShape(ed.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'FORM-777').id, { status: '完了' })
+    })
+    await a.waitForSelector('[data-testid="sheet-archive"]')
+    const rowsBefore = await a.locator('[data-testid="sheet-row"]').count()
+    await a.click('[data-testid="sheet-archive"]')
+    ok('完了・取消をアーカイブ → 一覧から消える', await waitFor(async () => { const n = await a.locator('[data-testid="sheet-row"]').count(); return n === rowsBefore - 2 ? true : null }))
+    ok('アーカイブ済みは B のキャンバスにも出ない(データは残る)', await waitFor(() => b.evaluate(() => { const cs = window.__qcEditor.getShapes().filter((s) => s.type === 'request-card'); return cs.filter((s) => s.archived).length === 2 && document.querySelectorAll('[data-testid="sheet-row"]').length === cs.length - 2 })))
+    await a.check('[data-testid="sheet-archived"]')
+    ok('「アーカイブも表示」で一覧に戻る', await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === rowsBefore ? true : null)))
+    await a.uncheck('[data-testid="sheet-archived"]')
+    ok('一覧に受付番号列がある', (await a.locator('[data-testid="sheet-row"] td[data-col="no"]').first().textContent()).startsWith('QC-'))
+  }
 
   // 埋め込み連携(Mission Bridge 想定)
   {

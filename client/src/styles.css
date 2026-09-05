@@ -203,3 +203,28 @@ button { font: inherit; }
   border: 1px solid var(--qc-border); border-radius: 10px; box-shadow: 0 4px 16px rgba(0,0,0,.08); z-index: 300; }
 .text-editor { position: absolute; margin: 0; padding: 0; border: 1px dashed var(--qc-accent); outline: none; resize: none; overflow: hidden;
   font-family: 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif; z-index: 310; box-sizing: content-box; }
+
+/* ---- 状態・優先度 ---- */
+.qc-card__status[data-status='保留'], .counts__item[data-status='保留'] { background: #f3e8ff; }
+.qc-card__status[data-status='差戻し'], .counts__item[data-status='差戻し'] { background: #fee2e2; }
+.qc-card__status[data-status='取消'], .counts__item[data-status='取消'] { background: #e5e7eb; color: #6b7280; }
+.badge--urgent { background: #dc2626; color: #fff; }
+.badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.grid td[data-priority='至急'] select { color: #b91c1c; font-weight: 600; }
+.sheet__check { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #4b5563; }
+.history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 11px; max-height: 220px; overflow: auto; }
+.history li { display: grid; grid-template-columns: 64px auto 1fr; gap: 6px; align-items: baseline; padding: 3px 0; border-bottom: 1px solid #eef0f3; }
+.history__when { color: #9ca3af; }
+
+/* ---- 依頼フォーム ---- */
+.landing--top { align-items: start; padding: 24px 0; overflow: auto; }
+.form { display: flex; flex-direction: column; gap: 12px; width: min(560px, 94vw); }
+.form__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form .field input, .form .field select, .form .field textarea { font: inherit; font-size: 15px; padding: 10px 12px; border: 1px solid var(--qc-border); border-radius: 8px; background: #fff; }
+.form .field textarea { resize: vertical; }
+.form-done { text-align: center; }
+.form-done__no { font-size: 32px; font-weight: 700; letter-spacing: .04em; margin: 8px 0; color: var(--qc-accent); }
+.rooms__row { display: flex; gap: 6px; }
+.rooms__row > button:first-child { flex: 1; }
+.rooms__form { white-space: nowrap; }
+@media (max-width: 600px) { .form__row { grid-template-columns: 1fr; } }

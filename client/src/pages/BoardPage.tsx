@@ -71,6 +71,11 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
         </button>
         <span className="app__title">{title}</span>
         {readonly && <span className="badge badge--warn">閲覧のみ</span>}
+        {!readonly && (
+          <button className="link" onClick={() => navigate(`/form/${encodeURIComponent(roomId)}`)}>
+            依頼フォーム
+          </button>
+        )}
         <span className="app__meta">
           <span className={`dot dot--${status}`} />
           {status === 'online' ? `接続中 · 他 ${peers} 人` : status === 'connecting' ? '接続中…' : '切断'}
@@ -82,7 +87,7 @@ export function BoardPage({ roomId }: { roomId: string }): JSX.Element {
         </span>
       </header>
       <aside className="app__sidebar">
-        {editor ? <Sidebar editor={editor} readonly={readonly} /> : <p className="muted">読み込み中…</p>}
+        {editor ? <Sidebar editor={editor} roomId={roomId} readonly={readonly} /> : <p className="muted">読み込み中…</p>}
       </aside>
       <main className="app__board">
         <Board

@@ -560,9 +560,11 @@ function Canvas({ editor, demo, onStatus, onPeers }: BoardProps & { editor: Boar
         onPointerLeave={() => editor.setCursor(null)}
       >
         <Layer ref={layerRef}>
-          {snap.shapes.map((s) => (
-            <ShapeView key={s.id} shape={s} draggable={snap.tool === 'select' && !snap.readonly && !panning} handlers={handlers} />
-          ))}
+          {snap.shapes
+            .filter((s) => !(s.type === 'request-card' && s.archived))
+            .map((s) => (
+              <ShapeView key={s.id} shape={s} draggable={snap.tool === 'select' && !snap.readonly && !panning} handlers={handlers} />
+            ))}
           {draft && <ShapeView shape={draft} draft draggable={false} />}
           <Transformer
             ref={trRef}

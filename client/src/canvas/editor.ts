@@ -273,8 +273,19 @@ export class BoardEditor {
     }, LOCAL)
   }
 
+  /** 削除。依頼カードは記録として残すため物理削除せず「取消」にする */
   deleteShapes(ids: string[]): void {
     if (this.snapshot.readonly || ids.length === 0) return
+    const cards = ids.filter((id) => this.snapshot.byId.get(id)?.type === 'request-card')
+    const others = ids.filter((id) => !cards.includes(id))
+    if (cards.length) {
+      this.updateShapes(cards.map((id) => ({ id, patch: { status: '取消' } as Partial<Shape> })))
+    }
+    if (others.length === 0) {
+      this.select(this.snapshot.selection.filter((id) => !ids.includes(id)))
+      return
+    }
+    ids = others
     this.doc.transact(() => {
       for (const id of ids) this.shapesMap.delete(id)
       // 図面が消えたらカードの紐付けからも外す

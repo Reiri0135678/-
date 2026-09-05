@@ -1,6 +1,8 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useState } from 'react'
 import {
+  CLOSED_STATUSES,
+  PRIORITIES,
   REQUEST_STATUSES,
   todayString,
   toCsv,
@@ -18,11 +20,13 @@ interface Column {
   key: SortKey
   label: string
   width: number
-  kind: 'select' | 'text' | 'date' | 'readonly'
+  kind: 'select' | 'priority' | 'text' | 'date' | 'readonly'
 }
 
 const COLUMNS: Column[] = [
+  { key: 'no', label: '受付番号', width: 118, kind: 'readonly' },
   { key: 'status', label: '状態', width: 92, kind: 'select' },
+  { key: 'priority', label: '優先度', width: 76, kind: 'priority' },
   { key: 'title', label: '件名', width: 120, kind: 'text' },
   { key: 'dept', label: '依頼部門', width: 100, kind: 'text' },
   { key: 'partNo', label: '品番', width: 110, kind: 'text' },
@@ -30,6 +34,8 @@ const COLUMNS: Column[] = [
   { key: 'qty', label: '数量', width: 64, kind: 'text' },
   { key: 'requester', label: '依頼者', width: 90, kind: 'text' },
   { key: 'requestedAt', label: '依頼日', width: 130, kind: 'date' },
+  { key: 'dueDate', label: '希望納期', width: 130, kind: 'date' },
+  { key: 'assignee', label: '担当', width: 90, kind: 'text' },
   { key: 'note', label: '備考', width: 220, kind: 'text' },
   { key: 'kintoneRecordId', label: 'kintone', width: 80, kind: 'readonly' }
 ]
@@ -50,7 +56,8 @@ export function RequestSheet({
   const selected = useSingleSelection(editor)
   const [query, setQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<RequestStatus | ''>('')
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'requestedAt', dir: 1 })
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'no', dir: -1 })
+  const [showArchived, setShowArchived] = useState(false)
   const [kstatus, setKstatus] = useState<KintoneStatus | null>(null)
   const [syncMsg, setSyncMsg] = useState('')
   const [syncing, setSyncing] = useState(false)
@@ -63,6 +70,7 @@ export function RequestSheet({
     const q = query.trim().toLowerCase()
     const list = cards
       .map((c) => ({ card: c, rec: toRequestRecord(c, boardName) }))
+      .filter(({ rec }) => showArchived || !rec.archived)
       .filter(({ rec }) => !statusFilter || rec.status === statusFilter)
       .filter(({ rec }) => !q || Object.values(rec).some((v) => String(v).toLowerCase().includes(q)))
     list.sort((a, b) => {
@@ -71,7 +79,7 @@ export function RequestSheet({
       return av.localeCompare(bv, 'ja') * sort.dir
     })
     return list
-  }, [cards, boardName, query, statusFilter, sort])
+  }, [cards, boardName, query, statusFilter, sort, showArchived])
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
@@ -102,7 +110,12 @@ export function RequestSheet({
 
   const addCard = () => addCardAtCenter(editor)
 
-  const counts = REQUEST_STATUSES.map((st) => [st, cards.filter((c) => c.status === st).length] as const)
+  const active = cards.filter((c) => !c.archived)
+  const counts = REQUEST_STATUSES.map((st) => [st, active.filter((c) => c.status === st).length] as const).filter(([, n]) => n > 0)
+  const archivable = active.filter((c) => CLOSED_STATUSES.includes(c.status))
+  const archiveClosed = () => {
+    editor.updateShapes(archivable.map((c) => ({ id: c.id, patch: { archived: true } })))
+  }
   const kintoneLabel =
     kstatus?.mode === 'mock' ? 'kintone へ送信(モック)' : kstatus?.mode === 'configured' ? 'kintone へ送信' : 'kintone 未設定'
 
@@ -130,7 +143,16 @@ export function RequestSheet({
             <option key={s}>{s}</option>
           ))}
         </select>
+        <label className="sheet__check">
+          <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} data-testid="sheet-archived" />
+          アーカイブも表示
+        </label>
         <span className="sheet__spacer" />
+        {!readonly && archivable.length > 0 && (
+          <button className="btn" onClick={archiveClosed} title="完了・取消のカードをボードから外します(一覧と kintone には残ります)" data-testid="sheet-archive">
+            完了・取消をアーカイブ({archivable.length})
+          </button>
+        )}
         {!readonly && (
           <button className="btn btn--primary" onClick={addCard} data-testid="sheet-add">
             + 依頼
@@ -192,7 +214,7 @@ export function RequestSheet({
                 }}
               >
                 {COLUMNS.map((c) => (
-                  <td key={c.key}>
+                  <td key={c.key} data-col={c.key} data-priority={c.key === 'priority' ? rec.priority : undefined}>
                     <Cell
                       column={c}
                       value={String(rec[c.key] ?? '')}
@@ -224,10 +246,11 @@ function Cell({
   if (column.kind === 'readonly' || readonly) {
     return <span className="grid__ro">{value || (column.kind === 'readonly' ? '-' : '')}</span>
   }
-  if (column.kind === 'select') {
+  if (column.kind === 'select' || column.kind === 'priority') {
+    const opts = column.kind === 'select' ? REQUEST_STATUSES : PRIORITIES
     return (
       <select value={value} onChange={(e) => onChange(e.target.value)} data-col={column.key}>
-        {REQUEST_STATUSES.map((s) => (
+        {opts.map((s) => (
           <option key={s}>{s}</option>
         ))}
       </select>

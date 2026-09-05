@@ -2,8 +2,12 @@
  * ボード上の図形データの定義。クライアント(描画)とサーバー(同期・kintone)の両方から参照する。
  * Yjs の `shapes` マップに shapeId → Y.Map(この形の平坦なオブジェクト)で保持する。
  */
-export const REQUEST_STATUSES = ['未受付', '受付', '検査中', '完了'] as const
+export const REQUEST_STATUSES = ['未受付', '受付', '検査中', '保留', '差戻し', '完了', '取消'] as const
 export type RequestStatus = (typeof REQUEST_STATUSES)[number]
+/** 終了扱いの状態(アーカイブ対象) */
+export const CLOSED_STATUSES: readonly RequestStatus[] = ['完了', '取消']
+export const PRIORITIES = ['通常', '至急'] as const
+export type Priority = (typeof PRIORITIES)[number]
 
 export type ShapeType =
   | 'draw'
@@ -77,6 +81,8 @@ export interface ImageShape extends ShapeBase {
 }
 export interface RequestCardShape extends ShapeBase {
   type: 'request-card'
+  /** 受付番号(サーバーが採番。例 QC-2026-0001)。人が参照する主キー */
+  no: string
   title: string
   dept: string
   partNo: string
@@ -89,6 +95,13 @@ export interface RequestCardShape extends ShapeBase {
   requestedAt: string
   /** 備考・検査項目のメモ */
   note: string
+  /** 担当検査員 */
+  assignee: string
+  /** 希望納期 YYYY-MM-DD */
+  dueDate: string
+  priority: Priority
+  /** ボードから外した(一覧・kintone には残る) */
+  archived: boolean
   /** 紐付けた図面・写真(画像図形)の id */
   linkedShapeIds: string[]
   /** kintone 連携済みならレコード番号。未連携は空文字 */
@@ -139,6 +152,7 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
         type,
         w: CARD_W,
         h: CARD_H,
+        no: '',
         title: '検査依頼',
         dept: '製造1課',
         partNo: '',
@@ -148,6 +162,10 @@ export function defaultsFor(type: ShapeType): ShapeDefaults {
         requester: '',
         requestedAt: '',
         note: '',
+        assignee: '',
+        dueDate: '',
+        priority: '通常',
+        archived: false,
         linkedShapeIds: [],
         kintoneRecordId: ''
       }
@@ -186,6 +204,7 @@ export function todayString(now = new Date()): string {
 export interface RequestRecord {
   shapeId: string
   boardName: string
+  no: string
   title: string
   dept: string
   partNo: string
@@ -195,11 +214,17 @@ export interface RequestRecord {
   requester: string
   requestedAt: string
   note: string
+  assignee: string
+  dueDate: string
+  priority: Priority
+  archived: boolean
   kintoneRecordId: string
 }
 
 export const REQUEST_RECORD_COLUMNS: Array<{ key: keyof RequestRecord; label: string }> = [
+  { key: 'no', label: '受付番号' },
   { key: 'status', label: '状態' },
+  { key: 'priority', label: '優先度' },
   { key: 'title', label: '件名' },
   { key: 'dept', label: '依頼部門' },
   { key: 'partNo', label: '品番' },
@@ -207,7 +232,10 @@ export const REQUEST_RECORD_COLUMNS: Array<{ key: keyof RequestRecord; label: st
   { key: 'qty', label: '数量' },
   { key: 'requester', label: '依頼者' },
   { key: 'requestedAt', label: '依頼日' },
+  { key: 'dueDate', label: '希望納期' },
+  { key: 'assignee', label: '担当' },
   { key: 'note', label: '備考' },
+  { key: 'archived', label: 'アーカイブ' },
   { key: 'kintoneRecordId', label: 'kintone' },
   { key: 'boardName', label: 'ボード' },
   { key: 'shapeId', label: 'ID' }
@@ -217,6 +245,7 @@ export function toRequestRecord(card: RequestCardShape, boardName: string): Requ
   return {
     shapeId: card.id,
     boardName,
+    no: card.no,
     title: card.title,
     dept: card.dept,
     partNo: card.partNo,
@@ -226,6 +255,10 @@ export function toRequestRecord(card: RequestCardShape, boardName: string): Requ
     requester: card.requester,
     requestedAt: card.requestedAt,
     note: card.note,
+    assignee: card.assignee,
+    dueDate: card.dueDate,
+    priority: card.priority,
+    archived: card.archived,
     kintoneRecordId: card.kintoneRecordId
   }
 }
@@ -234,6 +267,21 @@ export function toRequestRecord(card: RequestCardShape, boardName: string): Requ
 export function toCsv(records: RequestRecord[]): string {
   const esc = (v: string) => `"${String(v ?? '').replace(/"/g, '""')}"`
   const head = REQUEST_RECORD_COLUMNS.map((c) => esc(c.label)).join(',')
-  const rows = records.map((r) => REQUEST_RECORD_COLUMNS.map((c) => esc(String(r[c.key]))).join(','))
+  const rows = records.map((r) =>
+    REQUEST_RECORD_COLUMNS.map((c) => esc(typeof r[c.key] === 'boolean' ? (r[c.key] ? '1' : '') : String(r[c.key]))).join(',')
+  )
   return '﻿' + [head, ...rows].join('\r\n') + '\r\n'
+}
+
+// ---- 変更履歴 ----------------------------------------------------------
+export interface HistoryEntry {
+  ts: number
+  user: string
+  shapeId: string
+  shapeType: ShapeType
+  action: 'create' | 'update' | 'delete'
+  /** 変更後の値(update は変わった項目のみ) */
+  fields: Record<string, unknown>
+  /** 受付番号(カードのとき) */
+  no?: string
 }

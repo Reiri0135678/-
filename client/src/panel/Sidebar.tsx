@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import { REQUEST_STATUSES, type ImageShape, type RequestCardShape, type RequestStatus } from '@shared/shapes'
+import { PRIORITIES, REQUEST_STATUSES, type ImageShape, type Priority, type RequestCardShape, type RequestStatus } from '@shared/shapes'
+import { fetchHistory, type HistoryEntry } from '../api'
 import type { BoardEditor as Editor } from '../canvas/editor'
 import { addCardAtCenter, focusShape, updateCard, useCards, useImages, useSingleSelection } from './useCards'
 
@@ -12,7 +13,7 @@ const imageName = (_e: Editor, img: ImageShape) => img.name || '画像'
  * 左サイドバー: 選択中の依頼カードの編集フォーム + 図面・写真の一覧。
  * キャンバスの外にあるので editor を props で受け取り、スナップショットを購読する。
  */
-export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolean }): JSX.Element {
+export function Sidebar({ editor, roomId, readonly }: { editor: Editor; roomId: string; readonly: boolean }): JSX.Element {
   const cards = useCards(editor)
   const images = useImages(editor)
   const selected = useSingleSelection(editor)
@@ -54,6 +55,7 @@ export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolea
       {card ? (
         <CardEditor
           editor={editor}
+          roomId={roomId}
           card={card}
           readonly={readonly}
           linking={linkingFor === card.id}
@@ -112,12 +114,14 @@ export function Sidebar({ editor, readonly }: { editor: Editor; readonly: boolea
           })}
         </ul>
       )}
+
     </div>
   )
 }
 
 function CardEditor({
   editor,
+  roomId,
   card,
   readonly,
   linking,
@@ -126,6 +130,7 @@ function CardEditor({
   onUnlink
 }: {
   editor: Editor
+  roomId: string
   card: RequestCardShape
   readonly: boolean
   linking: boolean
@@ -135,7 +140,13 @@ function CardEditor({
 }): JSX.Element {
   const p = card
   const update = (patch: Partial<RequestCardShape>) => updateCard(editor, card.id, patch)
-  const field = (label: string, key: 'title' | 'dept' | 'partNo' | 'lot' | 'qty' | 'requester', placeholder = '') => (
+  const [history, setHistory] = useState<HistoryEntry[] | null>(null)
+  const [showHistory, setShowHistory] = useState(false)
+  useEffect(() => {
+    if (!showHistory) return
+    fetchHistory(roomId, card.id).then(setHistory).catch(() => setHistory([]))
+  }, [showHistory, roomId, card.id, card.updatedAt])
+  const field = (label: string, key: 'title' | 'dept' | 'partNo' | 'lot' | 'qty' | 'requester' | 'assignee', placeholder = '') => (
     <label className="field">
       <span>{label}</span>
       <input
@@ -154,14 +165,23 @@ function CardEditor({
   return (
     <div className="editor" data-testid="card-editor">
       <div className="panel__head">
-        <h2>依頼カードの編集</h2>
-        {!readonly && (
-          <button className="btn btn--danger" onClick={() => editor.deleteShapes([card.id])}>
-            削除
+        <h2>{p.no || '(採番待ち)'}</h2>
+        {!readonly && p.status !== '取消' && (
+          <button className="btn btn--danger" onClick={() => update({ status: '取消' })} title="カードは消さずに取消状態にします" data-testid="cancel-card">
+            取消
           </button>
         )}
       </div>
-      {p.kintoneRecordId && <span className="badge badge--ok">kintone #{p.kintoneRecordId}</span>}
+      <div className="badges">
+        {p.priority === '至急' && <span className="badge badge--urgent">至急</span>}
+        {p.kintoneRecordId && <span className="badge badge--ok">kintone #{p.kintoneRecordId}</span>}
+        {p.archived && <span className="badge">アーカイブ済み</span>}
+      </div>
+      {!readonly && p.archived && (
+        <button className="btn" onClick={() => update({ archived: false })}>
+          ボードに戻す
+        </button>
+      )}
       <label className="field">
         <span>状態</span>
         <select
@@ -171,6 +191,14 @@ function CardEditor({
           data-field="status"
         >
           {REQUEST_STATUSES.map((s) => (
+            <option key={s}>{s}</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>優先度</span>
+        <select value={p.priority} disabled={readonly} onChange={(e) => update({ priority: e.target.value as Priority })} data-field="priority">
+          {PRIORITIES.map((s) => (
             <option key={s}>{s}</option>
           ))}
         </select>
@@ -191,6 +219,11 @@ function CardEditor({
           data-field="requestedAt"
         />
       </label>
+      <label className="field">
+        <span>希望納期</span>
+        <input type="date" value={p.dueDate} disabled={readonly} onChange={(e) => update({ dueDate: e.target.value })} data-field="dueDate" />
+      </label>
+      {field('担当検査員', 'assignee')}
       <label className="field">
         <span>備考・検査項目</span>
         <textarea
@@ -236,6 +269,61 @@ function CardEditor({
           })}
         </ul>
       )}
+
+      <div className="panel__head">
+        <h3>変更履歴</h3>
+        <button className="link" onClick={() => setShowHistory((v) => !v)} data-testid="toggle-history">
+          {showHistory ? '閉じる' : '表示'}
+        </button>
+      </div>
+      {showHistory && (
+        <ul className="history" data-testid="history">
+          {history === null && <li className="muted">読み込み中…</li>}
+          {history?.length === 0 && <li className="muted">履歴はまだありません</li>}
+          {history?.map((h, i) => (
+            <li key={i}>
+              <span className="history__when">{new Date(h.ts).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+              <b>{h.user}</b>
+              <span>{describe(h)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   )
+}
+
+const FIELD_LABEL: Record<string, string> = {
+  status: '状態',
+  title: '件名',
+  dept: '部門',
+  partNo: '品番',
+  lot: 'ロット',
+  qty: '数量',
+  requester: '依頼者',
+  requestedAt: '依頼日',
+  note: '備考',
+  assignee: '担当',
+  dueDate: '納期',
+  priority: '優先度',
+  archived: 'アーカイブ',
+  linkedShapeIds: '関連図面',
+  kintoneRecordId: 'kintone',
+  no: '受付番号',
+  x: '位置',
+  y: '位置',
+  w: '大きさ',
+  h: '大きさ',
+  rotation: '回転',
+  z: '重なり'
+}
+
+function describe(h: HistoryEntry): string {
+  if (h.action === 'create') return '作成'
+  if (h.action === 'delete') return '削除'
+  const parts = Object.entries(h.fields)
+    .filter(([k]) => !['x', 'y', 'w', 'h', 'z', 'rotation'].includes(k))
+    .map(([k, v]) => `${FIELD_LABEL[k] ?? k}: ${Array.isArray(v) ? `${v.length} 件` : typeof v === 'boolean' ? (v ? 'はい' : 'いいえ') : String(v ?? '')}`)
+  if (parts.length === 0) return '移動・サイズ変更'
+  return parts.join(' / ')
 }

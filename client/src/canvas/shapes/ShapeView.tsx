@@ -24,7 +24,7 @@ export interface ShapeViewProps {
 }
 
 const FONT = "'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif"
-const STATUS_BG: Record<string, string> = { 未受付: '#e5e7eb', 受付: '#dbeafe', 検査中: '#fef3c7', 完了: '#dcfce7' }
+const STATUS_BG: Record<string, string> = { 未受付: '#e5e7eb', 受付: '#dbeafe', 検査中: '#fef3c7', 保留: '#f3e8ff', 差戻し: '#fee2e2', 完了: '#dcfce7', 取消: '#e5e7eb' }
 
 /** 1 図形 = 1 Group。Group に shapeId 属性を付け、当たり判定から図形を逆引きする */
 export function ShapeView({ shape, draft, draggable, handlers }: ShapeViewProps): JSX.Element {
@@ -213,10 +213,28 @@ function CardView({ shape: s }: { shape: RequestCardShape }): JSX.Element {
   ]
     .filter(Boolean)
     .join('   ')
+  const urgent = s.priority === '至急'
+  const cancelled = s.status === '取消'
+  const head = s.no ? `${s.no}` : s.title
   return (
     <>
-      <Rect width={w} height={h} fill="#fffbe6" stroke="#f0c36d" strokeWidth={1} cornerRadius={6} shadowColor="rgba(0,0,0,.08)" shadowBlur={6} shadowOffsetY={2} />
-      <Text text={s.title} x={10} y={11} width={w - 80} fontSize={13} fontStyle="bold" fontFamily={FONT} fill="#1f2937" ellipsis wrap="none" />
+      <Rect
+        width={w}
+        height={h}
+        fill={cancelled ? '#f3f4f6' : '#fffbe6'}
+        stroke={urgent ? '#dc2626' : cancelled ? '#d1d5db' : '#f0c36d'}
+        strokeWidth={urgent ? 2 : 1}
+        cornerRadius={6}
+        shadowColor="rgba(0,0,0,.08)"
+        shadowBlur={6}
+        shadowOffsetY={2}
+        opacity={cancelled ? 0.7 : 1}
+      />
+      {urgent && <Rect x={0} y={0} width={6} height={h} fill="#dc2626" cornerRadius={[6, 0, 0, 6]} />}
+      <Text text={head} x={12} y={11} width={w - 80} fontSize={13} fontStyle="bold" fontFamily={FONT} fill="#1f2937" ellipsis wrap="none" />
+      {s.no && s.title && s.title !== '検査依頼' && (
+        <Text text={s.title} x={12} y={26} width={w - 80} fontSize={10} fontFamily={FONT} fill="#6b7280" ellipsis wrap="none" />
+      )}
       {badges && <Text text={badges} x={10} y={h - 38} width={w - 20} fontSize={10} fontFamily={FONT} fill="#166534" ellipsis wrap="none" />}
       <Rect x={w - 66} y={9} width={56} height={20} fill={badge} cornerRadius={10} />
       <Text text={status} x={w - 66} y={9} width={56} height={20} align="center" verticalAlign="middle" fontSize={11} fontFamily={FONT} fill="#1f2937" />

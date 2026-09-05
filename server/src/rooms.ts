@@ -7,7 +7,18 @@ import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { WebSocket } from 'ws'
-import { normalizeShape, toRequestRecord, type RequestRecord, type Shape } from '../../shared/shapes'
+import { appendFile } from 'node:fs/promises'
+import {
+  CARD_H,
+  CARD_W,
+  defaultsFor,
+  normalizeShape,
+  toRequestRecord,
+  type HistoryEntry,
+  type RequestCardShape,
+  type RequestRecord,
+  type Shape
+} from '../../shared/shapes'
 
 export interface RoomMeta {
   id: string
@@ -31,6 +42,14 @@ interface Conn {
   controlled: Set<number>
 }
 
+/** サーバー起点の変更の origin。誰の操作かを履歴に残すため名前を含める */
+interface ServerOrigin {
+  server: true
+  user: string
+}
+const isConn = (o: unknown): o is Conn => !!o && typeof o === 'object' && 'controlled' in (o as object)
+const isServerOrigin = (o: unknown): o is ServerOrigin => !!o && typeof o === 'object' && (o as ServerOrigin).server === true
+
 /**
  * 1 ボード = 1 Y.Doc。接続ごとに y-websocket 互換プロトコルで同期する。
  * 閲覧のみ(readonly)の接続からの更新は無視する(サーバー側で権限を強制)。
@@ -44,7 +63,9 @@ class Room {
 
   constructor(
     readonly id: string,
-    private readonly file: string
+    private readonly file: string,
+    private readonly logFile: string,
+    private readonly nextNumber: () => Promise<string>
   ) {
     this.awareness.setLocalState(null)
     this.doc.on('update', (update: Uint8Array, origin: unknown) => {
@@ -53,6 +74,41 @@ class Room {
       syncProtocol.writeUpdate(enc, update)
       this.broadcast(encoding.toUint8Array(enc), origin)
       this.schedulePersist()
+      if (origin !== 'load') void this.assignNumbers()
+    })
+    // 変更履歴: 誰が(接続ユーザー)いつ何を変えたかを追記型ログに残す
+    this.shapes.observeDeep((events, txn) => {
+      if (txn.origin === 'load') return
+      const user = isConn(txn.origin) ? txn.origin.user : isServerOrigin(txn.origin) ? txn.origin.user : 'server'
+      const entries: HistoryEntry[] = []
+      const ts = Date.now()
+      for (const ev of events) {
+        if (ev.target === this.shapes) {
+          ev.changes.keys.forEach((change, shapeId) => {
+            if (change.action === 'add') {
+              const m = this.shapes.get(shapeId)
+              const json = (m?.toJSON() ?? {}) as Record<string, unknown>
+              entries.push({ ts, user, shapeId, shapeType: json['type'] as Shape['type'], action: 'create', fields: json, no: json['no'] as string | undefined })
+            } else if (change.action === 'delete') {
+              const old = change.oldValue as Y.Map<unknown> | undefined
+              const json = (old && typeof old.toJSON === 'function' ? old.toJSON() : {}) as Record<string, unknown>
+              entries.push({ ts, user, shapeId, shapeType: json['type'] as Shape['type'], action: 'delete', fields: {}, no: json['no'] as string | undefined })
+            }
+          })
+        } else if (ev.target instanceof Y.Map && ev.target.parent === this.shapes) {
+          const m = ev.target as Y.Map<unknown>
+          const shapeId = [...this.shapes.entries()].find(([, v]) => v === m)?.[0]
+          if (!shapeId) continue
+          const fields: Record<string, unknown> = {}
+          ev.changes.keys.forEach((_c, key) => {
+            if (key === 'updatedAt' || key === 'by') return
+            fields[key] = m.get(key)
+          })
+          if (Object.keys(fields).length === 0) continue
+          entries.push({ ts, user, shapeId, shapeType: m.get('type') as Shape['type'], action: 'update', fields, no: m.get('no') as string | undefined })
+        }
+      }
+      if (entries.length) void this.appendLog(entries)
     })
     this.awareness.on(
       'update',
@@ -91,6 +147,64 @@ class Room {
       if (s) out.push(s)
     })
     return out
+  }
+
+  private numbering = false
+  /** 受付番号が空の依頼カードに採番する(作成経路を問わずサーバーが付ける) */
+  private async assignNumbers(): Promise<void> {
+    if (this.numbering) return
+    this.numbering = true
+    try {
+      const pending: string[] = []
+      this.shapes.forEach((m, id) => {
+        if (m.get('type') === 'request-card' && !m.get('no')) pending.push(id)
+      })
+      for (const id of pending) {
+        const no = await this.nextNumber()
+        const m = this.shapes.get(id)
+        if (m && !m.get('no')) this.doc.transact(() => m.set('no', no), { server: true, user: 'system' } satisfies ServerOrigin)
+      }
+    } finally {
+      this.numbering = false
+    }
+  }
+
+  private logQueue: Promise<void> = Promise.resolve()
+  private appendLog(entries: HistoryEntry[]): Promise<void> {
+    const text = entries.map((e) => JSON.stringify(e)).join('\n') + '\n'
+    this.logQueue = this.logQueue.then(() => appendFile(this.logFile, text)).catch((err) => console.error('[room] log failed', err))
+    return this.logQueue
+  }
+
+  async history(shapeId?: string, limit = 200): Promise<HistoryEntry[]> {
+    await this.logQueue
+    if (!existsSync(this.logFile)) return []
+    const lines = (await readFile(this.logFile, 'utf8')).split('\n').filter(Boolean)
+    const out: HistoryEntry[] = []
+    for (let i = lines.length - 1; i >= 0 && out.length < limit; i--) {
+      try {
+        const e = JSON.parse(lines[i]!) as HistoryEntry
+        if (!shapeId || e.shapeId === shapeId) out.push(e)
+      } catch {
+        /* 壊れた行は飛ばす */
+      }
+    }
+    return out
+  }
+
+  /** サーバー側で図形を作る(依頼フォームなど)。z は最前面 */
+  putShape(shape: Shape, user: string): void {
+    this.doc.transact(() => {
+      const m = new Y.Map<unknown>()
+      for (const [k, v] of Object.entries(shape)) m.set(k, v)
+      this.shapes.set(shape.id, m)
+    }, { server: true, user } satisfies ServerOrigin)
+  }
+
+  maxZ(): number {
+    let z = 0
+    this.shapes.forEach((m) => (z = Math.max(z, Number(m.get('z') ?? 0))))
+    return z
   }
 
   connect(ws: WebSocket, user: string, readonly: boolean): void {
@@ -185,11 +299,18 @@ class Room {
 /** ボード(ルーム)の生成・読込・永続化・kintone 書き戻しを担当 */
 export class RoomManager {
   private readonly live = new Map<string, Room>()
+  private counter: Record<string, number> = {}
+  private counterQueue: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly dir: string) {}
 
   async init(): Promise<void> {
     await mkdir(this.dir, { recursive: true })
+    try {
+      this.counter = JSON.parse(await readFile(this.counterPath(), 'utf8'))
+    } catch {
+      this.counter = {}
+    }
     if ((await this.list()).length === 0) {
       for (const name of DEFAULT_ROOMS) await this.create(name)
     }
@@ -224,7 +345,7 @@ export class RoomManager {
     const existing = this.live.get(id)
     if (existing) return existing
     if (!(await this.meta(id))) return null
-    const room = new Room(id, join(this.dir, `${id}.yjs`))
+    const room = new Room(id, join(this.dir, `${id}.yjs`), join(this.dir, `${id}.log.jsonl`), () => this.nextNumber())
     await room.load()
     this.live.set(id, room)
     console.log(`[room] open ${id}`)
@@ -243,7 +364,7 @@ export class RoomManager {
   }
 
   /** kintone レコード番号をカードに書き戻す(全接続者に同期される) */
-  async setKintoneIds(id: string, ids: Record<string, string>): Promise<void> {
+  async setKintoneIds(id: string, ids: Record<string, string>, user = 'kintone'): Promise<void> {
     const room = await this.get(id)
     if (!room) return
     room.doc.transact(() => {
@@ -252,7 +373,97 @@ export class RoomManager {
         if (!m || m.get('type') !== 'request-card') continue
         if (m.get('kintoneRecordId') !== recordId) m.set('kintoneRecordId', recordId)
       }
-    }, 'server')
+    }, { server: true, user } satisfies ServerOrigin)
+  }
+
+  private counterPath(): string {
+    return join(this.dir, 'counter.json')
+  }
+
+  /** 受付番号 QC-YYYY-NNNN を年ごとに連番で採番(直列化してファイルに書き込む) */
+  nextNumber(): Promise<string> {
+    const p = this.counterQueue.then(async () => {
+      const year = String(new Date().getFullYear())
+      const n = (this.counter[year] ?? 0) + 1
+      this.counter[year] = n
+      await writeFile(this.counterPath(), JSON.stringify(this.counter))
+      return `QC-${year}-${String(n).padStart(4, '0')}`
+    })
+    this.counterQueue = p.catch(() => undefined)
+    return p
+  }
+
+  async history(id: string, shapeId?: string): Promise<HistoryEntry[] | null> {
+    const room = await this.get(id)
+    return room ? room.history(shapeId) : null
+  }
+
+  /**
+   * 依頼フォームからの投入: カードを空いている場所に置き、添付画像を横に並べて紐付ける。
+   * 位置は「受付グリッド」(左上から 4 列)に順に置く。
+   */
+  async createRequest(
+    id: string,
+    user: string,
+    input: Partial<RequestCardShape>,
+    images: Array<{ src: string; name: string; w: number; h: number }>
+  ): Promise<RequestCardShape | null> {
+    const room = await this.get(id)
+    if (!room) return null
+    const cards = room.listShapes().filter((s) => s.type === 'request-card' && !(s as RequestCardShape).archived)
+    const index = cards.length
+    const col = index % 4
+    const row = Math.floor(index / 4)
+    const x = 40 + col * (CARD_W + 30)
+    const y = 40 + row * (CARD_H + 30)
+    let z = room.maxZ() + 1
+    const now = Date.now()
+    const linkedShapeIds: string[] = []
+    let ix = 40 + 4 * (CARD_W + 30) + 40
+    for (const img of images) {
+      const k = Math.min(1, 300 / Math.max(img.w, img.h, 1))
+      const shape: Shape = {
+        ...defaultsFor('image'),
+        id: `s_${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+        x: ix,
+        y,
+        w: Math.round(img.w * k),
+        h: Math.round(img.h * k),
+        z: z++,
+        by: user,
+        updatedAt: now,
+        src: img.src,
+        name: img.name
+      } as Shape
+      room.putShape(shape, user)
+      linkedShapeIds.push(shape.id)
+      ix += shape.w + 20
+    }
+    const card: RequestCardShape = {
+      ...defaultsFor('request-card'),
+      ...input,
+      type: 'request-card',
+      id: `s_${now.toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+      x,
+      y,
+      z: z++,
+      by: user,
+      updatedAt: now,
+      requester: input.requester || user,
+      requestedAt: input.requestedAt || new Date().toISOString().slice(0, 10),
+      linkedShapeIds,
+      no: '',
+      kintoneRecordId: '',
+      archived: false
+    } as RequestCardShape
+    room.putShape(card, user)
+    // 採番を待って番号付きで返す
+    for (let i = 0; i < 50; i++) {
+      const no = room.shapes.get(card.id)?.get('no') as string | undefined
+      if (no) return { ...card, no }
+      await new Promise((r) => setTimeout(r, 20))
+    }
+    return card
   }
 
   async closeAll(): Promise<void> {
