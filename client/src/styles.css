@@ -190,6 +190,7 @@ button { font: inherit; }
 .sheet__msg { padding: 4px 12px; font-size: 12px; background: var(--qc-green-soft); color: var(--qc-green); }
 .sheet__scroll { overflow: auto; min-height: 0; flex: 1; }
 .grid { border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 100%; }
+.grid th[data-th] { overflow: hidden; text-overflow: ellipsis; }
 .grid th { position: sticky; top: 0; background: var(--qc-panel-2); font-family: var(--font-ui); text-align: left; font-weight: 500; color: var(--qc-muted); padding: 5px 6px; border-bottom: 1px solid var(--qc-border); cursor: pointer; user-select: none; white-space: nowrap; }
 .grid th:hover { background: var(--qc-panel-2); }
 .grid__arrow { font-size: 9px; margin-left: 4px; }
@@ -312,3 +313,13 @@ button { font: inherit; }
 .mini td { padding: 4px 6px; border-bottom: 1px solid var(--qc-border); }
 .mini .num { text-align: right; white-space: nowrap; }
 .mini .bad { color: var(--qc-red); }
+
+/* ---- 一覧: 期間・列選択・列幅 ---- */
+.sheet__period { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--qc-muted); }
+.sheet__period input { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--qc-border); border-radius: 6px; background: #fff; }
+.cols { position: relative; }
+.cols__pop { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 20; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; min-width: 160px;
+  background: var(--qc-panel); border: 1px solid var(--qc-border); border-radius: 10px; box-shadow: var(--shadow); font-size: 12px; }
+.cols__pop label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.grid__resizer { position: absolute; top: 0; right: -3px; width: 7px; height: 100%; cursor: col-resize; }
+.grid__resizer:hover { background: var(--qc-accent-soft); }

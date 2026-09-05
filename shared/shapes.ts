@@ -332,3 +332,112 @@ export interface HistoryEntry {
   /** 受付番号(カードのとき) */
   no?: string
 }
+
+// ---- CSV 取り込み(紙・Excel からの移行用) ------------------------------
+/** RFC4180 風の CSV を行×列に分解する(BOM・引用符・改行入りセル対応) */
+export function parseCsv(text: string): string[][] {
+  const src = text.replace(/^﻿/, '')
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i]!
+    if (quoted) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          cell += '"'
+          i++
+        } else quoted = false
+      } else cell += ch
+    } else if (ch === '"') quoted = true
+    else if (ch === ',') {
+      row.push(cell)
+      cell = ''
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && src[i + 1] === '\n') i++
+      row.push(cell)
+      rows.push(row)
+      row = []
+      cell = ''
+    } else cell += ch
+  }
+  if (cell !== '' || row.length) {
+    row.push(cell)
+    rows.push(row)
+  }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''))
+}
+
+/** 取り込める列(見出し名 → 項目)。CSV 出力と同じ日本語見出しに加え、英語キーも受け付ける */
+const IMPORT_ALIASES: Record<string, keyof RequestRecord> = Object.fromEntries([
+  ...REQUEST_RECORD_COLUMNS.map((c) => [c.label, c.key] as const),
+  ...REQUEST_RECORD_COLUMNS.map((c) => [c.key, c.key] as const),
+  ['部門', 'dept'],
+  ['納期', 'dueDate'],
+  ['担当者', 'assignee'],
+  ['検査結果', 'result'],
+  ['メモ', 'note']
+])
+
+export interface ImportedRow {
+  no: string
+  fields: Partial<RequestCardShape>
+}
+
+/** CSV の行を依頼カードの項目に写す。先頭行は見出し。不明な列は無視 */
+export function csvToRequests(rows: string[][]): { rows: ImportedRow[]; unknownHeaders: string[] } {
+  if (rows.length === 0) return { rows: [], unknownHeaders: [] }
+  const header = rows[0]!.map((h) => h.trim())
+  const keys = header.map((h) => IMPORT_ALIASES[h])
+  const unknownHeaders = header.filter((h, i) => !keys[i] && h)
+  const out: ImportedRow[] = []
+  for (const r of rows.slice(1)) {
+    const fields: Partial<RequestCardShape> = {}
+    let no = ''
+    keys.forEach((k, i) => {
+      const v = (r[i] ?? '').trim()
+      if (!k || v === '') return
+      switch (k) {
+        case 'no':
+          no = v
+          break
+        case 'status':
+          if ((REQUEST_STATUSES as readonly string[]).includes(v)) fields.status = v as RequestStatus
+          break
+        case 'priority':
+          if ((PRIORITIES as readonly string[]).includes(v)) fields.priority = v as Priority
+          break
+        case 'result':
+          if ((RESULTS as readonly string[]).includes(v)) fields.result = v as InspectionResult
+          break
+        case 'requestedAt':
+        case 'dueDate':
+        case 'judgedAt':
+          fields[k] = normalizeDate(v)
+          break
+        case 'archived':
+          fields.archived = v === '1' || v.toLowerCase() === 'true'
+          break
+        case 'shapeId':
+        case 'boardName':
+        case 'kintoneRecordId':
+          break
+        default:
+          fields[k] = v
+      }
+    })
+    if (Object.keys(fields).length === 0 && !no) continue
+    out.push({ no, fields })
+  }
+  return { rows: out, unknownHeaders }
+}
+
+/** 2026/9/5, 2026-09-05, 9/5/2026 などを YYYY-MM-DD に寄せる。解釈できなければ空 */
+export function normalizeDate(v: string): string {
+  const m1 = v.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/)
+  if (m1) return `${m1[1]}-${m1[2]!.padStart(2, '0')}-${m1[3]!.padStart(2, '0')}`
+  const m2 = v.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/)
+  if (m2) return `${m2[3]}-${m2[1]!.padStart(2, '0')}-${m2[2]!.padStart(2, '0')}`
+  return ''
+}

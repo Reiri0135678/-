@@ -1,14 +1,19 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  CARD_H,
+  CARD_W,
   CLOSED_STATUSES,
   PRIORITIES,
   REQUEST_STATUSES,
   RESULTS,
   canTransition,
+  csvToRequests,
+  parseCsv,
   todayString,
   toCsv,
   toRequestRecord,
+  type ImportedRow,
   type Priority,
   type RequestCardShape,
   type RequestRecord,
@@ -48,6 +53,24 @@ const COLUMNS: Column[] = [
 ]
 
 const DAY = 86400_000
+const COLS_KEY = 'qc.sheet.cols'
+const WIDTHS_KEY = 'qc.sheet.widths'
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    return v ? (JSON.parse(v) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+function saveJson(key: string, v: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(v))
+  } catch {
+    /* ignore */
+  }
+}
 
 /** 納期の状態: 超過 / 2 日以内 / 余裕 / 納期なし・終了済み */
 export function dueState(rec: Pick<RequestRecord, 'dueDate' | 'status'>, today = todayString()): 'overdue' | 'soon' | 'ok' | 'none' {
@@ -79,6 +102,14 @@ export function RequestSheet({
   const [overdueOnly, setOverdueOnly] = useState(false)
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: 'no', dir: -1 })
   const [showArchived, setShowArchived] = useState(false)
+  const [from, setFrom] = useState('')
+  const [to, setTo] = useState('')
+  const [hidden, setHidden] = useState<Set<SortKey>>(() => new Set(loadJson<SortKey[]>(COLS_KEY, [])))
+  const [widths, setWidths] = useState<Partial<Record<SortKey, number>>>(() => loadJson(WIDTHS_KEY, {}))
+  const [colsOpen, setColsOpen] = useState(false)
+  const [importPreview, setImportPreview] = useState<{ rows: ImportedRow[]; unknown: string[]; create: number; update: number } | null>(null)
+  const [importMsg, setImportMsg] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [kstatus, setKstatus] = useState<KintoneStatus | null>(null)
   const [syncMsg, setSyncMsg] = useState('')
@@ -100,6 +131,8 @@ export function RequestSheet({
       .filter(({ rec }) => !statusFilter || rec.status === statusFilter)
       .filter(({ rec }) => !deptFilter || rec.dept === deptFilter)
       .filter(({ due }) => !overdueOnly || due === 'overdue')
+      .filter(({ rec }) => !from || (rec.requestedAt && rec.requestedAt >= from))
+      .filter(({ rec }) => !to || (rec.requestedAt && rec.requestedAt <= to))
       .filter(({ rec }) => !q || Object.values(rec).some((v) => String(v).toLowerCase().includes(q)))
     list.sort((a, b) => {
       const av = String(a.rec[sort.key] ?? '')
@@ -107,7 +140,7 @@ export function RequestSheet({
       return av.localeCompare(bv, 'ja') * sort.dir
     })
     return list
-  }, [cards, boardName, query, statusFilter, deptFilter, overdueOnly, sort, showArchived, today])
+  }, [cards, boardName, query, statusFilter, deptFilter, overdueOnly, from, to, sort, showArchived, today])
 
   // 表示から消えた行のチェックは外す
   useEffect(() => {
@@ -180,6 +213,78 @@ export function RequestSheet({
 
   const addCard = () => addCardAtCenter(editor)
 
+  // ---- 表示列と列幅 ----------------------------------------------------
+  const visible = COLUMNS.filter((c) => !hidden.has(c.key))
+  const toggleColumn = (key: SortKey) => {
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else if (next.size < COLUMNS.length - 1) next.add(key)
+      saveJson(COLS_KEY, [...next])
+      return next
+    })
+  }
+  const widthOf = (c: Column) => widths[c.key] ?? c.width
+  const startResize = (key: SortKey, e: React.PointerEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const col = COLUMNS.find((c) => c.key === key)!
+    const startX = e.clientX
+    const startW = widthOf(col)
+    const move = (ev: PointerEvent) => setWidths((w) => ({ ...w, [key]: Math.max(48, startW + ev.clientX - startX) }))
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      setWidths((w) => {
+        saveJson(WIDTHS_KEY, w)
+        return w
+      })
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // ---- CSV 取り込み ------------------------------------------------------
+  const onImportFile = async (file: File | undefined) => {
+    if (!file) return
+    setImportMsg('')
+    const text = await file.text()
+    const { rows: parsed, unknownHeaders } = csvToRequests(parseCsv(text))
+    const byNo = new Map(cards.map((c) => [c.no, c]))
+    const update = parsed.filter((r) => r.no && byNo.has(r.no)).length
+    setImportPreview({ rows: parsed, unknown: unknownHeaders, create: parsed.length - update, update })
+    if (fileRef.current) fileRef.current.value = ''
+  }
+  const applyImport = () => {
+    if (!importPreview) return
+    const byNo = new Map(cards.map((c) => [c.no, c]))
+    const updates: Array<{ id: string; patch: Partial<RequestCardShape> }> = []
+    let created = 0
+    let index = cards.filter((c) => !c.archived).length
+    for (const r of importPreview.rows) {
+      const existing = r.no ? byNo.get(r.no) : undefined
+      if (existing) {
+        updates.push({ id: existing.id, patch: r.fields })
+        continue
+      }
+      const col = index % 4
+      const row = Math.floor(index / 4)
+      index++
+      editor.createShape<RequestCardShape>({
+        type: 'request-card',
+        x: 40 + col * (CARD_W + 30),
+        y: 40 + row * (CARD_H + 30),
+        requester: editor.userName,
+        requestedAt: todayString(),
+        ...r.fields
+      })
+      created++
+    }
+    if (updates.length) editor.updateShapes(updates)
+    setImportMsg(`CSV 取り込み: 新規 ${created} 件 / 更新 ${updates.length} 件`)
+    setImportPreview(null)
+  }
+
   const active = cards.filter((c) => !c.archived)
   const counts = REQUEST_STATUSES.map((st) => [st, active.filter((c) => c.status === st).length] as const).filter(([, n]) => n > 0)
   const overdue = active.filter((c) => dueState(c, today) === 'overdue').length
@@ -225,6 +330,11 @@ export function RequestSheet({
                 <option key={d}>{d}</option>
               ))}
             </select>
+            <span className="sheet__period" title="依頼日の範囲">
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} data-testid="sheet-from" />
+              〜
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} data-testid="sheet-to" />
+            </span>
             <label className="sheet__check">
               <input type="checkbox" checked={overdueOnly} onChange={(e) => setOverdueOnly(e.target.checked)} data-testid="sheet-overdue" />
               納期超過のみ
@@ -246,9 +356,45 @@ export function RequestSheet({
             + 依頼
           </button>
         )}
+        {view === 'list' && (
+          <span className="cols">
+            <button className="btn" onClick={() => setColsOpen((v) => !v)} data-testid="sheet-cols">
+              列
+            </button>
+            {colsOpen && (
+              <div className="cols__pop" data-testid="cols-pop">
+                {COLUMNS.map((c) => (
+                  <label key={c.key}>
+                    <input type="checkbox" checked={!hidden.has(c.key)} onChange={() => toggleColumn(c.key)} data-col-toggle={c.key} />
+                    {c.label}
+                  </label>
+                ))}
+                <button
+                  className="link"
+                  onClick={() => {
+                    setHidden(new Set())
+                    setWidths({})
+                    saveJson(COLS_KEY, [])
+                    saveJson(WIDTHS_KEY, {})
+                  }}
+                >
+                  初期状態に戻す
+                </button>
+              </div>
+            )}
+          </span>
+        )}
         <button className="btn" onClick={exportCsv} disabled={rows.length === 0} data-testid="sheet-csv">
           CSV
         </button>
+        {!readonly && (
+          <>
+            <button className="btn" onClick={() => fileRef.current?.click()} title="CSV を取り込む(見出しは CSV 出力と同じ。受付番号があれば更新)" data-testid="sheet-import">
+              取込
+            </button>
+            <input ref={fileRef} type="file" accept=".csv,text/csv" hidden onChange={(e) => void onImportFile(e.target.files?.[0])} data-testid="import-file" />
+          </>
+        )}
         {!readonly && (
           <button
             className="btn"
@@ -264,6 +410,27 @@ export function RequestSheet({
       {syncMsg && (
         <div className="sheet__msg" data-testid="sync-msg">
           {syncMsg}
+        </div>
+      )}
+      {importMsg && (
+        <div className="sheet__msg" data-testid="import-msg">
+          {importMsg}
+        </div>
+      )}
+      {importPreview && (
+        <div className="sheet__bulk" data-testid="import-preview">
+          <strong>CSV 取り込みの確認</strong>
+          <span>
+            新規 {importPreview.create} 件 / 更新 {importPreview.update} 件(受付番号が一致)
+            {importPreview.unknown.length > 0 && ` / 無視する列: ${importPreview.unknown.join(', ')}`}
+          </span>
+          <span className="sheet__spacer" />
+          <button className="btn btn--primary" onClick={applyImport} disabled={importPreview.rows.length === 0} data-testid="import-apply">
+            取り込む
+          </button>
+          <button className="link" onClick={() => setImportPreview(null)}>
+            やめる
+          </button>
         </div>
       )}
 
@@ -321,11 +488,16 @@ export function RequestSheet({
         <Summary cards={active} today={today} />
       ) : (
         <div className="sheet__scroll">
-          <table className="grid" ref={tableRef} onKeyDown={onGridKeyDown}>
+          <table
+            className="grid"
+            ref={tableRef}
+            onKeyDown={onGridKeyDown}
+            style={{ width: visible.reduce((w, c) => w + widthOf(c), readonly ? 0 : 32) }}
+          >
             <colgroup>
               {!readonly && <col style={{ width: 32 }} />}
-              {COLUMNS.map((c) => (
-                <col key={c.key} style={{ width: c.width }} />
+              {visible.map((c) => (
+                <col key={c.key} style={{ width: widthOf(c) }} />
               ))}
             </colgroup>
             <thead>
@@ -341,10 +513,11 @@ export function RequestSheet({
                     />
                   </th>
                 )}
-                {COLUMNS.map((c) => (
-                  <th key={c.key} onClick={() => toggleSort(c.key)} data-sorted={sort.key === c.key ? sort.dir : undefined}>
+                {visible.map((c) => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)} data-sorted={sort.key === c.key ? sort.dir : undefined} data-th={c.key}>
                     {c.label}
                     {sort.key === c.key && <span className="grid__arrow">{sort.dir === 1 ? '▲' : '▼'}</span>}
+                    <span className="grid__resizer" onPointerDown={(e) => startResize(c.key, e)} onClick={(e) => e.stopPropagation()} data-resizer={c.key} />
                   </th>
                 ))}
               </tr>
@@ -352,7 +525,7 @@ export function RequestSheet({
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={COLUMNS.length + 1} className="muted">
+                  <td colSpan={visible.length + 1} className="muted">
                     {cards.length === 0 ? '依頼はまだありません' : '条件に合う依頼がありません'}
                   </td>
                 </tr>
@@ -387,7 +560,7 @@ export function RequestSheet({
                       />
                     </td>
                   )}
-                  {COLUMNS.map((c) => (
+                  {visible.map((c) => (
                     <td key={c.key} data-col={c.key} data-priority={c.key === 'priority' ? rec.priority : undefined} data-due={c.key === 'dueDate' ? due : undefined}>
                       <Cell
                         column={c}

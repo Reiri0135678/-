@@ -206,6 +206,30 @@ try {
     await a.mouse.up()
     const h1 = await a.evaluate(() => document.querySelector('.app__drawer').getBoundingClientRect().height)
     ok(`ドロワーの高さをドラッグで変更 (${h0} → ${h1})`, h1 > h0 + 80)
+
+    // 期間指定(依頼日)
+    const todayStr = new Date().toISOString().slice(0, 10)
+    await a.fill('[data-testid="sheet-from"]', todayStr)
+    ok('依頼日の期間で絞り込み(今日以降 = + 依頼で作った 1 件)', (await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === 1 ? 1 : null))) === 1)
+    await a.fill('[data-testid="sheet-from"]', '')
+    await waitFor(async () => ((await a.locator('[data-testid="sheet-row"]').count()) === 2 ? 1 : null))
+
+    // 表示列の選択と列幅
+    const thBefore = await a.locator('.grid thead th[data-th]').count()
+    await a.click('[data-testid="sheet-cols"]')
+    await a.click('[data-col-toggle="note"]')
+    ok('列の非表示', (await a.locator('.grid thead th[data-th]').count()) === thBefore - 1 && (await a.locator('.grid thead th[data-th="note"]').count()) === 0)
+    await a.click('[data-col-toggle="note"]')
+    await a.click('[data-testid="sheet-cols"]')
+    const wBefore = await a.evaluate(() => document.querySelector('.grid thead th[data-th="partNo"]').getBoundingClientRect().width)
+    const rz = await a.locator('[data-resizer="partNo"]').boundingBox()
+    await a.mouse.move(rz.x + 3, rz.y + 8)
+    await a.mouse.down()
+    await a.mouse.move(rz.x + 83, rz.y + 8, { steps: 4 })
+    await a.mouse.up()
+    const wAfter = await a.evaluate(() => document.querySelector('.grid thead th[data-th="partNo"]').getBoundingClientRect().width)
+    ok(`列幅をドラッグで変更 (${Math.round(wBefore)} → ${Math.round(wAfter)})`, wAfter > wBefore + 50)
+    ok('列幅は localStorage に保存される', await a.evaluate(() => JSON.parse(localStorage.getItem('qc.sheet.widths') || '{}').partNo > 150))
   }
 
   // CSV: ダウンロードイベントが発生し内容に見出しが含まれる
@@ -256,6 +280,22 @@ try {
     return /更新 2 件/.test(t) ? t : null
   })
   ok(`2 回目は更新: ${msg2}`, true)
+
+  // CSV 取り込み(受付番号が一致すれば更新、無ければ新規)
+  {
+    const { writeFileSync: wf } = await import('node:fs')
+    const csvPath = join(dataDir, 'import.csv')
+    wf(csvPath, '\ufeff受付番号,品番,ロット,数量,依頼部門,状態,優先度,希望納期,備考\r\n' +
+      ',IMP-001,LI1,7,組立課,受付,至急,2026/9/30,"CSV から, 取込"\r\n' +
+      `${no1},,,,,,,,備考をCSVで更新\r\n`)
+    await a.setInputFiles('[data-testid="import-file"]', csvPath)
+    await a.waitForSelector('[data-testid="import-preview"]')
+    const prev = await a.locator('[data-testid="import-preview"]').textContent()
+    ok(`取り込み前の確認 (${prev.replace(/\s+/g, ' ').trim().slice(0, 40)}…)`, /新規 1 件/.test(prev) && /更新 1 件/.test(prev))
+    await a.click('[data-testid="import-apply"]')
+    ok('CSV の新規行がカードになり採番される(日付も正規化)', await waitFor(() => b.evaluate(() => { const c = window.__qcEditor.getShapes().find((s) => s.type === 'request-card' && s.partNo === 'IMP-001'); return c && /^QC-/.test(c.no) && c.priority === '至急' && c.dueDate === '2026-09-30' && c.note === 'CSV から, 取込' && c.dept === '組立課' })))
+    ok('受付番号が一致する行は既存カードを更新', await waitFor(() => b.evaluate((no) => window.__qcEditor.getShapes().some((s) => s.type === 'request-card' && s.no === no && s.note === '備考をCSVで更新'), no1)))
+  }
 
   // 相手の存在
   ok('A に相手が見える', (await waitFor(() => a.evaluate(() => window.__qcEditor.getCollaborators().length))) === 1)
