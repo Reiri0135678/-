@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="assets/guide.css">
 <script src="assets/guide.js"></script>
 <style>
-  :root { --tierD: #7c3aed; --tierE: #db2777; }
+  :root { --tierD: #7c3aed; --tierE: #db2777; --tierM: #0891b2; --tierX: #7c3aed; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
   header { position: sticky; top: 0; background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 20px; z-index: 10; }
@@ -29,6 +29,8 @@
   section[data-tier="C"] h2 { border-color: var(--tierC); }
   section[data-tier="D"] h2 { border-color: var(--tierD); }
   section[data-tier="E"] h2 { border-color: var(--tierE); }
+  section[data-tier="M"] h2 { border-color: var(--tierM); }
+  section[data-tier="X"] h2 { border-color: var(--tierX); }
   .item { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: grid; grid-template-columns: 56px 1fr; gap: 4px 12px; }
   .item.hidden { display: none; }
   .num { font-weight: 700; color: var(--muted); font-size: 14px; grid-row: 1 / span 3; padding-top: 2px; }
@@ -41,7 +43,7 @@
   .kit { margin-left: 10px; font-size: 11.5px; color: #6d28d9; } .kit a { color: inherit; }
   .done-cb { margin-left: 10px; font-size: 12px; color: var(--muted); cursor: pointer; user-select: none; } .item.done { opacity: .6; } .item.done .name::after { content: ' ✓'; color: var(--tierA); }
   .demo-link { margin-left: 8px; font-size: 12px; text-decoration: none; color: var(--accent); font-weight: 600; }
-  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); } .tag-D { background: var(--tierD); } .tag-E { background: var(--tierE); }
+  .tag-A { background: var(--tierA); } .tag-B { background: var(--tierB); } .tag-C { background: var(--tierC); } .tag-D { background: var(--tierD); } .tag-E { background: var(--tierE); } .tag-M { background: var(--tierM); } .tag-X { background: var(--tierX); }
   footer { color: var(--muted); font-size: 12px; text-align: center; padding: 30px 0; }
   @media (max-width: 600px) { .item { grid-template-columns: 40px 1fr; } }
   @media print {
@@ -58,7 +60,7 @@
 <body>
 <header class="top">
   <h1>UI操作カタログ（分類リスト）</h1>
-  <nav style="margin-bottom:8px;font-size:13px"><a href="00-index.html">⌂ 入口</a> ・ <a href="08-foundations.html">基礎知識</a> ・ <a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a> / <a href="06-effects.html">E</a> ・ <a href="09-exercises.html">練習課題</a> ・ <a href="10-accessibility.html">アクセシビリティ</a> ・ <a href="11-quiz.html">クイズ</a> ・ <a href="12-electron.html">Electron</a> / <a href="13-kintone.html">kintone</a></nav>
+  <nav style="margin-bottom:8px;font-size:13px"><a href="00-index.html">⌂ 入口</a> ・ <a href="08-foundations.html">基礎知識</a> ・ <a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a> / <a href="06-effects.html">E</a> ・ <a href="17-modern.html">最新機能</a> / <a href="18-crossplatform.html">環境差</a> ・ <a href="09-exercises.html">練習課題</a> ・ <a href="10-accessibility.html">アクセシビリティ</a> ・ <a href="11-quiz.html">クイズ</a> ・ <a href="12-electron.html">Electron</a> / <a href="13-kintone.html">kintone</a></nav>
   <div class="controls">
     <input id="q" type="search" placeholder="検索：番号 / 名称 / 英語名 / API / 部品名（例: 43, pan, fade, virtual-list）">
     <span class="chip active" data-tier="all">すべて</span>
@@ -67,6 +69,8 @@
     <span class="chip" data-tier="C">C: プロ志向</span>
     <span class="chip" data-tier="D">D: 業務アプリ設計</span>
     <span class="chip" data-tier="E">E: 演出・体感</span>
+    <span class="chip" data-tier="M">M: 最新機能</span>
+    <span class="chip" data-tier="X">X: 環境差</span>
     <label class="chip" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" id="only-todo"> 未習得のみ</label>
     <span class="count" id="count"></span>
     <span class="count" id="progress" title="「理解した」にチェックした数。この端末のブラウザに保存される"></span>
@@ -76,7 +80,7 @@
 
 <main>
   <div class="intro">
-    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a> / <a href="06-effects.html">E</a>）へ飛べる。
+    <strong>この資料の位置づけ</strong>：UI操作の「名称」と「動作」を対応づけるための索引。各項目の「▶ デモ」から、第2弾の動くデモ（<a href="02-basic.html">A</a> / <a href="03-custom.html">B</a> / <a href="04-pro.html">C</a> / <a href="05-advanced.html">D</a> / <a href="06-effects.html">E</a> / <a href="17-modern.html">M</a> / <a href="18-crossplatform.html">X</a>）へ飛べる。
     <table>
       <tr><th style="width:120px">層</th><th>意味</th><th>実装の主な手段</th></tr>
       <tr><td><span class="tag tag-A">A</span> 一般</td><td>ほぼ全てのアプリで使う基本操作・演出。ブラウザ標準で大半が賄える</td><td>CSS / 標準DOM API</td></tr>
@@ -84,6 +88,8 @@
       <tr><td><span class="tag tag-C">C</span> プロ志向</td><td>エディタ・キャンバス・グリッド等、ツール系アプリに必要な高度操作</td><td>座標変換 / 状態機械 / Canvas / Electron連携</td></tr>
       <tr><td><span class="tag tag-D">D</span> 業務アプリ設計</td><td>A〜Cの部品を組み合わせた設計パターン（第3弾・第4弾）。番号は提案リストの通り</td><td>状態オブジェクト集約 / localStorage / BroadcastChannel / History API</td></tr>
       <tr><td><span class="tag tag-E">E</span> 演出・体感</td><td>見た目の気持ちよさを作る上位効果（第4弾）。短く・控えめに・止められるように</td><td>View Transitions / WAAPI / animation-timeline / backdrop-filter</td></tr>
+      <tr><td><span class="tag tag-M">M</span> 最新機能</td><td>A〜Cで自前実装した処理が標準になったもの（第5弾）。非対応環境では前半の実装がそのままフォールバックになる</td><td>:has() / popover / アンカー位置指定 / interpolate-size / moveBefore</td></tr>
+      <tr><td><span class="tag tag-X">X</span> 環境差</td><td>デスクトップ・タブレット・スマホ・Electron・kintoneモバイルでの違いと吸収の仕方（第5弾）。多くは実測値を表示する</td><td>pointer / dvh / safe-area / IME / CloseWatcher / @supports</td></tr>
     </table>
   </div>
   <div id="list"></div>
@@ -103,7 +109,7 @@ const saveProgress = () => { try { localStorage.setItem(PKEY, JSON.stringify([..
 function render() {
   listEl.innerHTML = '';
   let n = 0;
-  for (const t of ['A','B','C','D','E']) {
+  for (const t of ['A','B','C','D','E','M','X']) {
     const sec = document.createElement('section');
     sec.dataset.tier = t;
     sec.innerHTML = `<h2>${TIER_NAME[t]}</h2>`;

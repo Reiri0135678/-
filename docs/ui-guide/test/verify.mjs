@@ -103,6 +103,53 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   await p.evaluate(() => localStorage.removeItem('ui-guide.curriculum'));
   await p.close(); }
 
+{ // M層（最新機能）と X層（環境差）
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(url('17-modern.html')); await p.waitForTimeout(600);
+  ok('17 M層: 対応バッジが全項目で判定される', (await p.$$eval('.sup', s => s.filter(x => x.textContent).length)) === 15, errs.join(' | '));
+  await p.click('#s88-btn'); await p.waitForTimeout(400);
+  ok('88 @starting-style: display が block になる', (await p.$eval('#s88-panel', e => getComputedStyle(e).display)) === 'block');
+  await p.click('[popovertarget=s89-menu]'); await p.waitForTimeout(200);
+  ok('89 popover: 開く', await p.$eval('#s89-menu', e => e.matches(':popover-open')));
+  await p.keyboard.press('Escape'); await p.waitForTimeout(200);
+  ok('89 popover: Esc で閉じる（自前実装なし）', !(await p.$eval('#s89-menu', e => e.matches(':popover-open'))));
+  await p.click('.s92:nth-of-type(2) summary'); await p.waitForTimeout(300);
+  ok('92 details name: 排他になる', (await p.$$eval('.s92[open]', d => d.length)) === 1);
+  await p.fill('#s97-q', '梱包'); await p.waitForTimeout(300);
+  ok('97 Custom Highlight: DOM を変えずに一致を数える', (await p.textContent('#s97-out')).includes('子要素数: 0'));
+  await p.click('#s99-run'); await p.waitForTimeout(1200);
+  ok('99 標準API: groupBy と toSorted が動く', (await p.textContent('#s99-log')).includes('groupBy') && (await p.textContent('#s99-log')).includes('toSorted'));
+  ok('17 M層: JSエラーなし', errs.length === 0, errs.join(' | '));
+  await p.close(); }
+{ const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(url('18-crossplatform.html')); await p.waitForTimeout(600);
+  ok('102 実測パネル: 端末情報が並ぶ', (await p.$$eval('#s102-t tr', r => r.length)) >= 10);
+  ok('105 ビューポート単位: dvh を実測できる', (await p.textContent('#s105-out')).includes('100dvh='));
+  ok('113 機能検出: 全機能を判定する', (await p.$$eval('#s113-t tr', r => r.length)) >= 17);
+  await p.click('#s108-open'); await p.waitForTimeout(200); await p.keyboard.press('Escape'); await p.waitForTimeout(300);
+  ok('108 CloseWatcher: Esc で閉じる', await p.$eval('#s108-panel', e => e.hidden));
+  ok('18 X層: JSエラーなし', errs.length === 0, errs.join(' | '));
+  await p.close(); }
+{ // 日本語入力（IME）対策が既存デモに入っているか
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('05-advanced.html')); await p.waitForTimeout(400);
+  const before = await p.textContent('#s74-out');
+  await p.$eval('#s74-q', el => { el.value = 'ぶ'; el.dispatchEvent(new InputEvent('input', { isComposing: true, bubbles: true })); });
+  await p.waitForTimeout(400);
+  ok('74 検索: 変換中は検索が走らない', (await p.textContent('#s74-out')) === before);
+  await p.$eval('#s74-q', el => { el.value = '部品12'; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); });
+  await p.waitForTimeout(500);
+  ok('74 検索: 変換確定で1回だけ走る', (await p.textContent('#s74-out')) !== before);
+  await p.goto(url('03-custom.html')); await p.waitForTimeout(400);
+  await p.dblclick('.s38 td');
+  await p.$eval('.s38 td input', el => { el.value = 'けんさ'; el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })); });
+  ok('38 インライン編集: 変換確定の Enter では確定しない', await p.$eval('.s38 td', td => !!td.querySelector('input')));
+  await p.$eval('.s38 td input', el => el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })));
+  ok('38 インライン編集: 通常の Enter で確定し、再編集が始まらない', await p.$eval('.s38 td', td => !td.querySelector('input') && td.textContent === 'けんさ'));
+  await p.close(); }
+
 { // 単一ファイル版：1枚だけで資料が動くか（ナビ・デモ・ページ間リンク・プレイグラウンド）
   const p = await browser.newPage({ viewport: { width: 1300, height: 900 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message));

@@ -18,7 +18,7 @@ function extractStage(html) {
   return '';
 }
 const pages = fs.readdirSync(dir).filter(f => /^\d\d-.*\.html$/.test(f)).sort();
-const demos = [], index = [];
+const demos = [], index = [], skipped = [];
 for (const f of pages) {
   const html = fs.readFileSync(path.join(dir, f), 'utf8');
   const title = strip((html.match(/<title>(.*?)<\/title>/) || [, f])[1]);
@@ -33,6 +33,7 @@ for (const f of pages) {
     const js = jsAll.filter(x => !x[1]).map(x => x[2]).join('\n');
     const stage = extractStage(body);
     index.push({ page: f, pageTitle: title, id, title: h2, text: (what + ' ' + how).slice(0, 400) });
+    if (js && !stage) skipped.push(`${f}#${id}`);   // スクリプトはあるのに stage を取り出せない＝マークアップが閉じていない
     if (stage && js) demos.push({ page: f, pageTitle: title, id, title: h2, what, how, html: dedent(stage), css: dedent(css), js: dedent(js) });
   }
   // デモ以外の見出し（リファレンス・課題・基礎の表）も索引に
@@ -71,5 +72,6 @@ const html = globalThis.UIGuideBundler.buildStandalone(files, { date: new Date(n
 fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
 fs.writeFileSync(path.join(dir, 'dist', 'ui-guide-standalone.html'), html);
 
+if (skipped.length) { console.error('警告: デモを抽出できませんでした（div が閉じていない可能性）: ' + skipped.join(', ')); process.exitCode = 1; }
 console.log(`demo-data.js: ${demos.length} demos / search-index.js: ${index.length} entries`);
 console.log(`manifest.js: ${manifest.length} files / dist/ui-guide-standalone.html: ${(html.length / 1024 / 1024).toFixed(2)} MB`);

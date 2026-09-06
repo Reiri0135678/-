@@ -94,8 +94,39 @@ window.ITEMS = [
   { tier:'E', no:68, ja:'スクロール駆動アニメーション（CSS）', en:'animation-timeline', desc:'JS 無しでスクロール量をアニメーション進捗にする。scroll() は位置、view() は可視割合に連動。', api:'<code>animation-timeline: scroll() / view()</code>, <code>animation-range</code>' },
   { tier:'E', no:69, ja:'ぼかし / グラスモーフィズム', en:'backdrop-filter and performance', desc:'半透明パネルの背後をぼかす。毎フレーム再計算されるため弱い端末では重い。フレーム時間を計測して採否を決める。', api:'<code>backdrop-filter: blur()</code>, rAF 計測' },
   { tier:'E', no:70, ja:'ダークモード切替のクロスフェード', en:'Theme transition', desc:'テーマ切替を View Transitions でつなぎ、クリック位置から円形に広がる演出にする。', api:'<code>data-theme</code> + CSS 変数, <code>::view-transition-new</code> + <code>clip-path</code>' },
+
+  // ===== M: 最近できるようになったこと（第5弾） =====
+  { tier:'M', no:87, ja:'親を選ぶ', en:':has()', desc:'「◯◯を含む要素」を CSS で選べる。選択行・入力の有無・エラーの有無を、JS のクラス付け外しなしで表現できる。', api:'<code>tr:has(input:checked)</code>' },
+  { tier:'M', no:88, ja:'出入りのアニメーション', en:'@starting-style / allow-discrete', desc:'display:none からの出現と消失を CSS だけでアニメーションできる。12 の「消しても要素が残る」問題が解ける。', api:'<code>@starting-style</code>, <code>transition-behavior: allow-discrete</code>' },
+  { tier:'M', no:89, ja:'ポップオーバー', en:'popover 属性', desc:'外側クリックで閉じる・Esc で閉じる・最前面に出す、が属性だけで手に入る。20・17 の自前実装が不要になり、親の transform にも埋もれない。', api:'<code>popover</code>, <code>popovertarget</code>, <code>:popover-open</code>' },
+  { tier:'M', no:90, ja:'アンカー位置指定', en:'Anchor positioning', desc:'基準要素に名前を付け、どちら側に出すかを CSS で宣言する。画面端での反転も指定でき、17 の位置計算 JS が消える。', api:'<code>anchor-name</code>, <code>position-anchor</code>, <code>position-area</code>, <code>position-try-fallbacks</code>' },
+  { tier:'M', no:91, ja:'height: auto へのアニメーション', en:'interpolate-size / calc-size()', desc:'長年できなかった auto への遷移が可能に。18 の grid 0fr→1fr 回避策も scrollHeight 計測も不要。', api:'<code>interpolate-size: allow-keywords</code>, <code>calc-size()</code>' },
+  { tier:'M', no:92, ja:'排他アコーディオン', en:'details name / ::details-content', desc:'同じ name の details は1つだけ開く。中身を疑似要素で直接スタイルでき、開閉アニメも CSS で完結する。', api:'<code>&lt;details name&gt;</code>, <code>::details-content</code>' },
+  { tier:'M', no:93, ja:'入力欄の自動伸長', en:'field-sizing: content', desc:'内容に合わせて入力欄・テキストエリアが伸びる。scrollHeight を読んで高さを書く処理（レイアウトスラッシングの温床）が不要。', api:'<code>field-sizing: content</code>' },
+  { tier:'M', no:94, ja:'画面外の描画を省く', en:'content-visibility: auto', desc:'DOM は置いたまま、画面外の描画とレイアウトだけ省く。数百〜数千行なら 23 の仮想スクロールを書かずに済むことが多い。', api:'<code>content-visibility</code>, <code>contain-intrinsic-size</code>' },
+  { tier:'M', no:95, ja:'テーマと色の計算', en:'light-dark() / color-mix() / oklch()', desc:'ライトとダークを1行で書き、基準色1つからホバー・無効・枠線の色を計算で作る。配色定義が大幅に減る。', api:'<code>light-dark()</code>, <code>color-mix(in oklch, …)</code>' },
+  { tier:'M', no:96, ja:'状態を保ったまま移動する', en:'Element.moveBefore()', desc:'DOM を移動しても iframe の再読み込み・フォーカス・再生状態が失われない。32 の並べ替えで埋め込みや入力途中の行を動かせる。', api:'<code>parent.moveBefore(node, ref)</code>' },
+  { tier:'M', no:97, ja:'DOM を変えずに強調する', en:'CSS Custom Highlight API', desc:'文字範囲に名前を付けて色を塗る。74 の <mark> 差し替えと違い DOM が変わらないので、選択やイベントが壊れない。', api:'<code>CSS.highlights.set()</code>, <code>Highlight</code>, <code>::highlight()</code>' },
+  { tier:'M', no:98, ja:'長い処理で UI を止めない', en:'scheduler.yield()', desc:'重い処理の途中でブラウザに順番を譲り、優先的に再開する。setTimeout(0) より待ち行列が短い。CSV 変換や一括計算に。', api:'<code>await scheduler.yield()</code>, <code>long-animation-frame</code>' },
+  { tier:'M', no:99, ja:'業務で効く標準API', en:'groupBy / toSorted / withResolvers / Intl', desc:'集計・非破壊の並べ替え・外から解決できる Promise・中断条件の合成・通貨や相対時刻や語区切りの書式。自前ユーティリティが減る。', api:'<code>Object.groupBy</code>, <code>toSorted</code>, <code>Promise.withResolvers</code>, <code>AbortSignal.any</code>, <code>Intl.Segmenter</code>' },
+  { tier:'M', no:100, ja:'カルーセルの操作部品', en:'::scroll-button() / ::scroll-marker', desc:'前後ボタンと現在位置ドットをスクロール領域から疑似要素で生やす。端で自動的に無効になり、キーボード操作も付く。', api:'<code>::scroll-button()</code>, <code>::scroll-marker</code>, <code>:target-current</code>' },
+  { tier:'M', no:101, ja:'並び順を CSS から使う', en:'sibling-index() / sibling-count()', desc:'何番目かを CSS が自分で知る。64 のスタガーで HTML に番号を書いたり JS で付けたりが要らなくなる。', api:'<code>calc(sibling-index() * 60ms)</code>' },
+
+  // ===== X: クロスプラットフォーム（第5弾） =====
+  { tier:'X', no:102, ja:'この端末は何か', en:'Environment probe', desc:'ポインタ精度・ホバー可否・dpr・OS・言語・各種設定を実測して一覧する。以降の判断（当たり判定、使える API）がここで決まる。', api:'<code>matchMedia</code>, <code>navigator.userAgentData</code>' },
+  { tier:'X', no:103, ja:'入力装置と当たり判定', en:'pointer / any-pointer / 44px', desc:'指では 1px を狙えない。見た目を変えずに判定だけ広げ、タッチ端末では 44px 以上にする。両方繋がる端末も前提にする。', api:'<code>@media (pointer: coarse)</code>, <code>::before { inset: -10px }</code>' },
+  { tier:'X', no:104, ja:'修飾キーの差', en:'Ctrl / ⌘ / Alt / Option', desc:'判定は ctrlKey と metaKey の両方。画面の表記も OS で変える。Mac に「Ctrl+S」と出すと迷わせる。', api:'<code>e.ctrlKey || e.metaKey</code>, <code>navigator.userAgentData.platform</code>' },
+  { tier:'X', no:105, ja:'画面の高さ', en:'vh / svh / lvh / dvh', desc:'スマートフォンのアドレスバー伸縮で 100vh は画面をはみ出す。全画面パネルやモーダルは dvh か svh を使う。', api:'<code>100dvh</code>, <code>100svh</code>, <code>100lvh</code>' },
+  { tier:'X', no:106, ja:'セーフエリア', en:'env(safe-area-inset-*)', desc:'ノッチ・ホームバー・丸い角に隠れない余白。固定ヘッダー、固定フッター、全画面モーダルの3か所で必要。', api:'<code>viewport-fit=cover</code>, <code>env(safe-area-inset-bottom, 0px)</code>' },
+  { tier:'X', no:107, ja:'日本語入力（IME）', en:'compositionstart / isComposing', desc:'変換確定前にも input と keydown が飛ぶ。無対策だと検索が無駄に走り、変換確定の Enter が「決定」と誤認される。日本語の業務アプリで最も実害が出る項目。', api:'<code>e.isComposing</code>, <code>compositionend</code>' },
+  { tier:'X', no:108, ja:'「戻る」で閉じる', en:'CloseWatcher', desc:'Esc・Android の戻るキー・戻るジェスチャーを1つのイベントで受ける。自前オーバーレイを端末の作法に合わせる。', api:'<code>new CloseWatcher()</code>, <code>onclose</code>' },
+  { tier:'X', no:109, ja:'スクロールバーの差', en:'scrollbar-gutter / overscroll-behavior', desc:'Windows はバーが場所を取り、mac/iOS は重なる。あらかじめ場所を空け、内側の末端で親へスクロールが伝わるのを止める。', api:'<code>scrollbar-gutter: stable</code>, <code>overscroll-behavior: contain</code>, <code>scrollbar-width</code>' },
+  { tier:'X', no:110, ja:'タッチ端末の癖', en:'touch-action / tap highlight / 自動ズーム', desc:'ダブルタップズームで連打が拾えない、タップで灰色が光る、iOS は 16px 未満の入力欄で自動拡大する、長押しでメニューが出る。抑えすぎるとコピーできなくなる。', api:'<code>touch-action: manipulation</code>, <code>-webkit-tap-highlight-color</code>, <code>font-size: 16px</code>' },
+  { tier:'X', no:111, ja:'日本語のテキスト処理', en:'text-wrap / word-break / Intl.Segmenter', desc:'意味の切れ目を無視した折り返しを直し、省略を付ける。絵文字や結合文字があると .length は字数として誤るため Segmenter で数える。', api:'<code>text-wrap: pretty</code>, <code>word-break: auto-phrase</code>, <code>Intl.Segmenter</code>' },
+  { tier:'X', no:112, ja:'印刷', en:'@page / break-inside', desc:'操作部品を消し、用紙と余白を決め、表の行が分断されないようにする。背景色は既定で印刷されないので記号を併記する。', api:'<code>@media print</code>, <code>@page</code>, <code>break-inside: avoid</code>, <code>print-color-adjust: exact</code>' },
+  { tier:'X', no:113, ja:'機能検出と段階的強化', en:'@supports / feature detection', desc:'新機能は「無くても仕事が終わるか」で判断する。まず従来の書き方を置き、対応環境だけ上書きする。JS は使う直前に確かめる。', api:"<code>@supports (…)</code>, <code>CSS.supports()</code>, <code>'x' in y</code>" },
 ];
-window.TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html', E:'06-effects.html' };
-window.TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・第4弾）', E:'E. 演出・体感の上位効果（第4弾）' };
+window.TIER_FILE = { A:'02-basic.html', B:'03-custom.html', C:'04-pro.html', D:'05-advanced.html', E:'06-effects.html', M:'17-modern.html', X:'18-crossplatform.html' };
+window.TIER_NAME = { A:'A. 一般的なUI操作（標準で賄える基本）', B:'B. カスタマイズ性の高いUI（標準挙動を自前で制御）', C:'C. プロ志向のUI（ツール系アプリの高度操作）', D:'D. 業務アプリの設計パターン（第3弾・第4弾）', E:'E. 演出・体感の上位効果（第4弾）', M:'M. 最近できるようになったこと（第5弾）', X:'X. クロスプラットフォーム（第5弾）' };
 window.itemNo = (it, i) => it.no ?? i + 1;
 window.KIT = {2:'drag, camera', 3:'camera', 10:'drag', 16:'toast', 17:'position', 20:'position', 23:'virtual-list', 32:'sortable', 33:'split', 35:'hotkeys', 36:'hotkeys, search', 37:'undo', 39:'position', 43:'camera', 44:'camera', 45:'camera', 47:'drag', 49:'drag', 51:'drag', 52:'drag', 58:'focus-trap', 71:'virtual-list', 72:'virtual-list', 74:'search', 75:'store', 77:'merge', 78:'merge', 79:'offline-queue', 80:'split, store', 81:'store', 84:'camera', 85:'sync'};

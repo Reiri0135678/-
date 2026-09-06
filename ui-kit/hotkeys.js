@@ -7,6 +7,7 @@
 //     'n': (e) => create(),          // 単独キーは入力欄内では発火しない（ignoreInputs）
 //   }, { target: document, ignoreInputs: true });
 // 内側の部品（focus-trap の Esc など）が preventDefault 済みのイベントは無視する（skipPrevented: true）。
+// 日本語入力の変換中（isComposing）のキーも無視する。
 export function registerHotkeys(map, { target = document, ignoreInputs = true, skipPrevented = true } = {}) {
   const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
   const norm = (combo) => combo.toLowerCase().split('+').map(k => k === 'mod' ? (isMac ? 'meta' : 'ctrl') : k).sort().join('+');
@@ -14,6 +15,7 @@ export function registerHotkeys(map, { target = document, ignoreInputs = true, s
   const typing = () => { const a = target.activeElement || document.activeElement; return a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable); };
   const handler = (e) => {
     if (skipPrevented && e.defaultPrevented) return;
+    if (e.isComposing || e.keyCode === 229) return;   // 日本語入力の変換中は無視する（229 は古い環境向けの保険）
     const parts = [];
     if (e.ctrlKey) parts.push('ctrl'); if (e.metaKey) parts.push('meta'); if (e.altKey) parts.push('alt'); if (e.shiftKey) parts.push('shift');
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key.toLowerCase();

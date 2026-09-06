@@ -1,5 +1,10 @@
 # 変更履歴
 
+## 第9弾（最新機能とクロスプラットフォーム）
+- `17-modern.html`（M層 87〜101）：`:has()`、`@starting-style`、popover、アンカー位置指定、`interpolate-size`、`details name`、`field-sizing`、`content-visibility`、`light-dark()`/`color-mix()`、`moveBefore()`、Custom Highlight API、`scheduler.yield()`、新しい標準API、`::scroll-button()`/`::scroll-marker`、`sibling-index()`。各デモは「以前／今」を並べ、端末の対応可否を実測表示
+- `18-crossplatform.html`（X層 102〜113）：端末実測パネル、当たり判定、修飾キー、`dvh`、セーフエリア、日本語入力（IME）、`CloseWatcher`、スクロールバー、タッチの癖、日本語テキスト、印刷、機能検出＋実行環境ごとの早見表
+- 既存デモの不具合修正：74 検索・36 コマンドパレット・38 インライン編集で日本語変換中の入力／Enter を誤処理していた点、38 で確定直後に編集が再開する点、`ui-kit/hotkeys.js` が変換中のキーを拾う点
+
 ## 第8弾（単一ファイル化）
 - `docs/ui-guide/dist/ui-guide-standalone.html`：資料一式（ui-kit の部品と実例アプリを含む 42 ファイル）を外部参照なしの 1 枚にまとめた版
 - `docs/ui-guide/16-bundler.html`：その 1 枚をブラウザだけで作るバンドラ（Node 不要。フォルダ選択なら `file://` でも動く）

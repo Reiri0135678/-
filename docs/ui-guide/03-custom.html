@@ -458,8 +458,10 @@
       const run = () => { if (hits[idx]) out.textContent = '実行: ' + hits[idx]; dlg.close(); };
       $('#s36-open').onclick = open;
       document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); } });
-      q.addEventListener('input', () => { idx = 0; render(); });
+      q.addEventListener('input', e => { if (e.isComposing) return; idx = 0; render(); });
+      q.addEventListener('compositionend', () => { idx = 0; render(); });
       q.addEventListener('keydown', e => {
+        if (e.isComposing) return;                      // 日本語の変換中は矢印も Enter も無視する（18 章の 107）
         if (e.key === 'ArrowDown') { idx = (idx + 1) % hits.length; render(); e.preventDefault(); }
         if (e.key === 'ArrowUp') { idx = (idx - 1 + hits.length) % hits.length; render(); e.preventDefault(); }
         if (e.key === 'Enter') run();
@@ -535,12 +537,14 @@
           out.textContent = commit ? `確定: 「${old}」→「${input.value}」` : '取消';
           td.focus();
         };
-        input.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+        // 変換確定の Enter を「確定」と誤認しないよう isComposing を見る（18 章の 107）
+        input.addEventListener('keydown', e => { if (e.isComposing) return; if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
         input.addEventListener('blur', () => finish(true));
       }
       $$('.s38 td').forEach(td => {
         td.addEventListener('dblclick', () => edit(td));
-        td.addEventListener('keydown', e => { if (e.key === 'Enter' && !td.querySelector('input')) edit(td); });
+        // Enter は td 自身に来たときだけ編集開始。入力欄から上がってきた確定の Enter で再び開かないようにする
+        td.addEventListener('keydown', e => { if (e.target === td && e.key === 'Enter' && !td.querySelector('input')) edit(td); });
       });
     })();
   </script>

@@ -141,7 +141,10 @@
         list.innerHTML = hits.slice(0, 100).map(h => `<div><span>${h.html}</span><small>${h.score.toFixed(1)}</small></div>`).join('') || '<div style="color:#6b7280">該当なし</div>';
         out.textContent = `${hits.length} 件 / ${(performance.now() - t0).toFixed(1)}ms（上位100表示）`;
       };
-      q.addEventListener('input', debounce(run, 250));  // ← 打鍵が止まってから実行
+      const runDebounced = debounce(run, 250);
+      // 日本語入力の変換中（isComposing）は走らせない。確定した瞬間に1回だけ実行する（108 章の 107 参照）
+      q.addEventListener('input', e => { if (!e.isComposing) runDebounced(); });
+      q.addEventListener('compositionend', () => runDebounced());
       $$('input[name=s74]').forEach(r => r.addEventListener('change', run));
       run();
     })();
