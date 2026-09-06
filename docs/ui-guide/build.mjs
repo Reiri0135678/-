@@ -67,6 +67,7 @@ const root = path.resolve(dir, '..', '..');
 const rel = p => path.relative(root, p).split(path.sep).join('/');
 const listDir = (d, re) => fs.existsSync(d) ? fs.readdirSync(d).filter(f => re.test(f)).map(f => rel(path.join(d, f))) : [];
 const manifest = [
+  ...listDir(root, /\.md$/),                       // TUTORIAL / README / CHANGELOG / DEVELOPMENT-LOG（教材からリンクしている）
   ...listDir(dir, /\.(html|md)$/),
   ...listDir(path.join(dir, 'assets'), /\.(js|css)$/),
   ...listDir(path.join(root, 'ui-kit'), /\.(js|md|ts)$/),

@@ -294,6 +294,11 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
     (await p.frameLocator('#ug-frame').frameLocator('#frame').locator('#s28-ball').count()) === 1);
   await p.goto(bundle + '#ui-kit/example/index.html'); await p.waitForTimeout(1500);
   ok('単一ファイル版: ui-kit 実例アプリも動く', (await p.frameLocator('#ug-frame').locator('#list .row').count()) > 5);
+  await p.click('#ug-nav a[data-key="docs/ui-guide/00-index.html"]'); await p.waitForTimeout(800);
+  await f().locator('a[href="../../TUTORIAL.md"]').first().click(); await p.waitForTimeout(800);
+  ok('単一ファイル版: TUTORIAL.md も収録され、教材から開ける',
+    (await p.textContent('#ug-path')).includes('TUTORIAL.md') &&
+    (await f().locator('#t').textContent()).includes('8ステップ'));
   await p.close(); }
 
 await browser.close();

@@ -10,6 +10,7 @@
 | [`ui-kit/`](ui-kit/) | 16モジュールの部品ライブラリ（ESM）。`dist/ui-kit.js` は単一ファイル版（`window.UIKit`） | `import` するか `<script src="ui-kit/dist/ui-kit.js">` |
 | [`ui-kit/example/index.html`](ui-kit/example/index.html) | 部品を組み合わせた実例アプリ（受注一覧） | ブラウザで開くだけ |
 | [`docs/ui-guide/07-implementation-plan.md`](docs/ui-guide/07-implementation-plan.md) | 実アプリへの適用計画 | 読む |
+| [`TUTORIAL.md`](TUTORIAL.md) | **最初に読む**。この成果物を仕事で使い始めるまでの8ステップ（90分）。各ステップに「確認できたこと」つき | 読んで手を動かす |
 | [`tools/check-ime.mjs`](tools/check-ime.mjs) | **既存コードの IME 誤処理を検査する**（依存なし・読み取りのみ）。kintone カスタマイズや Electron アプリのソースに向けて実行する | `npm run check:ime -- <フォルダ>` |
 | [`CHANGELOG.md`](CHANGELOG.md) / [`DEVELOPMENT-LOG.md`](DEVELOPMENT-LOG.md) | 変更履歴（何が入ったか）と開発記録（なぜそうしたか・何が壊れていて どう直したか・どこまで確かめたか） | 読む |
 
