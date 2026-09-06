@@ -17,6 +17,31 @@
 - Caddy を前段に置く理由: HTTPS の証明書取得・更新が自動で、WebSocket もそのまま中継できる
 - データはホストのディレクトリに置く(コンテナを入れ替えても消えない)。EBS のスナップショットと S3 への同期で二重に守る
 
+## 近道: CloudFormation で一式を作る
+
+`deploy/cloudformation.yml` を CloudFormation コンソールでスタック作成すると、1〜3 節(EC2・固定 IP・セキュリティグループ・
+IAM ロール・S3 バケット・Docker 導入・起動・日次 S3 同期)までを自動で行う。手で作る場合は次節以降を読む。
+
+1. CloudFormation → スタックの作成 → テンプレートをアップロード → `deploy/cloudformation.yml`
+2. パラメータ: `DomainName`(必須)、`AllowIps`(社内 IP 推奨)、`AdminCidr`(SSH を開けたい時だけ)、他は既定で可
+3. 作成完了後、出力 `PublicIp` に DNS の A レコードを向ける
+4. 出力 `ConnectCommand`(SSM Session Manager。鍵不要)で接続し、`sudo tail -f /var/log/qc-board-setup.log` で
+   初期設定の完了(`docker compose up` の終了)を待つ。5〜10 分程度
+5. 出力 `AddUserCommand` でユーザーを登録し、`https://<ドメイン>/` を開く
+
+注意:
+- リポジトリが非公開の場合、EC2 からの `git clone` に認証が要る。`RepoUrl` に読み取り専用トークン付きの URL
+  (`https://<トークン>@github.com/...`)を入れるか、リポジトリを公開にするか、CI が公開する Docker イメージ
+  (`ghcr.io/reiri0135678/qc-board`)を pull する方式に切り替える(下記「GHCR のイメージを使う」)
+- 更新は接続後 `sudo qc-board-update`(git pull → 再ビルド → 入れ替え)
+- スタックを削除しても S3 バケットは残る(バックアップ保護のため)。不要なら手で削除する
+
+### GHCR のイメージを使う(EC2 でビルドしない)
+
+CI(`.github/workflows/ci.yml` の docker ジョブ)が `main` への push ごとに `ghcr.io/reiri0135678/qc-board:latest` を公開する。
+EC2 側でビルドする代わりに使うには、`deploy/docker-compose.yml` の `build: ..` を `image: ghcr.io/reiri0135678/qc-board:latest` に
+置き換える。パッケージが非公開のままなら EC2 で `docker login ghcr.io` が必要(GitHub のパッケージ設定で公開にすれば不要)。
+
 ## 0. 事前に決めること
 
 | 項目 | 例 | 備考 |

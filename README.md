@@ -5,7 +5,7 @@
 
 ## クラウド(AWS)で動かす
 
-`docs/aws.md` に EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)の手順。`Dockerfile` と `deploy/` 一式を同梱。
+`docs/aws.md` に EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)の手順。`Dockerfile`、`deploy/`(Compose・Caddyfile・CloudFormation テンプレート)を同梱。CI が Docker イメージをビルドして GHCR に公開。
 HTTPS の前段を置くときは `QC_BEHIND_HTTPS_PROXY=1`(Cookie に Secure を付け、X-Forwarded-* を信用する)。死活監視は `GET /api/health`。
 
 ## 単一ファイル版(standalone/qc-board.html)

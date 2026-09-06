@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  QC Board(検査依頼デジタル化ホワイトボード)を EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)で動かす。
+  作られるもの: EC2、Elastic IP、セキュリティグループ、IAM ロール(SSM 接続 + バックアップ用 S3)、S3 バケット。
+  作成後に DomainName の A レコードを出力の PublicIp に向けると、数分で https://DomainName/ が開く。
+
+Parameters:
+  DomainName:
+    Type: String
+    Description: 公開するドメイン(例 qc-board.example.com)。証明書の自動取得に必須
+    AllowedPattern: '^[a-z0-9.-]+$'
+  AllowIps:
+    Type: String
+    Default: 0.0.0.0/0 ::/0
+    Description: アプリへのアクセスを許す IP(空白区切り CIDR)。社内の固定 IP だけにするのを推奨。全開放は "0.0.0.0/0 ::/0"
+  AdminCidr:
+    Type: String
+    Default: ''
+    Description: SSH(22)を許す管理者の IP(例 203.0.113.10/32)。空なら 22 番は開けない(SSM Session Manager で接続)
+  KeyName:
+    Type: String
+    Default: ''
+    Description: SSH 用キーペア名。空なら鍵なし(SSM Session Manager で接続)
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    Description: Arm(t4g 系)を既定にしている。x86 にする場合は AmiId も x86 用に変える
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Amazon Linux 2023 の最新 AMI(SSM パラメータ経由)。x86 なら al2023-ami-kernel-default-x86_64
+  VolumeSizeGb:
+    Type: Number
+    Default: 30
+    MinValue: 20
+    Description: ルートボリューム(gp3)の容量。図面画像がここに溜まる
+  RepoUrl:
+    Type: String
+    Default: https://github.com/Reiri0135678/-.git
+    Description: 取得するリポジトリ(公開リポジトリ、またはトークン付き URL)
+  GitRef:
+    Type: String
+    Default: main
+    Description: 配備するブランチまたはタグ
+  EmbedKey:
+    Type: String
+    Default: ''
+    NoEcho: true
+    Description: Mission Bridge 埋め込みの共有鍵(16 文字以上)。使わなければ空
+  AutoArchiveDays:
+    Type: Number
+    Default: 14
+    Description: 完了・取消から何日でボードから外すか(0 で無効)
+
+Conditions:
+  HasKeyName: !Not [!Equals [!Ref KeyName, '']]
+  HasAdminCidr: !Not [!Equals [!Ref AdminCidr, '']]
+
+Resources:
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub 'qc-board-backup-${AWS::AccountId}-${AWS::Region}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: qc-board-backup-to-s3
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt BackupBucket.Arn
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub '${BackupBucket.Arn}/*'
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: QC Board (HTTP/HTTPS from anywhere for certificate issuance; app-level IP filter is in Caddy)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: qc-board
+
+  SshIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasAdminCidr
+    Properties:
+      GroupId: !GetAtt SecurityGroup.GroupId
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+      CidrIp: !Ref AdminCidr
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
+      SecurityGroupIds:
+        - !GetAtt SecurityGroup.GroupId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: !Ref VolumeSizeGb
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: qc-board
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+          exec > >(tee /var/log/qc-board-setup.log) 2>&1
+          dnf update -y
+          dnf install -y docker git awscli cronie
+          systemctl enable --now docker crond
+          mkdir -p /usr/local/lib/docker/cli-plugins
+          curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          git clone --branch '${GitRef}' '${RepoUrl}' /opt/qc-board
+          cd /opt/qc-board/deploy
+          cat > .env <<EOF
+          QC_DOMAIN=${DomainName}
+          QC_ALLOW_IPS=${AllowIps}
+          QC_EMBED_KEY=${EmbedKey}
+          QC_AUTO_ARCHIVE_DAYS=${AutoArchiveDays}
+          QC_BACKUP_KEEP=30
+          QC_BACKUP_INTERVAL_HOURS=24
+          KINTONE_MOCK=0
+          EOF
+          chmod 600 .env
+          docker compose --env-file .env up -d --build
+          # 日次で S3 へバックアップを同期(03:30 UTC = 12:30 JST)
+          echo '30 3 * * * root /usr/bin/aws s3 sync /opt/qc-board/deploy/backups s3://${BackupBucket}/qc-board/ --delete >> /var/log/qc-board-s3-sync.log 2>&1' > /etc/cron.d/qc-board-backup
+          chmod 644 /etc/cron.d/qc-board-backup
+          # 更新用の小さなスクリプト
+          cat > /usr/local/bin/qc-board-update <<'EOS'
+          #!/bin/bash
+          set -e
+          cd /opt/qc-board && git pull && cd deploy && docker compose --env-file .env up -d --build
+          EOS
+          chmod +x /usr/local/bin/qc-board-update
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Instance
+      Tags:
+        - Key: Name
+          Value: qc-board
+
+Outputs:
+  PublicIp:
+    Description: この IP に DomainName の A レコードを向ける
+    Value: !Ref ElasticIp
+  Url:
+    Description: DNS 反映後に開く URL
+    Value: !Sub 'https://${DomainName}/'
+  HealthUrl:
+    Description: 死活監視 URL
+    Value: !Sub 'https://${DomainName}/api/health'
+  BackupBucketName:
+    Description: 日次バックアップの同期先(S3)
+    Value: !Ref BackupBucket
+  ConnectCommand:
+    Description: 鍵なしで入る(AWS CLI + Session Manager プラグインが必要)
+    Value: !Sub 'aws ssm start-session --target ${Instance} --region ${AWS::Region}'
+  SetupLog:
+    Description: 初期設定の進行状況(接続後に確認)
+    Value: sudo tail -f /var/log/qc-board-setup.log
+  AddUserCommand:
+    Description: ユーザー登録(接続後、/opt/qc-board/deploy で実行)
+    Value: sudo docker compose exec qc-board node scripts/add-user.mjs <名前> '<パスワード>' admin
