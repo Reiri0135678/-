@@ -1,0 +1,38 @@
+# AWS(EC2 / Lightsail)の 1 台で動かす構成: Caddy が HTTPS(Let's Encrypt)を終端し、qc-board へ中継する。
+# 使い方: cp deploy/.env.example deploy/.env → 値を埋める → docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d --build
+# データはホストの ./data と ./backups(compose ファイルからの相対)に置かれる。S3 へは cron で aws s3 sync する(docs/aws.md)
+services:
+  qc-board:
+    build: ..
+    restart: unless-stopped
+    environment:
+      QC_BEHIND_HTTPS_PROXY: "1"
+      QC_EMBED_KEY: ${QC_EMBED_KEY:-}
+      QC_AUTO_ARCHIVE_DAYS: ${QC_AUTO_ARCHIVE_DAYS:-14}
+      QC_BACKUP_KEEP: ${QC_BACKUP_KEEP:-30}
+      QC_BACKUP_INTERVAL_HOURS: ${QC_BACKUP_INTERVAL_HOURS:-24}
+      KINTONE_MOCK: ${KINTONE_MOCK:-0}
+    volumes:
+      - ./data:/data
+      - ./backups:/backups
+    expose:
+      - "3000"
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - qc-board
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      QC_DOMAIN: ${QC_DOMAIN}
+      QC_ALLOW_IPS: ${QC_ALLOW_IPS:-0.0.0.0/0 ::/0}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+volumes:
+  caddy-data:
+  caddy-config:

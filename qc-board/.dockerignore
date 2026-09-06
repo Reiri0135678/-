@@ -1,0 +1,14 @@
+node_modules
+dist
+data
+backups
+config/users.json
+config/kintone.json
+config/notify.json
+.git
+*.log
+standalone
+examples
+docs
+scripts/e2e-sync.mjs
+scripts/smoke-standalone.mjs

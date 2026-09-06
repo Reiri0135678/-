@@ -1,0 +1,192 @@
+# AWS で動かす(EC2 1 台 + Docker Compose + Caddy)
+
+対象: 複数拠点・複数メンバーがブラウザから同時編集できるように、QC Board のサーバーをクラウドに置く。
+所要: AWS の権限がある人が 1〜2 時間。副作用: AWS に EC2・EBS・(任意で)S3 と Route 53 のレコードが作られ、月額費用が発生する。
+費用の具体額は選ぶインスタンスと地域で変わるため、AWS の料金計算ツールで見積もる。
+
+## 全体像
+
+```
+利用者のブラウザ ── HTTPS(443) ──▶ Caddy(証明書を自動取得) ──▶ qc-board(Node 22, :3000)
+                                      │                             │
+                                  Let's Encrypt                 ./data(ボード・画像・履歴)
+                                                                ./backups(世代バックアップ) ── cron: aws s3 sync ──▶ S3
+```
+
+- 1 台構成にする理由: ルームをメモリ上に持つ設計なので、複数台に分散すると同じボードが分かれる。品質管理室の規模(同時数十人)なら 1 台で足りる
+- Caddy を前段に置く理由: HTTPS の証明書取得・更新が自動で、WebSocket もそのまま中継できる
+- データはホストのディレクトリに置く(コンテナを入れ替えても消えない)。EBS のスナップショットと S3 への同期で二重に守る
+
+## 近道: CloudFormation で一式を作る
+
+`qc-board/deploy/cloudformation.yml` を CloudFormation コンソールでスタック作成すると、1〜3 節(EC2・固定 IP・セキュリティグループ・
+IAM ロール・S3 バケット・Docker 導入・起動・日次 S3 同期)までを自動で行う。手で作る場合は次節以降を読む。
+
+1. CloudFormation → スタックの作成 → テンプレートをアップロード → `qc-board/deploy/cloudformation.yml`
+2. パラメータ:
+   - `VpcId` / `SubnetId`(必須): 配置先。サブネットは**パブリック**(インターネットゲートウェイへの経路がある)ものを選ぶ
+   - `DomainName`(必須): 証明書を取るドメイン
+   - `AllowIps`: アプリに入れる IP。社内の固定 IP に絞るのを推奨
+   - `ProjectTag`: 請求を切り分けるためのタグ(既定 `qc-board`)
+   - `AdminCidr` / `KeyName`: SSH を開けたい時だけ。空なら SSM Session Manager で入る
+   - 他は既定で可
+3. 作成完了後、出力 `PublicIp` に DNS の A レコードを向ける
+4. 出力 `ConnectCommand`(SSM Session Manager。鍵不要)で接続し、`sudo tail -f /var/log/qc-board-setup.log` で
+   初期設定の完了(`docker compose up` の終了)を待つ。5〜10 分程度
+5. 出力 `AddUserCommand` でユーザーを登録し、`https://<ドメイン>/` を開く
+
+注意:
+- リポジトリが非公開の場合、EC2 からの `git clone` に認証が要る。`RepoUrl` に読み取り専用トークン付きの URL
+  (`https://<トークン>@github.com/...`)を入れるか、リポジトリを公開にするか、CI が公開する Docker イメージ
+  (`ghcr.io/reiri0135678/qc-board`)を pull する方式に切り替える(下記「GHCR のイメージを使う」)
+- 更新は接続後 `sudo qc-board-update`(git pull → 再ビルド → 入れ替え)
+- スタックを削除しても S3 バケットは残る(バックアップ保護のため)。不要なら手で削除する
+
+### 同じ AWS アカウントを他システムと共有する場合
+
+このテンプレートは**新規の資源だけを作り、既存の資源には一切触れない**。相乗りの際の確認点は次の通り。
+
+| 確認点 | 内容 |
+|---|---|
+| VPC・サブネット | `VpcId` / `SubnetId` で明示指定する。既存システムと同じ VPC でも別 VPC でもよい。サブネットはパブリックであること(UserData が Docker やリポジトリを取りに外へ出るため) |
+| セキュリティグループ | `<スタック名>-web` という新規 SG を作る。既存 SG は変更しない |
+| Elastic IP | 1 個消費する。1 リージョンあたりの既定上限は 5 なので、既存システムで使い切っていないか確認する |
+| S3 バケット | 既定名は `qc-board-backup-<アカウント>-<リージョン>`。既に同名があるときだけ `BackupBucketName` を指定する |
+| IAM | `<スタック名>-backup-to-s3` ポリシーを持つ新規ロールを作る。権限はこのバケットと SSM 接続に限定。既存ロールは変更しない |
+| リージョン | 既存システムと揃えると管理しやすい。データを国内に置く要件があれば東京(ap-northeast-1) |
+| 権限 | スタック作成者に EC2・EIP・S3・IAM ロール作成の権限が必要。IAM 作成時は「機能」で `CAPABILITY_IAM` の承認を求められる |
+
+**費用の切り分け**: 全資源に `Project` タグ(既定 `qc-board`)が付く。請求コンソールの「コスト配分タグ」で `Project` を
+有効化すると、翌日以降 Cost Explorer で他システムと分けて集計できる。有効化は 1 回だけ、アカウント全体の設定。
+
+**削除するとき**: スタックを削除すると EC2・EIP・セキュリティグループ・IAM ロールは消える。S3 バケットは
+バックアップ保護のため残る(不要なら中身を空にしてから手で削除)。他システムには影響しない。
+
+**より強く分離したい場合**: 品質データを他システムと同居させたくない、権限を完全に分けたい、という要件があるなら
+AWS Organizations で別アカウントを作り、そこにこのスタックを立てるのが確実。テンプレートはそのまま使える。
+
+### GHCR のイメージを使う(EC2 でビルドしない)
+
+CI(`.github/workflows/qc-board-ci.yml` の docker ジョブ)が `main` への push ごとに `ghcr.io/reiri0135678/qc-board:latest` を公開する。
+EC2 側でビルドする代わりに使うには、`qc-board/deploy/docker-compose.yml` の `build: ..` を `image: ghcr.io/reiri0135678/qc-board:latest` に
+置き換える。パッケージが非公開のままなら EC2 で `docker login ghcr.io` が必要(GitHub のパッケージ設定で公開にすれば不要)。
+
+## 0. 事前に決めること
+
+| 項目 | 例 | 備考 |
+|---|---|---|
+| ドメイン | `qc-board.example.com` | Route 53 か既存 DNS に A レコードを作る。証明書取得に必須 |
+| 公開範囲 | 社内の固定 IP だけ | `QC_ALLOW_IPS` に設定。VPN 経由なら VPN の出口 IP |
+| 地域 | 東京(ap-northeast-1) | 利用者に近い地域。データを国内に置く要件があるなら必須 |
+| インスタンス | Arm の小型(t4g 系)で開始 | 2 vCPU / 2GB 程度で十分。足りなければ後から大きくできる |
+| 保存容量 | EBS 20〜30GB | 図面画像の量で決める。増やすのは簡単、減らすのは大変 |
+
+## 1. EC2 を用意する
+
+1. EC2 → インスタンスを起動。AMI は **Amazon Linux 2023**(Arm 版なら t4g 系)
+2. キーペアを作成(SSH 用)。ストレージは gp3 で 20GB 以上
+3. セキュリティグループ(受信):
+   - 22 (SSH): 管理者の IP のみ
+   - 80, 443 (HTTP/HTTPS): `0.0.0.0/0`(証明書取得のため 80 は全開放が必要。アプリ側の IP 制限は Caddy で行う)
+4. **Elastic IP** を割り当てて関連付ける(再起動で IP が変わらないように)。既存システムと同じアカウントなら
+   1 リージョンあたりの上限(既定 5)に余裕があるか確認する
+5. DNS に A レコード: `qc-board.example.com → Elastic IP`
+
+## 2. サーバーの初期設定(SSH で接続後)
+
+```bash
+sudo dnf update -y
+sudo dnf install -y docker git
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
+# Docker Compose プラグイン
+sudo mkdir -p /usr/local/lib/docker/cli-plugins
+sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
+sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+exit   # 再ログインして docker グループを反映
+```
+
+```bash
+docker --version && docker compose version
+git clone <このリポジトリの URL> qc-board-repo
+cd qc-board-repo/qc-board/deploy   # リポジトリには他のプロジェクトも同居している
+cp .env.example .env
+nano .env        # QC_DOMAIN, QC_ALLOW_IPS, QC_EMBED_KEY などを埋める
+```
+
+## 3. 起動
+
+```bash
+cd ~/qc-board-repo/qc-board/deploy
+docker compose --env-file .env up -d --build
+docker compose ps                 # qc-board が healthy、caddy が Up になる
+docker compose logs -f qc-board   # 起動ログ。httpsProxy=on と出ていること
+```
+
+ブラウザで `https://qc-board.example.com/` を開く。初回は Caddy が証明書を取りに行くため数十秒かかる。
+
+### ユーザー登録(パスワード認証にする)
+
+```bash
+docker compose exec qc-board node scripts/add-user.mjs 山田 '<パスワード>' admin
+docker compose exec qc-board node scripts/add-user.mjs 佐藤 '<パスワード>' member
+```
+
+`users.json` は `./data/config/users.json`(ホスト側)に作られる。ファイルが無い間は名前だけで入れるオープンモードなので、
+インターネットに公開する前に必ず登録する。
+
+### kintone / 通知
+
+`./data/config/kintone.json`、`./data/config/notify.json` を置く(書き方は `config/README.md`)。置いたら `docker compose restart qc-board`。
+
+## 4. バックアップ
+
+- 自動(コンテナ内): 起動時と `QC_BACKUP_INTERVAL_HOURS` ごとに `./backups/` へ世代コピー(`QC_BACKUP_KEEP` 世代)
+- S3 へ同期(推奨): S3 バケットを作り、EC2 に **IAM ロール**(そのバケットへの `s3:PutObject`/`s3:ListBucket`/`s3:DeleteObject`)を付けてから
+
+```bash
+sudo dnf install -y awscli
+crontab -e
+# 毎日 3:30 に同期(バケット名は自分のものに置き換える)
+30 3 * * * /usr/bin/aws s3 sync /home/ec2-user/qc-board-repo/qc-board/deploy/backups s3://<バケット名>/qc-board/ --delete >> /home/ec2-user/s3-sync.log 2>&1
+```
+
+- EBS スナップショット: AWS Backup か Data Lifecycle Manager で日次スナップショットを設定すると、OS ごと戻せる
+- 復旧: `docker compose down` → `./data` の中身をバックアップの世代フォルダの中身で置き換え → `docker compose up -d`。
+  `data/secret`(セッション署名鍵)は含まれないので、復旧後は全員が再ログインになる
+
+## 5. 更新(新しい版を入れる)
+
+```bash
+cd ~/qc-board-repo && git pull
+cd qc-board/deploy && docker compose --env-file .env up -d --build
+```
+
+`./data` は触らないのでボードの内容は引き継がれる。ダウンタイムはコンテナの入れ替え数十秒。
+
+## 6. 運用のチェックリスト
+
+- [ ] `https://<ドメイン>/api/health` が `{"ok":true,...}` を返す
+- [ ] 社外の回線(スマホのテザリング等)からは 403 になる(`QC_ALLOW_IPS` を絞った場合)
+- [ ] 2 台のブラウザで同じボードを開き、片方の描画がもう片方に出る
+- [ ] `./backups/` に世代フォルダができ、S3 にも同期されている
+- [ ] EC2 の再起動後にコンテナが自動で上がる(`restart: unless-stopped`)
+- [ ] CloudWatch でディスク使用率のアラームを設定(画像でいっぱいになる前に気付くため)
+
+## 7. セキュリティの補足
+
+- Cookie は HTTPS 前提の `Secure` 付き(`QC_BEHIND_HTTPS_PROXY=1`)。平文 HTTP では動かない前提で運用する
+- SSH は鍵認証のみ、22 番は管理者 IP に限定。可能なら **SSM Session Manager** に切り替えて 22 番を閉じる
+- `QC_EMBED_KEY` と `.env` は Git に入れない(`.gitignore` 済み)。値は AWS Secrets Manager か Parameter Store に控える
+- 画像や品質データがクラウドに置かれることについて、社内の情報管理規程の確認を先に済ませる
+
+## 別案: ECS Fargate で動かす
+
+コンテナ基盤に統一したい場合は Fargate でも動く。ただし次の制約がある。
+
+- タスク数は **1** に固定する(ルームがメモリ上にあるため)
+- `/data` と `/backups` は **EFS** をマウントする(タスク入れ替えでデータが消えないように)
+- 前段は ALB(HTTPS 終端。WebSocket 対応、アイドルタイムアウトを 300 秒以上に)。`QC_BEHIND_HTTPS_PROXY=1` はそのまま使える
+- ヘルスチェックは `/api/health`
+
+EC2 1 台より部品が多く費用も上がるため、まず EC2 で始めて必要なら移すのを勧める。

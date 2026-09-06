@@ -1,0 +1,212 @@
+# QC Board
+
+> このリポジトリには UI操作レクチャー資料(`docs/ui-guide/`)と `ui-kit/` も同居している。
+> QC Board のファイルはすべてこの `qc-board/` 配下にあり、コマンドはこのフォルダで実行する。
+
+品質管理室が各部門から紙で受け取っている検査依頼をデジタル化するための業務アプリ。
+**ブラウザから多人数で同時に書き込めるホワイトボード**を土台に、後段でスプレッドシート式リスト・画像一覧・kintone 連携を載せていく。
+
+## クラウド(AWS)で動かす
+
+`docs/aws.md` に EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)の手順。`Dockerfile`、`deploy/`(Compose・Caddyfile・CloudFormation テンプレート)を同梱。CI が Docker イメージをビルドして GHCR に公開。
+HTTPS の前段を置くときは `QC_BEHIND_HTTPS_PROXY=1`(Cookie に Secure を付け、X-Forwarded-* を信用する)。死活監視は `GET /api/health`。
+
+## 単一ファイル版(standalone/qc-board.html)
+
+ここまでの機能をバニラ JS の HTML 1 ファイルで再現したもの。ダブルクリックで開くだけで動く(サーバー不要、外部ライブラリなし)。
+保存は localStorage、同時編集は同じブラウザの別タブ間だけ(BroadcastChannel)、認証・kintone・通知・バックアップは無し(kintone は番号を振るモック)。
+本体との差分はファイル先頭のコメントと入口画面の「この版の制約」にまとめてある。動作確認は `node scripts/smoke-standalone.mjs`。
+
+## 構成
+
+```
+client/   ブラウザ側 (Vite + React 19 + TypeScript)。キャンバスは自作(Konva で描画、Yjs で同期)。client/src/canvas/ に閉じ込める
+server/   同期サーバー (Node.js + express + ws + Yjs)。ボードごとに 1 ルーム、Yjs のバイナリ更新をファイル保存
+shared/   両者で共有する図形定義(ペン・文字・付箋・矢印・図形・画像・検査依頼カード)
+scripts/  E2E テスト(2ブラウザで同期を検証)
+```
+
+主なファイル(どこを直せばよいか):
+
+```
+client/src/canvas/
+  editor.ts             BoardEditor: Yjs 文書・スナップショット・選択・ツール・表・トリミング・レーザー・在席
+  types.ts              エディタの公開型(Snapshot, Collaborator, Style, ToolId など)
+  geometry.ts           矢印の吸着、外接矩形、スナップの計算(純粋関数)
+  clone.ts / ids.ts     図形の複製(貼り付け・雛形の挿入で共用)と id 採番
+  tableOps.ts / imageCrop.ts / laser.ts   表の編集、画像の切り抜き、レーザー配信(editor から呼ぶ純粋関数・小クラス)
+  tools.ts              ツール定義、ドラッグ中の仮図形、ペン軌跡、雛形化
+  Board.tsx             Konva ステージ。ポインタ操作を図形の作成・選択・移動に変換
+  useKeyboardShortcuts.ts / useImageImport.ts / usePinchZoom.ts   キーボード、画像の取り込み、ピンチズーム
+  exportPng.ts          PNG 書き出し
+  shapes/ShapeView.tsx  図形ごとの描画
+  その他 *.tsx          ツールバー、スタイルパネル、ページバー、コメント、検索、ミニマップ、版、雛形、トリミング、レーザー
+client/src/panel/
+  Sidebar.tsx / CardEditor.tsx        サイドバー(ギャラリー・紐付け)とカード編集フォーム(履歴つき)
+  RequestSheet.tsx / sheetColumns.ts / SheetCell.tsx / sheetRange.ts / Summary.tsx   一覧、列定義、セル、範囲コピー/貼り付け、集計ビュー
+server/src/
+  index.ts              起動・定期保守・ルーターの組み立て
+  config.ts             環境変数の読み取り
+  routes/*.ts           auth / rooms(依頼・履歴・kintone)/ templates / versions / admin / uploads
+  ws.ts                 WebSocket 接続(閲覧者は読み取り専用)
+  rooms.ts              ルーム(Yjs 文書、採番、履歴、版、アーカイブ)
+  auth.ts / kintone.ts / notify.ts / maintenance.ts
+```
+
+- 同時編集: Yjs(CRDT)+ y-websocket 互換の自前サーバー。競合解決は Yjs、取り消しは自分の変更のみ対象
+- キャンバス: 自作。選択・移動・拡縮・回転、ペン(perfect-freehand)、蛍光、消しゴム、文字、付箋、矢印、四角、楕円、画像、依頼カード、
+  範囲選択、複製、ズーム・パン、他の人のカーソルと選択範囲の表示。移動時のスナップ(端・中心、Alt で無効)、矢印の端点を図形に吸着(図形を動かすと追従)、
+  描いている途中の線を相手にもリアルタイム表示。文字装飾(太字・斜体・下線・揃え・サイズ)、グループ化(Ctrl+G / Ctrl+Shift+G)、
+  ロック(Ctrl+L。移動・変形・削除を禁止)、複数ページ(左下のページバー。相手の人数表示、名前変更、空ページの削除)、
+  コメント(💬 ツールで図形や場所に付ける。返信・解決・削除。解決済みは右下 💬 で表示切替)。
+  コピー/切り取り/貼り付け(ページ・ボードをまたいで可、文字を貼ると文字図形に)、矢印キーで微調整(Shift で 10px)、
+  整列・等間隔配置、重なり順(最前面/前へ/後ろへ/最背面)、右クリックメニュー、図形の種類(四角・角丸・三角・ひし形・六角)、
+  線種(実線・破線・点線)、矢頭(なし/終点/両端)と直線ツール、図形内ラベル(ダブルクリック)、ページや選択範囲の PNG 保存、
+  ボード内検索(Ctrl+F)、相手の画面への追従(接続中の人数をクリック)。
+  区画(F キー。名前付きの領域で、動かすと中の図形も一緒に動く。常に背面)、ミニマップ(右下。クリックで移動)、
+  版の履歴(ヘッダーの「版」。名前を付けて保存し復元。復元前の状態も自動保存)、雛形(ツールバー下の「雛形」。検査工程フロー・5W1H・なぜなぜ分析・4M 変化点・PDCA・特性要因図・不良対策シート)、
+  表(B キー。セルをダブルクリックで編集、Tab で次のセル、行・列の追加/削除、1 行目を見出しに)、レーザーポインター(P キー。なぞった軌跡が全員に光って消える。閲覧者も使える)、
+  自作の雛形(図形を選んで右クリック「選択範囲を雛形として保存」。全員の雛形メニューに出る。削除は作成者か管理者)、画像のトリミング(画像を選んで「トリミング」→ 範囲を決めて適用。「解除」で元に戻る)。
+  **使用ライブラリはすべて MIT(Konva / react-konva / Yjs / perfect-freehand)で、ライセンス費用・透かし・キーは無い**
+- 認証: `config/users.json` が無ければ名前自己申告のオープンモード。あれば名前+パスワード(役割: admin / member / viewer)。
+  viewer はサーバー側で読み取り専用として接続される
+- 画像: `PUT /api/uploads/:id` でサーバーに保存し、全員が同じ URL を参照(ログイン必須)
+- 受付番号: 依頼カードにサーバーが `QC-YYYY-NNNN` を自動採番(年ごとの連番、作成経路を問わない)
+- 依頼フォーム: `/form/<ボードID>` で依頼者がボードを開かずに依頼を出せる(品番・ロット・数量・部門・件名・希望納期・優先度・備考・図面添付)。
+  送信するとボードにカードと図面が置かれ、受付番号が表示される。スマホ・タブレット対応
+- 状態: 未受付 / 受付 / 検査中 / 保留 / 差戻し / 完了 / 取消。優先度: 通常 / 至急(カードに赤帯)
+- 取消: 依頼カードは物理削除せず「取消」状態にする(Delete キーも同じ)。記録として残る
+- アーカイブ: 完了・取消のカードを一覧の「アーカイブ」でボードから外す。一覧(チェックで表示)と kintone には残る
+- 変更履歴: 誰がいつ何を変えたかをサーバーが `data/rooms/<id>.log.jsonl` に追記(5MB で 5 世代ローテーション)。カード編集画面の「変更履歴」と `GET /api/rooms/:id/history` で参照
+- 検査結果: 合格 / 条件付合格 / 不合格 を記録。判定者・判定日は自動記録。所見(測定値)欄あり
+- 状態遷移ルール: 現在の状態から移れる状態だけが選べる。ルールは `shared/shapes.ts` の `STATUS_TRANSITIONS` 1 箇所で変更
+- 通知: `config/notify.json`(または `QC_NOTIFY_WEBHOOK`)を設定すると、新規依頼・状態変更・検査結果・担当割当を Teams / Slack / 汎用 JSON の Webhook へ送る
+- バックアップ: `QC_BACKUP_DIR` を設定すると起動 5 秒後と `QC_BACKUP_INTERVAL_HOURS`(既定 24)ごとに `data/` をコピー(`QC_BACKUP_KEEP` 世代保持)。手動は `npm run backup`、管理者 API `POST /api/admin/backup`
+- 自動アーカイブ: `QC_AUTO_ARCHIVE_DAYS=N` で完了・取消のまま N 日経ったカードを毎時アーカイブ。手動は `POST /api/admin/archive {days}`
+- PDF 図面: ドロップ・貼り付け・依頼フォーム添付で PDF をページごとに画像化して取り込む(ブラウザ側で変換、最大 10 ページ)
+- タブレット: 900px 以下でサイドバーを折りたたみ(☰)、2 本指でピンチズーム
+- 依頼一覧: 下部ドロワーのスプレッドシート。セル直接編集(↑↓ Enter で行移動、Esc で解除)、行のチェックで一括変更(状態・優先度・担当・アーカイブ)、
+  並べ替え、検索、状態・部門・納期超過・依頼日の期間で絞り込み、納期超過(赤)・2 日以内(黄)・至急(左帯)の強調、
+  表示列の選択と列幅のドラッグ変更(保存される)、CSV 出力、CSV 取り込み(見出しは出力と同じ。受付番号が一致すれば更新、無ければ新規。日付表記は自動で正規化)、
+  セル範囲のコピー/貼り付け(Shift+クリック / Shift+矢印で範囲を選び、Ctrl+C でタブ区切り、Ctrl+V で Excel からの複数行貼り付け。1 値を範囲に貼ると全セルに入る。読み取り専用列や移れない状態は飛ばす)
+- 集計: 一覧の「集計」タブに対応中件数、納期超過、至急、平均リードタイム、不合格数のタイルと、部門別・担当別・納期超過の内訳
+- 図面の紐付け: 依頼カードから「図面を紐付け」→ ギャラリーかキャンバスの画像をクリック
+- kintone: `config/kintone.json` を置くと「kintone へ送信」が有効になる。カードの shape id を外部キーに作成/更新し、
+  レコード番号をカードへ書き戻す。`KINTONE_MOCK=1` で接続せずに動作確認できる
+- Mission Bridge への埋め込み: `QC_EMBED_KEY` を設定すると、ホストアプリが共有鍵でワンタイムトークンを取得し
+  `/embed?token=...&board=<id>` を `WebContentsView` / `<webview>` で開くだけで自動ログインできる。
+  カード選択などのイベントは `postMessage` でホストへ通知。実装例は `examples/mission-bridge-host/`
+- データ保存先: `data/rooms/<id>.snapshot.json`(環境変数 `QC_DATA_DIR` で変更可)
+
+## 開発
+
+```bash
+npm install
+npm run dev          # server(3000) と Vite(5173) を同時起動。http://localhost:5173 を開く
+npm run typecheck
+npm run backup       # data/ を backups/<日時>/ にコピー(14 世代保持)
+```
+
+### 環境変数一覧
+
+| 変数 | 既定 | 意味 |
+|---|---|---|
+| `PORT` | 3000 | 待ち受けポート |
+| `QC_DATA_DIR` | data | ボード・画像・履歴・採番カウンタの保存先 |
+| `QC_USERS_FILE` | config/users.json | ユーザー定義(無ければオープンモード) |
+| `QC_KINTONE_CONFIG` | config/kintone.json | kintone 連携設定 |
+| `KINTONE_MOCK` | | `1` で kintone に接続せずモック動作 |
+| `QC_NOTIFY_CONFIG` | config/notify.json | 通知設定 |
+| `QC_NOTIFY_WEBHOOK` | | 設定ファイルの代わりに Webhook URL を直接指定(JSON 形式で送信) |
+| `QC_EMBED_KEY` | | Mission Bridge 埋め込み用の共有鍵(16 文字以上) |
+| `QC_BACKUP_DIR` / `QC_BACKUP_KEEP` / `QC_BACKUP_INTERVAL_HOURS` | 無効 / 14 / 24 | 定期バックアップ |
+| `QC_AUTO_ARCHIVE_DAYS` | 0(無効) | 完了・取消カードの自動アーカイブまでの日数 |
+
+## 本番相当で動かす(社内 LAN のサーバー 1 台)
+
+詳しい導入手順(Windows サービス化、HTTPS、バックアップ、更新)は `docs/deploy.md`。
+
+```bash
+npm install
+npm run build        # dist/client を生成
+PORT=3000 npm start  # 同一ポートで静的配信 + WebSocket
+```
+
+他の PC からは `http://<サーバーのIP>:3000/` にアクセスする。
+前提: Node.js 22 以上。副作用: `data/` 配下にボード・画像・セッション署名鍵が書き込まれる。
+
+### ユーザー登録(パスワード認証にする場合)
+
+```bash
+node scripts/add-user.mjs 山田 <パスワード> admin
+node scripts/add-user.mjs 佐藤 <パスワード> member
+node scripts/add-user.mjs 見学者 <パスワード> viewer
+```
+
+`config/users.json` にハッシュ化して保存される(Git 管理外)。ファイルを削除するとオープンモードに戻る。
+社内アカウント(Microsoft 365 等)でのログインは `server/src/auth.ts` を OIDC に差し替えて対応する想定。
+
+### Mission Bridge から埋め込む
+
+```bash
+QC_EMBED_KEY=<16文字以上の秘密> PORT=3000 npm start
+```
+
+Mission Bridge 側の手順とコードは `examples/mission-bridge-host/README.md`。
+注意: ブラウザの `<iframe>` で別サイトに埋め込む形は Cookie の SameSite 制約で動かない(HTTPS + SameSite=None が必要)。
+Electron の `WebContentsView` / `<webview>` はトップレベル扱いなので問題ない。
+
+### kintone 連携の設定
+
+`config/kintone.example.json` を `config/kintone.json` にコピーして、サブドメイン・アプリ ID・API トークン・フィールドコードを埋める。
+詳細は `config/README.md`。
+
+## CI
+
+GitHub Actions(`.github/workflows/qc-board-ci.yml`)で push / PR ごとに型チェック・ビルド・E2E を実行する。
+
+## E2E テスト(同期の検証)
+
+```bash
+npm run build
+npx playwright-core install chromium   # 初回のみ(既存の Chrome を使うなら CHROMIUM_PATH=/path/to/chrome)
+npm run test:e2e
+```
+
+パスワード認証 + kintone モック + 埋め込み鍵 + 通知 Webhook(ローカル受け口)+ バックアップ先を指定してサーバーを起動し、
+2 つのブラウザで同じボードを開いて次を確認する(173 項目):
+同期(カード・ペン)、受付番号の採番、取り消し/やり直し、スナップ・矢印の吸着と追従・描画途中のリアルタイム表示、相手の選択範囲・文字装飾・グループ/ロック・複数ページ・コメント、コピー/貼り付け・右クリック・整列・重なり順・微調整・直線/線種/矢頭/図形の種類/ラベル・PNG 保存・検索・追従、区画・ミニマップ・版の保存と復元・雛形、表(セル編集・Tab・行列の増減)・レーザーポインター・自作の雛形(保存・共有・権限)・画像のトリミングと解除、サイドバーと一覧セルの編集、検索・フィルタ、CSV、画像アップロードとギャラリー、
+図面の紐付け、kintone 送信(新規→更新)とレコード番号の書き戻し、閲覧者の読み取り専用(サーバーで拒否)、未ログイン時の 401、
+一覧のキーボード移動・範囲コピー/貼り付け・一括変更・納期超過の強調・部門と期間の絞り込み・集計ビュー・表示列と列幅・CSV 取り込み、
+依頼フォーム(画像添付・至急・受付番号表示)、変更履歴(操作者名)、取消(Delete キー含む)、アーカイブと再表示、
+検査結果(判定者・判定日の自動記録)、状態遷移の制限、Webhook 通知の内容、管理者 API の権限、バックアップ作成、自動アーカイブ、
+PDF の画像化、タブレット幅のサイドバーとピンチズーム、埋め込み連携(トークン・ホスト通知・1 回限り)、永続化と再接続時の復元。
+`SHOT_DIR` を指定すると両画面のスクリーンショットを保存する。
+
+## ライセンス
+
+依存ライブラリはすべて MIT ライセンス(React, Konva, react-konva, Yjs, y-websocket, y-protocols, lib0, perfect-freehand, express, ws)。
+商用利用に費用・キー・透かし表示は不要。v0.5 まで使っていた tldraw SDK(独自ライセンス)は v0.6 で撤去済み。
+
+## デザイン
+
+配色・書体は `client/src/styles.css` 先頭の CSS 変数(`--qc-*`, `--font-*`)に集約。キャンバス側の色は `shared/shapes.ts`(ペン・付箋の色)と
+`client/src/canvas/shapes/ShapeView.tsx`(カードの色)にある。紙色の下地(#faf9f5)、テラコッタのアクセント(#d97757)、明朝系の見出しが基調。
+
+## キーボード操作
+
+| キー | 操作 |
+|---|---|
+| V / H / D / G / E / T / N / A / L / R / O / F / B / C / M / P | 選択 / 移動 / ペン / 蛍光 / 消す / 文字 / 付箋 / 矢印 / 直線 / 四角 / 楕円 / 区画 / 表 / 依頼 / コメント / レーザー |
+| Ctrl+C / X / V / F | コピー / 切り取り / 貼り付け / 検索 |
+| Ctrl+] / Ctrl+[ / Ctrl+Shift+] / Ctrl+Shift+[ | 前へ / 後ろへ / 最前面 / 最背面 |
+| 矢印キー(+Shift) | 1px(10px)移動 |
+| 右クリック | メニュー(コピー・貼り付け・複製・削除・重なり順・グループ・ロック・コメント・PNG 保存・雛形として保存) |
+| Ctrl+G / Ctrl+Shift+G / Ctrl+L | グループ化 / 解除 / ロック切替 |
+| Space + ドラッグ | 一時的にパン |
+| ホイール / Ctrl+ホイール | パン / ズーム |
+| Ctrl+Z / Ctrl+Shift+Z | 元に戻す / やり直す(自分の操作のみ) |
+| Ctrl+D / Ctrl+A / Delete / Esc | 複製 / 全選択 / 削除 / 選択解除 |
+| + / - / 0 | 拡大 / 縮小 / 全体表示 |
+| ダブルクリック | 文字・付箋・ラベル・表のセルの編集(表は Tab / Shift+Tab でセル移動) |
+| 画像をドロップ / 貼り付け | 図面・写真の取り込み |

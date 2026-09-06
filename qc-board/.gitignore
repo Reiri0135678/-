@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+*.log
+.DS_Store
+config/users.json
+config/kintone.json
+config/notify.json
+backups/
+deploy/.env
