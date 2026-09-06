@@ -22,6 +22,7 @@
 | 16 | `16-bundler.html` | 単一ファイル版を作るバンドラ（ブラウザだけで生成。Node 不要） | 完成 |
 | 15 | `15-curriculum.html` | 学習カリキュラム（7ステップ、到達目標、チェック保存） | 完成 |
 | 14 | `14-playground.html` | プレイグラウンド：各デモの HTML / CSS / JS を編集して即実行（`assets/demo-data.js` を `build.mjs` が生成） | 完成 |
+| 19 | `19-plan-integration-3d.md` | 素案：サードパーティ連携（Y層 114〜127）と 3D 操作・編集（Z層 128〜143）。実装前の合意用 | 計画 |
 | 07 | `07-implementation-plan.md` | 実装計画：部品ライブラリ化（完了）と Mission Bridge への適用手順・確認事項 | 計画 |
 | - | `assets/guide.css` / `assets/guide.js` / `assets/catalog-data.js` | 共通スタイル、目次生成、コード表示ランタイム、カタログデータ（01 と 11 が共有） | - |
 | - | `../ui-kit/` | デモから切り出した再利用部品（15モジュール、テスト26件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
