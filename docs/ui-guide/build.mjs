@@ -11,11 +11,23 @@ const dir = path.dirname(fileURLToPath(import.meta.url));
 const strip = s => s.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
 // <div class="stage ...> から対応する </div> までを div の入れ子を数えて切り出す
+// 直後に並ぶ兄弟の <div class="row"> は操作ボタン群なので一緒に取り込む
+// （取り込まないと、プレイグラウンドでボタンが無いまま JS が動いて null 参照になる）
+function matchDiv(html, start) {
+  const re = /<div\b|<\/div>/g; re.lastIndex = start; let depth = 0, m;
+  while ((m = re.exec(html))) { depth += m[0] === '</div>' ? -1 : 1; if (depth === 0) return m.index + 6; }
+  return -1;
+}
 function extractStage(html) {
   const start = html.search(/<div class="stage[^"]*"/); if (start < 0) return '';
-  const re = /<div\b|<\/div>/g; re.lastIndex = start; let depth = 0, m;
-  while ((m = re.exec(html))) { depth += m[0] === '</div>' ? -1 : 1; if (depth === 0) return html.slice(start, m.index + 6); }
-  return '';
+  let end = matchDiv(html, start); if (end < 0) return '';
+  for (;;) {
+    const rest = html.slice(end);
+    const m = rest.match(/^(\s*)<div class="row"/); if (!m) break;
+    const next = matchDiv(html, end + m[1].length); if (next < 0) break;
+    end = next;
+  }
+  return html.slice(start, end);
 }
 const pages = fs.readdirSync(dir).filter(f => /^\d\d-.*\.html$/.test(f)).sort();
 const demos = [], index = [], skipped = [];

@@ -69,9 +69,13 @@
   };
   const run = () => {
     err.textContent = '';
+    // 21（3D）のデモは assets/mini3d.js を使う。単一ファイル版では埋め込み済みの中身を差し込む
+    const extra = current.page !== '21-3d.html' ? ''
+      : (window.__A && window.__A.mini3d ? `<script>${window.__A.mini3d}<\/script>`
+                                         : '<script src="assets/mini3d.js"><\/script>');
     // srcdoc は親と同じ基準 URL を持つので、相対パスの guide.css / guide.js がそのまま読める
     frame.srcdoc = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="assets/guide.css"><script src="assets/guide.js"><\/script>
-<style>body{padding:14px;background:#f6f7f9}section.demo{margin:0}<\/style><style>${$('#ed-css').value}<\/style></head>
+${extra}<style>body{padding:14px;background:#f6f7f9}section.demo{margin:0}<\/style><style>${$('#ed-css').value}<\/style></head>
 <body><section class="demo" id="${current.id}">${$('#ed-html').value}</section>
 <script>window.onerror=(m,s,l,c)=>{parent.postMessage({pgError:m+' (行 '+l+')'},'*')};try{${$('#ed-js').value}\n}catch(e){parent.postMessage({pgError:String(e)},'*')}<\/script></body></html>`;
   };

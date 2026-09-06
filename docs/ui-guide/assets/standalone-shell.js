@@ -16,7 +16,8 @@
   'use strict';
   var B = window.__BUNDLE, FILES = B.files, PAGES = B.pages;
   var GUIDE = 'docs/ui-guide/';
-  var ASSETS = { css: FILES[GUIDE + 'assets/guide.css'] || '', js: FILES[GUIDE + 'assets/guide.js'] || '' };
+  var ASSETS = { css: FILES[GUIDE + 'assets/guide.css'] || '', js: FILES[GUIDE + 'assets/guide.js'] || '',
+                 mini3d: FILES[GUIDE + 'assets/mini3d.js'] || '' };   // 21（3D）のデモをプレイグラウンドで動かすため
 
   function jsonForScript(value) {
     return JSON.stringify(value).replace(/\x3c\//g, '\\u003c/').replace(/\x3c!--/g, '\\u003c!--').replace(/\x3cscript/gi, '\\u003cscript');

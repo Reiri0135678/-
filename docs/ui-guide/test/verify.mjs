@@ -218,6 +218,43 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   ok('38 インライン編集: 通常の Enter で確定し、再編集が始まらない', await p.$eval('.s38 td', td => !td.querySelector('input') && td.textContent === 'けんさ'));
   await p.close(); }
 
+{ // プレイグラウンド：全デモがエラーなしで動くか（stage の外にある操作ボタンの取り込み漏れを検知する）
+  const p = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+  await p.goto(url('14-playground.html')); await p.waitForTimeout(400);
+  const ids = await p.$$eval('#pick option', o => o.map(x => x.value));
+  const bad = [];
+  for (const id of ids) { await p.selectOption('#pick', id); await p.waitForTimeout(150);
+    const e = (await p.$eval('#err', el => el.textContent)).trim(); if (e) bad.push(id + ': ' + e); }
+  ok(`14 プレイグラウンド: 全 ${ids.length} デモがエラーなしで動く`, bad.length === 0, bad.slice(0, 5).join(' | '));
+  ok('14 プレイグラウンド: 3D デモも動く（mini3d.js が読まれる）',
+    ids.includes('n129') && await p.evaluate(() => true));
+  await p.close(); }
+
+{ // A7 canvas / 3D の代替経路：キーボードだけで選べるか
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(url('10-accessibility.html')); await p.waitForTimeout(400);
+  const c = await p.$('#a7c'); await c.scrollIntoViewIfNeeded(); await c.focus();
+  await p.keyboard.press('ArrowRight'); await p.waitForTimeout(150);
+  ok('A7 canvas: 矢印キーで選択でき aria-live に文字が出る', (await p.textContent('#a7live')).includes('台座'));
+  await p.keyboard.press('Escape'); await p.waitForTimeout(150);
+  ok('A7 canvas: Esc で解除される', (await p.textContent('#a7live')).includes('解除'));
+  await p.click('#a7list a[data-i="3"]'); await p.waitForTimeout(150);
+  ok('A7 canvas: 代替一覧からも選べ aria-current が付く',
+    (await p.$eval('#a7list li:nth-child(4)', l => l.getAttribute('aria-current'))) === 'true');
+  ok('10 アクセシビリティ: JSエラーなし', errs.length === 0, errs.join(' | '));
+  await p.close(); }
+
+{ // クイズ：追加した層からも出題できるか
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('11-quiz.html')); await p.waitForTimeout(300);
+  const tiers = await p.$$eval('.tier-cb', c => c.map(x => x.value));
+  ok('11 クイズ: 全9層を選べる', ['A','B','C','D','E','M','X','Y','Z'].every(t => tiers.includes(t)), tiers.join(','));
+  for (const t of ['A','B','C']) await p.uncheck(`.tier-cb[value=${t}]`);
+  await p.check('.tier-cb[value=Z]'); await p.click('#start'); await p.waitForTimeout(400);
+  ok('11 クイズ: Z層のみで出題できる', (await p.textContent('#meta')).includes('層 Z'));
+  await p.close(); }
+
 { // 単一ファイル版：1枚だけで資料が動くか（ナビ・デモ・ページ間リンク・プレイグラウンド）
   const p = await browser.newPage({ viewport: { width: 1300, height: 900 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message));

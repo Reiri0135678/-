@@ -44,8 +44,8 @@
   <p class="how"><b>操作：</b>ドラッグでカメラを回すと、青い部品の角の点が各座標系でどう変わるかが表で追える。ワールド座標は動かず、ビュー以降だけが変わることを確認する。</p>
   <div class="stage" style="padding:0">
     <div class="scene"><canvas class="cv" id="c128"></canvas><div class="label" id="l128">角の点</div></div>
+    <table class="cmp" id="t128" style="margin-top:8px"></table>
   </div>
-  <table class="cmp" id="t128" style="margin-top:8px"></table>
   <div class="lib"><b>three.js なら</b><pre>const p = new THREE.Vector3(0.5, 0.5, 0.5);
 mesh.localToWorld(p);            // ①→②
 p.project(camera);               // →④（NDC）
@@ -545,9 +545,11 @@ material.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(1,0,0), -0.2) ];
   <h2><span class="no">140</span>モデルの読み込みと変換 <small>glTF / GLB と、CAD 形式からの変換</small></h2>
   <p class="what"><b>Web の 3D の標準は glTF（.gltf / .glb）</b>で、「3D の JPEG」と呼ばれる転送用の形式。<b>製造業で手元にあるのは STEP・IGES・IFC・DWG</b>だが、これらはブラウザで直接は開けず<b>事前の変換が要る</b>（IFC は web-ifc、STEP は OpenCascade 系のツールで変換するのが定番）。設計データをそのまま配らず「表示用に変換したもの」を配るのは、容量と機密の両面で正しい。</p>
   <p class="how"><b>操作：</b>下の箱を glTF に書き出し、それを読み込み直して表示する（JSON の中身も見える）。</p>
-  <div class="stage" style="padding:0"><canvas class="cv" id="c140"></canvas></div>
+  <div class="stage" style="padding:0">
+    <canvas class="cv" id="c140"></canvas>
+    <details class="code" style="margin:8px"><summary>生成された glTF（抜粋）</summary><pre id="j140" style="max-height:200px"></pre></details>
+  </div>
   <div class="row"><button id="b140" class="primary">glTF に書き出して読み込み直す</button><span class="readout" id="o140">-</span></div>
-  <details class="code" style="margin-top:8px"><summary>生成された glTF（抜粋）</summary><pre id="j140" style="max-height:200px"></pre></details>
   <table class="cmp" style="margin-top:8px">
     <tr><th>手元の形式</th><th>ブラウザで開けるか</th><th>実務での扱い</th></tr>
     <tr><td>STEP / IGES</td><td>直接は不可</td><td>OpenCascade 系で glTF に変換してから配る</td></tr>

@@ -12,9 +12,9 @@
 | 05 | `05-advanced.html` | D層（第3弾・第4弾）業務アプリの設計パターン 16項目：大規模グリッド複合(71)、ツリーグリッド(72)、ピボット(73)、検索の型(74)、フォームの型(75)、バッチ操作(76)、差分表示(77)、競合解決(78)、オフライン対応(79)、ドッキング完成形(80)、ワークスペース永続化(81)、ルーティングと履歴(82)、スマートプレビュー(83)、タイムライン/ガント(84)、マルチウィンドウ同期(85)、監視ボード(86) | 完成 |
 | 06 | `06-effects.html` | E層（第4弾）演出・体感の上位効果 8項目：シェアードエレメント遷移(63)、スタガー(64)、スケルトンモーフ(65)、マイクロインタラクション(66)、ジェスチャー連動の物理(67)、CSSスクロール駆動(68)、ぼかしと性能(69)、テーマ切替のクロスフェード(70) | 完成 |
 | 08 | `08-foundations.html` | 基礎知識：座標系、イベント伝播、transform vs left/top、passive、動かし方の4手段、スロットル/デバウンス、スタッキングコンテキスト、混同しやすい用語の対比表（20組） | 完成 |
-| 09 | `09-exercises.html` | 練習課題12問（難易度1〜3、ヒントと解答例つき） | 完成 |
-| 10 | `10-accessibility.html` | アクセシビリティ：フォーカス順の可視化、名前のない操作要素の検出、コントラスト計算、aria-live、環境設定検出、チェックリスト | 完成 |
-| 11 | `11-quiz.html` | 名称当てクイズ（カタログのデータから出題、層・問題数・英語名モード） | 完成 |
+| 09 | `09-exercises.html` | 練習課題16問（難易度1〜3、ヒントと解答例つき） | 完成 |
+| 10 | `10-accessibility.html` | アクセシビリティ：フォーカス順の可視化、名前のない操作要素の検出、コントラスト計算、aria-live、環境設定検出、チェックリスト、canvas と 3D の代替経路（A7） | 完成 |
+| 11 | `11-quiz.html` | 名称当てクイズ（カタログのデータから出題、全9層・問題数・英語名モード・動きを見て当てるモード） | 完成 |
 | 12 | `12-electron.html` | Electron 実装リファレンス（参照用、コードは実行されない） | 完成 |
 | 13 | `13-kintone.html` | kintone 連携リファレンス（参照用、上限値は公式で要確認） | 完成 |
 | 17 | `17-modern.html` | M層 87〜101：最近できるようになったこと（:has() / popover / アンカー位置指定 / interpolate-size / details name / field-sizing / content-visibility / light-dark / moveBefore / Custom Highlight / scheduler.yield / 標準API / scroll-button / sibling-index）。各項目で端末の対応可否を判定 | 完成 |
@@ -32,7 +32,7 @@
 | - | `build.mjs` | デモ抽出（`assets/demo-data.js`）・検索索引（`assets/search-index.js`）・収録一覧（`assets/manifest.js`）・単一ファイル版（`dist/ui-guide-standalone.html`）の生成。デモを編集したら `npm run build:docs` | - |
 | - | `assets/bundler.js` / `assets/standalone-shell.js` | 単一ファイル版の組み立て処理と、生成物の中で動くランタイム。ブラウザ（16）と Node（build.mjs）が同じものを使う | - |
 | - | `dist/ui-guide-standalone.html` | 生成済みの単一ファイル版（約 0.7 MB）。ダブルクリックで開き、そのまま配布できる | 生成物 |
-| - | `test/verify.mjs` | 教材ページの検証（JSエラー、リンク、デモ数、代表操作、タッチスワイプ）。`npm run test:docs` | - |
+| - | `test/verify.mjs` | 教材ページの検証（JSエラー、リンク、デモ数、代表操作、タッチスワイプ、全デモのプレイグラウンド実行）。`npm run test:docs` | - |
 
 ## デモページの読み方
 各項目は次の3段構成。

@@ -6,7 +6,14 @@
 - `assets/mini3d.js`：依存ゼロの WebGL2 レンダラ（行列演算・形状生成・レイキャスト・GPU カラーIDピッキング・クリッピング・3D→画面の射影・オービット操作）。Z層のデモはすべてこれで動き、three.js / `<model-viewer>` の参考コードを併記する
 - `19-plan-integration-3d.md`：上記2ページの設計方針（2026年時点のブラウザ状況をウェブ調査で確認したうえでの方針）
 - カタログ（01）に Y層・Z層を追加して全143項目に。入口（00）・カリキュラム（15、9ステップに）・横断検索・単一ファイル版も追随
-- 検証：`test/verify.mjs` に Y層・Z層の実挙動チェックを追加（114件）
+- 追記（不足の補完）
+  - プレイグラウンドの不具合修正：3D デモで `Mini3D is not defined`（`assets/mini3d.js` が読まれていなかった）、および `.stage` の外に置いた操作ボタン・出力欄が取り込まれず null 参照になっていた問題。`build.mjs` が `.stage` に続く兄弟の `<div class="row">` も取り込むようにし、**全 151 デモがエラーなしで動くことを毎回テストする**ようにした
+  - `10-accessibility.html` に **A7「canvas と 3D の代替経路」**：canvas の中身は支援技術から見えないため、`tabindex` ＋ `role` ＋ 矢印キー操作 ＋ `aria-live` ＋ 代替一覧で経路を作る（キーボードだけで選択できる実動デモ）。A6 のチェックリストにも canvas・iframe の `title`・再試行中の状態の3行を追加
+  - `11-quiz.html`：出題範囲に M・X・Y・Z 層を追加（従来は A〜E のみで、第5弾以降の項目が出題されなかった）
+  - `09-exercises.html`：課題13〜16 を追加（再試行の可視化 / Webhook の順序入れ替わり / 計測のスナップ / 3Dビューのキーボード操作）
+  - `12-electron.html`・`13-kintone.html` から Y層（122 レート制限・126 機器連携・120/121 鍵の置き場所）への導線を追加
+  - `19-plan-integration-3d.md` の冒頭に実装済みであることと採用した依存方針を明記
+- 検証：`test/verify.mjs` に Y層・Z層・A7・クイズ・全デモ実行のチェックを追加（122件）
 
 ## 第9弾（最新機能とクロスプラットフォーム）
 - `17-modern.html`（M層 87〜101）：`:has()`、`@starting-style`、popover、アンカー位置指定、`interpolate-size`、`details name`、`field-sizing`、`content-visibility`、`light-dark()`/`color-mix()`、`moveBefore()`、Custom Highlight API、`scheduler.yield()`、新しい標準API、`::scroll-button()`/`::scroll-marker`、`sibling-index()`。各デモは「以前／今」を並べ、端末の対応可否を実測表示
