@@ -27,6 +27,8 @@
   <select id="pick" style="margin-left:auto;max-width:360px"></select>
   <button id="run" class="primary">実行（Ctrl+Enter）</button>
   <button id="reset">元に戻す</button>
+  <button id="discard" title="この デモの下書きを消して元のコードに戻す">下書きを破棄</button>
+  <span id="draft" class="readout" hidden>下書き復元</span>
   <a id="back" href="#" style="font-size:13px">元のデモへ</a>
 </header>
 <div class="pg">
@@ -39,7 +41,7 @@
   <div class="preview">
     <iframe id="frame" title="実行結果"></iframe>
     <div class="err" id="err"></div>
-    <p class="note">練習課題（09）の解答をここで試せる。書き換えは保存されない（再読込で元のデモに戻る）。iframe 内では <code>localStorage</code> と <code>BroadcastChannel</code> も動くので、75・80・81・85 も試せる。</p>
+    <p class="note">練習課題（09）の解答をここで試せる。書き換えはデモごとに下書きとして自動保存される（この端末のブラウザ内）。「元に戻す」は元のコードを表示、「下書きを破棄」は保存も消す。iframe 内では <code>localStorage</code> と <code>BroadcastChannel</code> も動くので、75・80・81・85 も試せる。</p>
   </div>
 </div>
 <script>
@@ -51,10 +53,17 @@
   const groups = new Map(); DEMOS.forEach(d => { if (!groups.has(d.page)) groups.set(d.page, []); groups.get(d.page).push(d); });
   pick.innerHTML = [...groups].map(([page, list]) => `<optgroup label="${list[0].pageTitle}">${list.map(d => `<option value="${d.id}">${d.title}</option>`).join('')}</optgroup>`).join('');
   let current = null;
-  const load = id => {
+  const KEY = id => 'ui-guide.playground.' + id;   // デモごとの下書き（この端末のブラウザに保存）
+  const readDraft = id => { try { return JSON.parse(localStorage.getItem(KEY(id)) || 'null'); } catch { return null; } };
+  const saveDraft = () => { if (!current) return; const d = { html: $('#ed-html').value, css: $('#ed-css').value, js: $('#ed-js').value };
+    const same = d.html === current.html && d.css === current.css && d.js === current.js;
+    try { same ? localStorage.removeItem(KEY(current.id)) : localStorage.setItem(KEY(current.id), JSON.stringify(d)); } catch {} $('#draft').hidden = same; };
+  const load = (id, { useDraft = true } = {}) => {
     current = byId[id] || DEMOS[0]; pick.value = current.id;
     $('#d-title').textContent = current.title; $('#d-what').textContent = current.what; $('#d-how').textContent = current.how;
-    $('#ed-html').value = current.html; $('#ed-css').value = current.css; $('#ed-js').value = current.js;
+    const d = useDraft ? readDraft(current.id) : null;
+    $('#ed-html').value = d?.html ?? current.html; $('#ed-css').value = d?.css ?? current.css; $('#ed-js').value = d?.js ?? current.js;
+    $('#draft').hidden = !d;
     $('#back').href = `${current.page}#${current.id}`; history.replaceState(null, '', '#' + current.id);
     run();
   };
@@ -69,7 +78,9 @@
   window.addEventListener('message', e => { if (e.data?.pgError) err.textContent = 'エラー: ' + e.data.pgError; });
   pick.onchange = () => load(pick.value);
   $('#run').onclick = run;
-  $('#reset').onclick = () => load(current.id);
+  $('#reset').onclick = () => { $('#ed-html').value = current.html; $('#ed-css').value = current.css; $('#ed-js').value = current.js; run(); };
+  $('#discard').onclick = () => { try { localStorage.removeItem(KEY(current.id)); } catch {} load(current.id, { useDraft: false }); };
+  let saveTimer; document.querySelectorAll('textarea').forEach(t => t.addEventListener('input', () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 300); }));
   document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   // textarea で Tab をインデントに
   document.querySelectorAll('textarea').forEach(t => t.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); const s = t.selectionStart; t.setRangeText('  ', s, t.selectionEnd, 'end'); } }));

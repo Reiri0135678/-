@@ -34,7 +34,7 @@ import { createVirtualList, registerHotkeys, createPersistentStore } from './ui-
 | `sortable.js` | `createSortable(listEl, {handle, onChange})` |
 | `split.js` | `createSplit(container, {sizes, min, gutter, direction, onChange})` |
 
-各ファイル冒頭に使い方・副作用・元デモ番号を記載。
+各ファイル冒頭に使い方・副作用・元デモ番号を記載。TypeScript からは `index.d.ts` が型を提供する（`import { … } from './ui-kit/index.js'` で解決。`tsc --strict` で検証済み）。
 
 ## テスト
 ```

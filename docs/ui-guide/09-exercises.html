@@ -15,7 +15,8 @@
   .ex ul { font-size: 13px; margin: 4px 0 8px; padding-left: 20px; }
   details { margin-top: 6px; } details summary { cursor: pointer; font-size: 13px; color: var(--muted); }
   details pre { background: var(--code); color: #e2e8f0; padding: 10px 12px; border-radius: 8px; font-size: 12px; overflow: auto; margin: 6px 0 0; }
-  .how { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; font-size: 13.5px; margin-bottom: 18px; }
+  .pg { font-size: 12px; margin-left: 4px; }
+  .how { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; font-size: 13.5px; margin-bottom: 18px; }
 </style>
 </head>
 <body>
@@ -28,13 +29,13 @@
 
   <div class="ex"><h2>課題1：パンに範囲制限を付ける<span class="lv lv1">1</span></h2>
     <p class="goal">02 パン で、ワールドが枠の外に完全に出てしまわないよう、tx/ty を ±300px に制限する。</p>
-    <p class="base">対象：<a href="02-basic.html#n02">02</a>　ヒント：pointermove で tx, ty を計算した直後に <code>Math.min/Math.max</code> で挟む。</p>
+    <p class="base">対象：<a href="02-basic.html#n02">02</a> <a class="pg" href="14-playground.html#n02">▶ プレイグラウンドで開く</a>　ヒント：pointermove で tx, ty を計算した直後に <code>Math.min/Math.max</code> で挟む。</p>
     <details><summary>解答例</summary><pre>tx = Math.max(-300, Math.min(300, e.clientX - dragging.x));
 ty = Math.max(-300, Math.min(300, e.clientY - dragging.y));</pre></details></div>
 
   <div class="ex"><h2>課題2：ズームの倍率を段階にする<span class="lv lv1">1</span></h2>
     <p class="goal">03 ズーム で、ホイール1回ごとに 25%・50%・100%・200%・400% の5段階だけを行き来するようにする。</p>
-    <p class="base">対象：<a href="02-basic.html#n03">03</a>　ヒント：倍率の配列と現在のインデックスを持ち、deltaY の符号でインデックスを進める。</p>
+    <p class="base">対象：<a href="02-basic.html#n03">03</a> <a class="pg" href="14-playground.html#n03">▶ プレイグラウンドで開く</a>　ヒント：倍率の配列と現在のインデックスを持ち、deltaY の符号でインデックスを進める。</p>
     <details><summary>解答例</summary><pre>const STEPS = [0.25, 0.5, 1, 2, 4]; let idx = 2;
 view.addEventListener('wheel', e => {
   e.preventDefault();
@@ -44,7 +45,7 @@ view.addEventListener('wheel', e => {
 
   <div class="ex"><h2>課題3：トーストを最大3件に制限する<span class="lv lv1">1</span></h2>
     <p class="goal">16 トースト で、4件目が来たら一番古いものを即座に消す。</p>
-    <p class="base">対象：<a href="02-basic.html#n16">16</a>　ヒント：追加前に <code>host.children.length</code> を見る。</p>
+    <p class="base">対象：<a href="02-basic.html#n16">16</a> <a class="pg" href="14-playground.html#n16">▶ プレイグラウンドで開く</a>　ヒント：追加前に <code>host.children.length</code> を見る。</p>
     <details><summary>解答例</summary><pre>function toast(msg, opts = {}) {
   while (host.children.length >= 3) host.firstElementChild.remove();
   // …以下同じ
@@ -52,7 +53,7 @@ view.addEventListener('wheel', e => {
 
   <div class="ex"><h2>課題4：長押しでコンテキストメニューを出す<span class="lv lv2">2</span></h2>
     <p class="goal">39 コンテキストメニュー を、タッチ端末向けに「500ms の長押し」でも開けるようにする（05 の長押し判定を合成）。</p>
-    <p class="base">対象：<a href="03-custom.html#n39">39</a> ＋ <a href="02-basic.html#n05">05</a>　ヒント：pointerdown でタイマー開始、pointermove/up でキャンセル。発火時は contextmenu と同じ位置決め関数を呼ぶ。位置決めを関数に切り出すのが先。</p>
+    <p class="base">対象：<a href="03-custom.html#n39">39</a> <a class="pg" href="14-playground.html#n39">▶ プレイグラウンドで開く</a> ＋ <a href="02-basic.html#n05">05</a>　ヒント：pointerdown でタイマー開始、pointermove/up でキャンセル。発火時は contextmenu と同じ位置決め関数を呼ぶ。位置決めを関数に切り出すのが先。</p>
     <details><summary>解答例</summary><pre>const openAt = (clientX, clientY) => { /* 39 の contextmenu ハンドラの中身をここへ */ };
 area.addEventListener('contextmenu', e => { e.preventDefault(); openAt(e.clientX, e.clientY); });
 let t = null;
@@ -61,7 +62,7 @@ area.addEventListener('pointerdown', e => { t = setTimeout(() => openAt(e.client
 
   <div class="ex"><h2>課題5：選択にキーボード操作を足す<span class="lv lv2">2</span></h2>
     <p class="goal">11 選択 で、↑↓ で選択を移動、Shift+↑↓ で範囲を伸ばせるようにする。</p>
-    <p class="base">対象：<a href="02-basic.html#n11">11</a> ＋ <a href="03-custom.html#n34">34</a>　ヒント：list に <code>tabindex="0"</code> を付けて keydown を受ける。「現在位置」を anchor とは別に持つ。</p>
+    <p class="base">対象：<a href="02-basic.html#n11">11</a> <a class="pg" href="14-playground.html#n11">▶ プレイグラウンドで開く</a> ＋ <a href="03-custom.html#n34">34</a>　ヒント：list に <code>tabindex="0"</code> を付けて keydown を受ける。「現在位置」を anchor とは別に持つ。</p>
     <details><summary>解答例</summary><pre>list.tabIndex = 0; let cursor = 0;
 list.addEventListener('keydown', e => {
   if (e.key !== 'ArrowDown' &amp;&amp; e.key !== 'ArrowUp') return;
@@ -74,7 +75,7 @@ list.addEventListener('keydown', e => {
 
   <div class="ex"><h2>課題6：仮想スクロールの行高を可変にしない代わりに「行の選択」を保つ<span class="lv lv2">2</span></h2>
     <p class="goal">23 仮想スクロール で、行をクリックすると選択状態になり、スクロールして DOM が作り直されても選択が保たれるようにする。</p>
-    <p class="base">対象：<a href="03-custom.html#n23">23</a>　ヒント：選択は DOM ではなくデータ側（<code>Set</code> の行番号）に持ち、render で class を付け直す。DOM に状態を持たないのが仮想スクロールの原則。</p>
+    <p class="base">対象：<a href="03-custom.html#n23">23</a> <a class="pg" href="14-playground.html#n23">▶ プレイグラウンドで開く</a>　ヒント：選択は DOM ではなくデータ側（<code>Set</code> の行番号）に持ち、render で class を付け直す。DOM に状態を持たないのが仮想スクロールの原則。</p>
     <details><summary>解答例</summary><pre>const selected = new Set();
 rows.addEventListener('click', e => { const i = +e.target.dataset.i; selected.has(i) ? selected.delete(i) : selected.add(i); render(); });
 // render 内：
@@ -82,7 +83,7 @@ html += `&lt;div class="r ${selected.has(i) ? 'sel' : ''}" data-i="${i}"&gt;行 
 
   <div class="ex"><h2>課題7：慣性パンにする<span class="lv lv2">2</span></h2>
     <p class="goal">02 パン に 28 慣性 を合成し、離した後も滑って止まるようにする（壁なし、減衰 0.92）。</p>
-    <p class="base">対象：<a href="02-basic.html#n02">02</a> ＋ <a href="03-custom.html#n28">28</a>　ヒント：pointermove で直近の速度（px/ms）を記録。pointerup で rAF ループを開始し、毎フレーム tx += vx、vx *= 0.92。次の pointerdown でループを止める。</p>
+    <p class="base">対象：<a href="02-basic.html#n02">02</a> <a class="pg" href="14-playground.html#n02">▶ プレイグラウンドで開く</a> ＋ <a href="03-custom.html#n28">28</a>　ヒント：pointermove で直近の速度（px/ms）を記録。pointerup で rAF ループを開始し、毎フレーム tx += vx、vx *= 0.92。次の pointerdown でループを止める。</p>
     <details><summary>解答例</summary><pre>let vx = 0, vy = 0, last = null, raf = 0;
 view.addEventListener('pointerdown', e => { cancelAnimationFrame(raf); dragging = {...}; last = { x: e.clientX, y: e.clientY, t: performance.now() }; });
 view.addEventListener('pointermove', e => { if (!dragging) return;
@@ -95,7 +96,7 @@ view.addEventListener('pointerup', () => { dragging = null;
 
   <div class="ex"><h2>課題8：Undo をインライン編集に接続する<span class="lv lv2">2</span></h2>
     <p class="goal">38 インライン編集 の確定ごとに履歴を積み、Ctrl+Z で表の内容が戻るようにする（37 の方式）。</p>
-    <p class="base">対象：<a href="03-custom.html#n38">38</a> ＋ <a href="03-custom.html#n37">37</a>　ヒント：状態＝セル文字列の2次元配列。確定時に commit、undo 時は配列から表を描き直す。<code>ui-kit/undo.js</code> の <code>createHistory</code> を使ってもよい。</p>
+    <p class="base">対象：<a href="03-custom.html#n38">38</a> <a class="pg" href="14-playground.html#n38">▶ プレイグラウンドで開く</a> ＋ <a href="03-custom.html#n37">37</a>　ヒント：状態＝セル文字列の2次元配列。確定時に commit、undo 時は配列から表を描き直す。<code>ui-kit/undo.js</code> の <code>createHistory</code> を使ってもよい。</p>
     <details><summary>解答例</summary><pre>const cells = () => $$('.s38 td').map(td => td.textContent);
 let past = [], state = cells();
 const paint = () => $$('.s38 td').forEach((td, i) => td.textContent = state[i]);
@@ -105,7 +106,7 @@ document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) &amp;&a
 
   <div class="ex"><h2>課題9：矩形選択に「ワールド座標」を対応させる<span class="lv lv3">3</span></h2>
     <p class="goal">43 無限キャンバス の上で 48 矩形選択 を動かす。パン・ズームした状態でも、矩形に入ったノードだけ選ばれること。</p>
-    <p class="base">対象：<a href="04-pro.html#n43">43</a> ＋ <a href="04-pro.html#n48">48</a>　ヒント：矩形の始点・終点を toWorld で<b>ワールド座標に変換してから</b>ノードのワールド座標と交差判定する。矩形の描画自体は画面座標のままでよい。空白ドラッグをパンにするか選択にするかは修飾キー（Shift）で分ける。</p>
+    <p class="base">対象：<a href="04-pro.html#n43">43</a> <a class="pg" href="14-playground.html#n43">▶ プレイグラウンドで開く</a> ＋ <a href="04-pro.html#n48">48</a>　ヒント：矩形の始点・終点を toWorld で<b>ワールド座標に変換してから</b>ノードのワールド座標と交差判定する。矩形の描画自体は画面座標のままでよい。空白ドラッグをパンにするか選択にするかは修飾キー（Shift）で分ける。</p>
     <details><summary>解答例（要点）</summary><pre>// pointerdown: e.shiftKey なら選択モード、そうでなければパン
 const a = toWorld(p.x, p.y);                       // 始点（ワールド）
 // pointermove: const b = toWorld(q.x, q.y);       // 終点（ワールド）
@@ -115,7 +116,7 @@ nodes.forEach(n => n.selected = !(n.x + n.w &lt; rect.left || n.x > rect.right |
 
   <div class="ex"><h2>課題10：バッチ操作に「中断」と「再開」を付ける<span class="lv lv3">3</span></h2>
     <p class="goal">76 バッチ操作 に、実行中の「中断」ボタンと、中断位置からの「再開」を追加する（40 の AbortController を合成）。</p>
-    <p class="base">対象：<a href="05-advanced.html#n76">76</a> ＋ <a href="03-custom.html#n40">40</a>　ヒント：run に <code>signal</code> を渡し、チャンクごとに <code>signal.aborted</code> を見る。未処理の changes を残しておけば再開は同じ run を呼ぶだけ。</p>
+    <p class="base">対象：<a href="05-advanced.html#n76">76</a> <a class="pg" href="14-playground.html#n76">▶ プレイグラウンドで開く</a> ＋ <a href="03-custom.html#n40">40</a>　ヒント：run に <code>signal</code> を渡し、チャンクごとに <code>signal.aborted</code> を見る。未処理の changes を残しておけば再開は同じ run を呼ぶだけ。</p>
     <details><summary>解答例（要点）</summary><pre>let ctrl = null, remaining = [];
 async function run(changes) { ctrl = new AbortController(); remaining = changes.slice();
   while (remaining.length) { if (ctrl.signal.aborted) { res.innerHTML += `中断（残り ${remaining.length} 件）&lt;button id="resume"&gt;再開&lt;/button&gt;`; $('#resume').onclick = () => run(remaining); return; }
@@ -125,7 +126,7 @@ $('#abort').onclick = () => ctrl?.abort();</pre></details></div>
 
   <div class="ex"><h2>課題11：ドッキングのタブに「閉じる」と「再表示」を付ける<span class="lv lv3">3</span></h2>
     <p class="goal">80 ドッキング で、タブの × でパネルを閉じ、ヘッダーのメニューから閉じたパネルを再表示できるようにする。レイアウト保存にも反映されること。</p>
-    <p class="base">対象：<a href="05-advanced.html#n80">80</a> ＋ <a href="02-basic.html#n20">20</a>　ヒント：レイアウト JSON に <code>closed: []</code> を追加。閉じる＝ removeEverywhere して closed に push。再表示＝ closed から外して center に push。render は JSON から組み立てているので、JSON を正しく変えれば表示は追従する。</p>
+    <p class="base">対象：<a href="05-advanced.html#n80">80</a> <a class="pg" href="14-playground.html#n80">▶ プレイグラウンドで開く</a> ＋ <a href="02-basic.html#n20">20</a>　ヒント：レイアウト JSON に <code>closed: []</code> を追加。閉じる＝ removeEverywhere して closed に push。再表示＝ closed から外して center に push。render は JSON から組み立てているので、JSON を正しく変えれば表示は追従する。</p>
     <details><summary>解答例（要点）</summary><pre>// DEFAULT() に closed: [] を追加
 // タブ描画に &lt;i data-close="${p}"&gt;×&lt;/i&gt; を追加し、pointerdown で：
 if (e.target.dataset.close) { const p = e.target.dataset.close; removeEverywhere(p); L.closed.push(p); render(); return; }
@@ -134,7 +135,7 @@ const p = sel.value; L.closed = L.closed.filter(x => x !== p); L.zones.center.pu
 
   <div class="ex"><h2>課題12：オフラインキューを楽観的更新と競合解決につなぐ<span class="lv lv3">3</span></h2>
     <p class="goal">57 楽観的更新 の送信を 79 のキュー経由にし、送信時にサーバの revision が進んでいたら 78 の競合ダイアログを出す。</p>
-    <p class="base">対象：<a href="04-pro.html#n57">57</a> ＋ <a href="05-advanced.html#n79">79</a> ＋ <a href="05-advanced.html#n78">78</a>　ヒント：job に <code>{ id, baseRevision, patch }</code> を持たせる。send で revision 不一致なら例外ではなく「競合」として解決フローへ回し、解決後の値で job を作り直してキューの先頭に戻す。<code>ui-kit</code> の offline-queue + merge を組み合わせると短く書ける。</p>
+    <p class="base">対象：<a href="04-pro.html#n57">57</a> <a class="pg" href="14-playground.html#n57">▶ プレイグラウンドで開く</a> ＋ <a href="05-advanced.html#n79">79</a> ＋ <a href="05-advanced.html#n78">78</a>　ヒント：job に <code>{ id, baseRevision, patch }</code> を持たせる。send で revision 不一致なら例外ではなく「競合」として解決フローへ回し、解決後の値で job を作り直してキューの先頭に戻す。<code>ui-kit</code> の offline-queue + merge を組み合わせると短く書ける。</p>
     <details><summary>解答例（要点）</summary><pre>import { createOfflineQueue, threeWayMerge } from '../../ui-kit/index.js';
 const q = createOfflineQueue({ storageKey: 'ex12', send: async job => {
   const server = await api.get(job.id);

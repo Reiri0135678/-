@@ -85,6 +85,19 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   await p.close(); }
 { const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   await p.goto(url('11-quiz.html')); await p.click('#start'); await p.click('.choice'); ok('11 クイズ: 回答後に次へが出る', !!(await p.$('#nextBtn')));
+  await p.click('#mode-live'); await p.click('#start'); await p.waitForTimeout(500);
+  ok('11 クイズ（動きを見て当てる）: iframe にデモが出て説明文は隠れる', (await p.$eval('#live', f => !f.hidden && f.srcdoc.includes('class="stage'))) && (await p.$eval('#desc', d => d.hidden)));
+  await p.close(); }
+{ // プレイグラウンドの下書き保存 / カリキュラムのチェック保存
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('14-playground.html#n01')); await p.evaluate(() => localStorage.removeItem('ui-guide.playground.n01')); await p.waitForTimeout(200);
+  await p.fill('#ed-css', '/* draft */'); await p.waitForTimeout(500); await p.reload(); await p.waitForTimeout(400);
+  ok('14 プレイグラウンド: 下書きが再読込後も残る', (await p.inputValue('#ed-css')) === '/* draft */' && !(await p.$eval('#draft', d => d.hidden)));
+  await p.click('#discard'); await p.waitForTimeout(200); ok('14 プレイグラウンド: 下書きを破棄で元に戻る', (await p.inputValue('#ed-css')) !== '/* draft */' && (await p.evaluate(() => localStorage.getItem('ui-guide.playground.n01'))) === null);
+  await p.goto(url('15-curriculum.html')); await p.evaluate(() => localStorage.removeItem('ui-guide.curriculum')); await p.reload();
+  await p.click('#days input[type=checkbox]'); await p.reload(); await p.waitForTimeout(200);
+  ok('15 カリキュラム: チェックが再読込後も残る', (await p.$$eval('#days input:checked', i => i.length)) === 1);
+  await p.evaluate(() => localStorage.removeItem('ui-guide.curriculum'));
   await p.close(); }
 
 await browser.close();

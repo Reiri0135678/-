@@ -6,11 +6,13 @@
 <title>名称当てクイズ</title>
 <link rel="stylesheet" href="assets/guide.css">
 <script src="assets/catalog-data.js"></script>
+<script src="assets/demo-data.js"></script>
 <style>
   .tierF { background: #475569; }
   main.single { max-width: 760px; margin: 0 auto; padding: 24px; }
   .q { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
   .q .desc { font-size: 15px; line-height: 1.7; margin: 0 0 14px; min-height: 3em; }
+  .q .live { width: 100%; height: 320px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-bottom: 12px; }
   .q .api { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; }
   .choices { display: grid; gap: 8px; }
   .choice { text-align: left; padding: 10px 14px; font-size: 14px; border-radius: 8px; }
@@ -36,12 +38,14 @@
     <label><input type="checkbox" class="tier-cb" value="E"> E</label>
     <label>問題数 <select id="count"><option>10</option><option selected>20</option><option>40</option></select></label>
     <label><input type="checkbox" id="mode-en"> 英語名を答える</label>
+    <label title="説明文の代わりに、デモそのものを動かして名称を当てる（デモがある項目のみ出題）"><input type="checkbox" id="mode-live"> 動きを見て当てる</label>
     <button id="start" class="primary">開始</button>
   </div>
   <div class="bar"><i id="prog"></i></div>
   <div class="q" id="q" hidden>
     <div class="readout" id="meta"></div>
     <p class="desc" id="desc"></p>
+    <iframe id="live" class="live" hidden title="出題中のデモ"></iframe>
     <div class="api" id="api"></div>
     <div class="choices" id="choices"></div>
     <div class="result" id="result"></div>
@@ -59,7 +63,8 @@
   const mask = (desc, it) => { let d = desc; [it.ja, it.en].forEach(n => { n.split(/\s*[\/／(（]\s*/)[0].split(/\s+/).filter(w => w.length >= 2).forEach(w => { d = d.split(w).join('◯◯'); }); }); return d; };
   const start = () => {
     const tiers = $$('.tier-cb').filter(c => c.checked).map(c => c.value);
-    const all = ITEMS.map((it, i) => ({ ...it, n: itemNo(it, i) })).filter(it => tiers.includes(it.tier));
+    const live = $('#mode-live').checked, demoIds = new Set((window.DEMOS || []).map(d => d.id));
+    const all = ITEMS.map((it, i) => ({ ...it, n: itemNo(it, i) })).filter(it => tiers.includes(it.tier) && (!live || demoIds.has('n' + String(it.n).padStart(2, '0'))));
     if (all.length < 4) { alert('層を1つ以上選んでください'); return; }
     pool = shuffle(all).slice(0, +$('#count').value); qi = 0; score = 0; wrong = [];
     $('#summary').hidden = true; $('#q').hidden = false; next(all);
@@ -70,8 +75,14 @@
     const others = shuffle((all || ITEMS.map((it, i) => ({ ...it, n: itemNo(it, i) }))).filter(x => x.n !== current.n && x.tier === current.tier)).slice(0, 3);
     const choices = shuffle([current, ...others]);
     $('#meta').textContent = `第 ${qi + 1} / ${pool.length} 問　層 ${current.tier}`;
-    $('#desc').textContent = mask(strip(current.desc), current);
-    $('#api').textContent = '実装手段：' + strip(current.api);
+    const live = $('#mode-live').checked, demo = live && (window.DEMOS || []).find(d => d.id === 'n' + String(current.n).padStart(2, '0'));
+    $('#desc').hidden = !!demo; $('#live').hidden = !demo; $('#api').hidden = !!demo;
+    if (demo) {                                        // デモを動かして「これは何という操作か」を問う（説明文は見せない）
+      $('#live').srcdoc = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><link rel="stylesheet" href="assets/guide.css"><script src="assets/guide.js"><\/script><style>body{padding:12px;background:#f6f7f9}section.demo{margin:0}h2,.what,.how,details{display:none}<\/style><style>${demo.css}<\/style></head><body><section class="demo" id="${demo.id}"><p class="how" style="display:block">${demo.how}</p>${demo.html}</section><script>try{${demo.js}\n}catch(e){}<\/script></body></html>`;
+    } else {
+      $('#desc').textContent = mask(strip(current.desc), current);
+      $('#api').textContent = '実装手段：' + strip(current.api);
+    }
     $('#result').innerHTML = '';
     $('#choices').innerHTML = choices.map(c => `<button class="choice" data-n="${c.n}">${label(c)}</button>`).join('');
     $('#prog').style.width = (qi / pool.length * 100) + '%';
