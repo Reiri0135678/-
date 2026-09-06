@@ -2,9 +2,25 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
   QC Board(検査依頼デジタル化ホワイトボード)を EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)で動かす。
   作られるもの: EC2、Elastic IP、セキュリティグループ、IAM ロール(SSM 接続 + バックアップ用 S3)、S3 バケット。
+  他のシステムと同じ AWS アカウントに相乗りできるよう、VPC/サブネットは明示指定、資源名はスタック名由来、
+  すべてに Project タグ(コスト配分用)を付ける。既存資源は一切変更しない。
   作成後に DomainName の A レコードを出力の PublicIp に向けると、数分で https://DomainName/ が開く。
 
 Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: 配置先の VPC。既定 VPC でも既存システムの VPC でも可(既存資源は変更しない)
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+    Description: 配置先のサブネット。インターネットゲートウェイへの経路がある「パブリックサブネット」を選ぶ
+  ProjectTag:
+    Type: String
+    Default: qc-board
+    Description: 全資源に付ける Project タグ。請求書でこのシステム分だけを切り出すのに使う(コスト配分タグの有効化が別途必要)
+  BackupBucketName:
+    Type: String
+    Default: ''
+    Description: バックアップ用 S3 バケット名。空なら qc-board-backup-<アカウント>-<リージョン> を作る。既に同名がある場合だけ指定する
   DomainName:
     Type: String
     Description: 公開するドメイン(例 qc-board.example.com)。証明書の自動取得に必須
@@ -55,6 +71,7 @@ Parameters:
 Conditions:
   HasKeyName: !Not [!Equals [!Ref KeyName, '']]
   HasAdminCidr: !Not [!Equals [!Ref AdminCidr, '']]
+  HasBucketName: !Not [!Equals [!Ref BackupBucketName, '']]
 
 Resources:
   BackupBucket:
@@ -62,7 +79,10 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub 'qc-board-backup-${AWS::AccountId}-${AWS::Region}'
+      BucketName: !If
+        - HasBucketName
+        - !Ref BackupBucketName
+        - !Sub 'qc-board-backup-${AWS::AccountId}-${AWS::Region}'
       VersioningConfiguration:
         Status: Enabled
       PublicAccessBlockConfiguration:
@@ -80,6 +100,9 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration:
               NoncurrentDays: 90
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
 
   InstanceRole:
     Type: AWS::IAM::Role
@@ -94,7 +117,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
       Policies:
-        - PolicyName: qc-board-backup-to-s3
+        - PolicyName: !Sub '${AWS::StackName}-backup-to-s3'
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -108,6 +131,9 @@ Resources:
                   - s3:GetObject
                   - s3:DeleteObject
                 Resource: !Sub '${BackupBucket.Arn}/*'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectTag
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -118,7 +144,9 @@ Resources:
   SecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
+      GroupName: !Sub '${AWS::StackName}-web'
       GroupDescription: QC Board (HTTP/HTTPS from anywhere for certificate issuance; app-level IP filter is in Caddy)
+      VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -134,7 +162,9 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
-          Value: qc-board
+          Value: !Sub '${AWS::StackName}-web'
+        - Key: Project
+          Value: !Ref ProjectTag
 
   SshIngress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -153,8 +183,13 @@ Resources:
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref InstanceProfile
       KeyName: !If [HasKeyName, !Ref KeyName, !Ref 'AWS::NoValue']
-      SecurityGroupIds:
-        - !GetAtt SecurityGroup.GroupId
+      NetworkInterfaces:
+        - DeviceIndex: 0
+          SubnetId: !Ref SubnetId
+          AssociatePublicIpAddress: true
+          DeleteOnTermination: true
+          GroupSet:
+            - !GetAtt SecurityGroup.GroupId
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -164,7 +199,9 @@ Resources:
             DeleteOnTermination: true
       Tags:
         - Key: Name
-          Value: qc-board
+          Value: !Sub '${AWS::StackName}'
+        - Key: Project
+          Value: !Ref ProjectTag
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
@@ -207,7 +244,9 @@ Resources:
       InstanceId: !Ref Instance
       Tags:
         - Key: Name
-          Value: qc-board
+          Value: !Sub '${AWS::StackName}'
+        - Key: Project
+          Value: !Ref ProjectTag
 
 Outputs:
   PublicIp:
