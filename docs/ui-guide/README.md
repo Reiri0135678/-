@@ -19,12 +19,15 @@
 | 13 | `13-kintone.html` | kintone 連携リファレンス（参照用、上限値は公式で要確認） | 完成 |
 | 17 | `17-modern.html` | M層 87〜101：最近できるようになったこと（:has() / popover / アンカー位置指定 / interpolate-size / details name / field-sizing / content-visibility / light-dark / moveBefore / Custom Highlight / scheduler.yield / 標準API / scroll-button / sibling-index）。各項目で端末の対応可否を判定 | 完成 |
 | 18 | `18-crossplatform.html` | X層 102〜113：クロスプラットフォーム（端末実測 / 当たり判定 / 修飾キー / dvh / セーフエリア / IME / CloseWatcher / スクロールバー / タッチの癖 / 日本語テキスト / 印刷 / 機能検出）＋実行環境ごとの早見表 | 完成 |
+| 20 | `20-integration.html` | Y層 114〜127：サードパーティ連携（方式選択 / iframe と postMessage / sandbox と frame-ancestors / 3rd party Cookie と Storage Access / CORS / OAuth 2.1 と PKCE / Electron の認証 / 鍵の置き場所 / レート制限と再試行 / Webhook の受け側 / ポーリング・SSE・WebSocket / ファイル授受 / WebHID・WebSerial・WebUSB / 配布ウィジェットと Shadow DOM） | 完成 |
+| 21 | `21-3d.html` | Z層 128〜143：3D と AR（座標系と行列 / カメラ操作 / ビューキューブと投影 / WebGPU と WebGL2 / ピッキング / 変形ギズモ / スナップ / 選択の可視化 / 計測 / 断面 / 分解図 / 注釈 / glTF と CAD 変換 / 性能 / WebXR AR / ライブラリ選定）。`assets/mini3d.js`（依存ゼロの WebGL2 レンダラ）で実際に動き、three.js・model-viewer の参考コードを併記 | 完成 |
 | 16 | `16-bundler.html` | 単一ファイル版を作るバンドラ（ブラウザだけで生成。Node 不要） | 完成 |
-| 15 | `15-curriculum.html` | 学習カリキュラム（7ステップ、到達目標、チェック保存） | 完成 |
+| 15 | `15-curriculum.html` | 学習カリキュラム（9ステップ、到達目標、チェック保存） | 完成 |
 | 14 | `14-playground.html` | プレイグラウンド：各デモの HTML / CSS / JS を編集して即実行（`assets/demo-data.js` を `build.mjs` が生成） | 完成 |
-| 19 | `19-plan-integration-3d.md` | 素案：サードパーティ連携（Y層 114〜127）と 3D 操作・編集（Z層 128〜143）。実装前の合意用 | 計画 |
+| 19 | `19-plan-integration-3d.md` | 素案：サードパーティ連携（Y層 114〜127）と 3D 操作・編集（Z層 128〜143）。20・21 の設計方針 | 実装済 |
 | 07 | `07-implementation-plan.md` | 実装計画：部品ライブラリ化（完了）と Mission Bridge への適用手順・確認事項 | 計画 |
 | - | `assets/guide.css` / `assets/guide.js` / `assets/catalog-data.js` | 共通スタイル、目次生成、コード表示ランタイム、カタログデータ（01 と 11 が共有） | - |
+| - | `assets/mini3d.js` | 依存ゼロの WebGL2 レンダラ（行列演算・形状生成・レイキャスト・GPU ピッキング・クリッピング・射影）。21 のデモが使う | - |
 | - | `../ui-kit/` | デモから切り出した再利用部品（15モジュール、テスト26件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
 | - | `build.mjs` | デモ抽出（`assets/demo-data.js`）・検索索引（`assets/search-index.js`）・収録一覧（`assets/manifest.js`）・単一ファイル版（`dist/ui-guide-standalone.html`）の生成。デモを編集したら `npm run build:docs` | - |
 | - | `assets/bundler.js` / `assets/standalone-shell.js` | 単一ファイル版の組み立て処理と、生成物の中で動くランタイム。ブラウザ（16）と Node（build.mjs）が同じものを使う | - |
@@ -48,11 +51,15 @@
 - 動作確認は Chromium 系ブラウザで実施。View Transitions（31）・`popover` 等は対応ブラウザでのみ動き、非対応時はフォールバックする
 - 61・62（Electron のフレームレスウィンドウ／ネイティブメニュー）はブラウザ上では動作しないため、模擬動作とメイン／preload／renderer のコード提示にとどめている
 - 50（マルチタッチ）はタッチ端末での2本指操作が本来の形。マウスでは Shift+ドラッグで2本目の指を模擬する
-- D層・E層の番号（63〜86）は第3弾提案時のリスト番号をそのまま使っている（63〜70 が E層、71〜86 が D層）。第5弾で M層 87〜101、X層 102〜113 を追加（全113項目）
+- D層・E層の番号（63〜86）は第3弾提案時のリスト番号をそのまま使っている（63〜70 が E層、71〜86 が D層）。第5弾で M層 87〜101、X層 102〜113 を追加。第6弾で Y層 114〜127、Z層 128〜143 を追加（全143項目）
 - M層の各デモは「以前の書き方／今の書き方」を並べ、その端末での対応可否を実測して表示する。非対応なら A〜C層の実装がフォールバックになる
 - 08 基礎知識に F9（レイアウトスラッシング）・F10（計測の道具）・F11（イベントループと描画タイミング）を追加。F4 は仕様上、passive リスナー内の preventDefault でコンソールに警告が出る（意図した実演）
 - 01 カタログは印刷ボタンでフィルタ結果を早見表として印刷できる。番号・部品名でも検索でき、ui-kit の対応部品をバッジ表示する
 - 63・68・70 は View Transitions / `animation-timeline` 対応ブラウザ（Chromium 系）で本来の動きになる。非対応では即時切替・静的表示にフォールバックする
+- Y層は「相手のサーバが要る」項目（117 の Cookie 遮断、120 の Electron 認証）を**模擬**とし、動きを再現したうえで実コードを併記する。115・116・118・119・121〜127 は実動する
+- Z層は `assets/mini3d.js`（依存ゼロの WebGL2）で動く。WebGL2 が使えない環境ではその旨を表示する。三次元の数値は実寸から計算しており、モデルは形状生成で作っている（外部モデルの読み込みは 140 で往復を実演）
+- 126（WebHID / WebSerial / WebUSB）は Chromium 系のみ。接続ボタンは実機がある環境でのみ完走する。実機が無くても「キーボード型リーダーの判定」は試せる
+- 142（AR）は端末の対応を実測して表示する。実際の AR 起動には HTTPS と対応端末（Android の WebXR / iOS の Quick Look）が要る
 - 75・79・80・81 は `localStorage` に下書き・キュー・レイアウト・作業状態を保存する（キーは `ui-guide.*`）。85 は `BroadcastChannel` と `storage` イベントの2経路で同期する
 
 ## 新しいデモを追加する

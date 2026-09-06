@@ -132,6 +132,74 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   ok('108 CloseWatcher: Esc で閉じる', await p.$eval('#s108-panel', e => e.hidden));
   ok('18 X層: JSエラーなし', errs.length === 0, errs.join(' | '));
   await p.close(); }
+{ // Y層（サードパーティ連携）
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(url('20-integration.html')); await p.waitForTimeout(900);
+  ok('20 Y層: 14項目が並ぶ', (await p.$$eval('section.demo', s2 => s2.length)) === 14);
+  ok('115 postMessage: 子から握手が届く', (await p.textContent('#l115')).includes('準備完了'));
+  await p.check('#c118'); await p.selectOption('#s118', 'star'); await p.waitForTimeout(400);
+  ok('118 CORS: Cookie 付きで Allow-Origin: * は拒否されると示す', (await p.textContent('#l118')).includes('Allow-Origin: * が使えない'), await p.textContent('#l118'));
+  await p.click('#b122c'); await p.waitForTimeout(6500);
+  ok('122 再試行: バックオフで 6件すべて通る', (await p.textContent('#o122')).includes('成功 6/6'), await p.textContent('#o122'));
+  await p.click('#b123a'); await p.waitForTimeout(300);
+  ok('123 Webhook: 正しい配送は受理される', (await p.textContent('#o123')).startsWith('200'));
+  await p.click('#b123b'); await p.waitForTimeout(300);
+  ok('123 Webhook: 改ざんは署名検証で弾く', (await p.textContent('#o123')).startsWith('401'));
+  await p.click('#b123c'); await p.waitForTimeout(300);
+  ok('123 Webhook: 古い署名はリプレイとして弾く', (await p.textContent('#o123')).startsWith('400'));
+  await p.click('#b123a'); await p.waitForTimeout(300); await p.click('#b123d'); await p.waitForTimeout(300);
+  ok('123 Webhook: 再送は冪等に扱う（200 で処理しない）', (await p.textContent('#o123')).includes('処理済み'));
+  await p.click('#b124go'); await p.waitForTimeout(3400);
+  ok('124 反映方式: SSE/WebSocket が先に受け取る', (await p.textContent('#v124s')) === '在庫 96' && (await p.textContent('#v124w')) === '在庫 96');
+  await p.waitForTimeout(2200);
+  ok('124 反映方式: ポーリングは遅れて追いつき通信回数が増える',
+    (await p.textContent('#v124p')) === '在庫 96' && Number(await p.textContent('#c124p')) >= 3);
+  ok('125 ファイル授受: 対応状況を実測表示する', (await p.textContent('#s125a')).length > 3 && (await p.textContent('#s125d')).length > 3);
+  await p.click('#i126'); await p.type('#i126', 'A-1001', { delay: 5 }); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  ok('126 機器連携: 高速入力をリーダーと判定する', (await p.textContent('#r126')).includes('リーダー'), await p.textContent('#r126'));
+  await p.type('#i126', 'B-2', { delay: 130 }); await p.keyboard.press('Enter'); await p.waitForTimeout(200);
+  ok('126 機器連携: ゆっくりの入力は手入力と判定する', (await p.textContent('#r126')).includes('手入力'), await p.textContent('#r126'));
+  const style127 = () => p.evaluate(() => ({
+    normal: getComputedStyle(document.querySelector('#host127 .wbtn')).fontSize,
+    shadow: getComputedStyle(document.querySelector('#shadow127').shadowRoot.querySelector('button')).fontSize }));
+  const s127a = await style127(); await p.click('#b127'); await p.waitForTimeout(250); const s127b = await style127();
+  ok('127 Shadow DOM: 外の CSS は通常DOMだけを壊す',
+    s127a.normal === s127b.shadow && s127b.normal !== s127b.shadow, JSON.stringify([s127a, s127b]));
+  ok('20 Y層: JSエラーなし', errs.length === 0, errs.join(' | '));
+  await p.close(); }
+
+{ // Z層（3D と AR）
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto(url('21-3d.html')); await p.waitForTimeout(1200);
+  ok('21 Z層: 16項目が並ぶ', (await p.$$eval('section.demo', s2 => s2.length)) === 16);
+  const gl = await p.evaluate(() => !!document.createElement('canvas').getContext('webgl2'));
+  ok('21 Z層: WebGL2 が使える環境である', gl);
+  if (gl) {
+    // 132 ピッキング：中心付近の部品を掴めるか（レイキャストの計算だけを直接検証する）
+    const hit = await p.evaluate(() => {
+      const c = document.querySelector('#c132'); if (!c || !c.__mini3d) return 'no viewer';
+      const r = c.getBoundingClientRect();
+      const h = c.__mini3d.raycast(r.left + r.width / 2, r.top + r.height / 2);
+      return h ? { name: h.object.name, d: h.distance } : null;
+    });
+    ok('132 ピッキング: 画面中央のレイが部品に当たる', !!hit && hit.d > 0, JSON.stringify(hit));
+    // 129 カメラ：ドラッグで方位角が変わる
+    const cam = await p.evaluate(() => {
+      const c = document.querySelector('#c129'); return c && c.__mini3d ? c.__mini3d.camera.azimuth : null; });
+    const el129 = await p.$('#c129'); await el129.scrollIntoViewIfNeeded(); await p.waitForTimeout(200);
+    const box = await el129.boundingBox();
+    await p.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await p.mouse.down(); await p.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2, { steps: 6 }); await p.mouse.up();
+    await p.waitForTimeout(200);
+    const cam2 = await p.evaluate(() => document.querySelector('#c129').__mini3d.camera.azimuth);
+    ok('129 カメラ: 横ドラッグで方位角が回る', cam !== null && Math.abs(cam2 - cam) > 0.1, `${cam} -> ${cam2}`);
+  }
+  ok('142 AR: 端末の対応状況を実測表示する', (await p.$$eval('#t142 tr', r => r.length)) >= 4);
+  ok('21 Z層: JSエラーなし', errs.length === 0, errs.join(' | '));
+  await p.close(); }
+
 { // 日本語入力（IME）対策が既存デモに入っているか
   const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   await p.goto(url('05-advanced.html')); await p.waitForTimeout(400);

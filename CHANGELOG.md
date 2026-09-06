@@ -1,5 +1,13 @@
 # 変更履歴
 
+## 第10弾（サードパーティ連携と 3D・AR）
+- `20-integration.html`（Y層 114〜127）：連携方式の選び方、iframe と `postMessage`、`sandbox` / `frame-ancestors`、埋め込みでログインが切れる問題（3rd party Cookie / CHIPS / Storage Access API）、CORS とプリフライト、OAuth 2.1 と PKCE（`crypto.subtle` で実際に S256 を計算）、Electron の認証と `safeStorage`、鍵を画面に置かない、レート制限と再試行（429 / `Retry-After` / 指数バックオフ＋ジッター / 冪等キー）、Webhook の受け側（HMAC 署名の定数時間比較・リプレイ拒否・冪等）、反映方式の選び方（ポーリング／SSE／WebSocket を同じ画面で比較）、ファイルの授受（File System Access / ドロップ / 貼り付け / Web Share を実測）、現場機器との連携（WebHID / WebSerial / WebUSB ＋ キーボード型リーダーの判定）、埋め込みウィジェットと Shadow DOM
+- `21-3d.html`（Z層 128〜143）：座標系と行列、カメラ操作（オービット／パン／ドリー）、ビューキューブと投影方式、WebGPU と WebGL2、ピッキング（レイキャストとカラーID の実測比較）、変形ギズモ、スナップ、選択の可視化、計測、断面（クリッピング平面）、分解図、注釈・ホットスポット（遮蔽判定つき）、glTF の書き出し／読み込みと CAD 形式からの変換、大規模モデルの性能、AR（WebXR / Scene Viewer / Quick Look の対応を実測）、ライブラリ選定
+- `assets/mini3d.js`：依存ゼロの WebGL2 レンダラ（行列演算・形状生成・レイキャスト・GPU カラーIDピッキング・クリッピング・3D→画面の射影・オービット操作）。Z層のデモはすべてこれで動き、three.js / `<model-viewer>` の参考コードを併記する
+- `19-plan-integration-3d.md`：上記2ページの設計方針（2026年時点のブラウザ状況をウェブ調査で確認したうえでの方針）
+- カタログ（01）に Y層・Z層を追加して全143項目に。入口（00）・カリキュラム（15、9ステップに）・横断検索・単一ファイル版も追随
+- 検証：`test/verify.mjs` に Y層・Z層の実挙動チェックを追加（114件）
+
 ## 第9弾（最新機能とクロスプラットフォーム）
 - `17-modern.html`（M層 87〜101）：`:has()`、`@starting-style`、popover、アンカー位置指定、`interpolate-size`、`details name`、`field-sizing`、`content-visibility`、`light-dark()`/`color-mix()`、`moveBefore()`、Custom Highlight API、`scheduler.yield()`、新しい標準API、`::scroll-button()`/`::scroll-marker`、`sibling-index()`。各デモは「以前／今」を並べ、端末の対応可否を実測表示
 - `18-crossplatform.html`（X層 102〜113）：端末実測パネル、当たり判定、修飾キー、`dvh`、セーフエリア、日本語入力（IME）、`CloseWatcher`、スクロールバー、タッチの癖、日本語テキスト、印刷、機能検出＋実行環境ごとの早見表

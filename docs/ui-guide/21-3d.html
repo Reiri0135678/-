@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第6弾 Z：3Dの操作と編集（128〜143）</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<script src="assets/mini3d.js"></script>
+<style>
+  .tierZ { background: #0d9488; }
+  .cv { width: 100%; height: 280px; display: block; border-radius: 8px; background: #0f172a; touch-action: none; cursor: grab; }
+  .cv:active { cursor: grabbing; }
+  .scene { position: relative; }
+  .label { position: absolute; transform: translate(-50%, -50%); background: rgba(15,23,42,.9); color: #fff; font-size: 11px; padding: 2px 6px; border-radius: 4px; pointer-events: none; white-space: nowrap; }
+  .label.dim { opacity: .35; }
+  .label.hot { pointer-events: auto; cursor: pointer; background: var(--accent); }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; color: #1d1f23; }
+  table.cmp th, table.cmp td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; white-space: nowrap; }
+  .lib { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; color: #1d1f23; margin-top: 8px; }
+  .lib b { display: block; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+  .lib pre { margin: 0; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Z：3Dの操作と編集 <span class="tier tierZ">128〜143</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="20-integration.html">Y：外部連携</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="04-pro.html#n43">43 座標変換</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">
+  <b>43〜52 で作った「座標変換・ピッキング・修飾キー・状態機械」を、そのまま 3D に持ち上げる層。</b>
+  デモは <b>依存ライブラリなしの WebGL2</b>（<code>assets/mini3d.js</code>、約 350 行）で動いており、中で何が起きているかが全部見える。
+  各項目には「実務では three.js / model-viewer でこう書く」を併記する（そちらは実行しない）。
+</div>
+
+<!-- ===================== 128 ===================== -->
+<section class="demo" id="n128">
+  <h2><span class="no">128</span>3Dの座標系と行列 <small>モデル → ワールド → ビュー → クリップ → 画面</small></h2>
+  <p class="what">43 の <code>toWorld</code> / <code>toScreen</code> の 3D 版。ある点は<b>5つの座標系を順に通って</b>画面に着く。①モデル座標（部品の中の位置）②ワールド座標（置いた場所）③ビュー座標（カメラから見た位置）④クリップ座標（投影後）⑤画面座標（px）。<b>3Dのバグの大半は「今どの座標系の値を触っているか」の取り違え</b>で起きる。</p>
+  <p class="how"><b>操作：</b>ドラッグでカメラを回すと、青い部品の角の点が各座標系でどう変わるかが表で追える。ワールド座標は動かず、ビュー以降だけが変わることを確認する。</p>
+  <div class="stage" style="padding:0">
+    <div class="scene"><canvas class="cv" id="c128"></canvas><div class="label" id="l128">角の点</div></div>
+  </div>
+  <table class="cmp" id="t128" style="margin-top:8px"></table>
+  <div class="lib"><b>three.js なら</b><pre>const p = new THREE.Vector3(0.5, 0.5, 0.5);
+mesh.localToWorld(p);            // ①→②
+p.project(camera);               // →④（NDC）
+const x = (p.x * .5 + .5) * width, y = (-p.y * .5 + .5) * height;   // →⑤</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c128'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(4, .5), color: '#334155' });
+      const part = v.add({ id: 'part', geo: Mini3D.Shapes.box(1.2, 1.2, 1.2), color: '#2563eb', position: [.6, .6, 0] });
+      const LOCAL = [.6, .6, .6];                                   // 部品のローカル座標での「角」
+      const show = () => {
+        const model = Mini3D.mat4.compose(part.position, part.rotation, part.scale);
+        const world = Mini3D.mat4.transformPoint(model, LOCAL);
+        const view = Mini3D.mat4.transformPoint(Mini3D.mat4.lookAt(v.eye(), v.camera.target, [0,1,0]), world);
+        const clip = Mini3D.mat4.transformPoint(v.viewProj(), world);
+        const scr = v.project(world);
+        const f = a => a.map(n => n.toFixed(2)).join(', ');
+        $('#t128').innerHTML = '<tr><th>座標系</th><th>値</th><th>意味</th></tr>' + [
+          ['① モデル', f(LOCAL), '部品の中での位置。部品を動かしても変わらない'],
+          ['② ワールド', f(world), '置かれた場所。カメラを回しても変わらない'],
+          ['③ ビュー', f(view), 'カメラから見た位置。カメラを回すと変わる'],
+          ['④ クリップ(NDC)', f(clip), '-1〜1 に収まっていれば画面内'],
+          ['⑤ 画面', `${scr.x.toFixed(0)}, ${scr.y.toFixed(0)} px`, 'ラベルや計測の表示に使う'],
+        ].map(r => `<tr><td>${r[0]}</td><td><code>${r[1]}</code></td><td>${r[2]}</td></tr>`).join('');
+        const l = $('#l128'); l.style.left = scr.x + 'px'; l.style.top = scr.y + 'px'; l.classList.toggle('dim', scr.behind);
+      };
+      v.attachOrbit({ onChange: show });
+      v.draw(); show();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 129 ===================== -->
+<section class="demo" id="n129">
+  <h2><span class="no">129</span>カメラ操作 <small>オービット / パン / ドリー</small></h2>
+  <p class="what">3D ビューアの共通作法。<b>オービット</b>＝注視点を中心に回り込む、<b>パン</b>＝注視点ごと平行移動、<b>ドリー（ズーム）</b>＝注視点との距離を変える。02 のパンと 03 のズームの立体版で、<b>動いているのは物体ではなくカメラ</b>という点が違う。真上・真下で回り込みが破綻しないよう仰角に上限を設けるのが定石。</p>
+  <p class="how"><b>操作：</b>ドラッグ＝オービット、<kbd>Shift</kbd>+ドラッグ（または2本指）＝パン、ホイール／ピンチ＝ドリー。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c129"></canvas></div>
+  <div class="row"><span class="readout" id="o129">-</span><button id="b129">視点を戻す</button></div>
+  <div class="lib"><b>three.js なら</b><pre>const controls = new OrbitControls(camera, renderer.domElement);
+controls.maxPolarAngle = Math.PI * 0.49;   // 真下へ回り込ませない
+controls.enableDamping = true;             // 28 の慣性に相当</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c129'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(5, .5), color: '#334155' });
+      v.add({ id: 'base', geo: Mini3D.Shapes.box(3, .3, 2), color: '#64748b', position: [0, -.15, 0] });
+      v.add({ id: 'b1', geo: Mini3D.Shapes.cylinder(.28, 1.1, 20), color: '#2563eb', position: [-.8, .55, .4] });
+      v.add({ id: 'b2', geo: Mini3D.Shapes.cylinder(.28, 1.1, 20), color: '#2563eb', position: [.8, .55, -.4] });
+      const show = () => $('#o129').textContent =
+        `方位 ${(v.camera.azimuth * 180 / Math.PI).toFixed(0)}° / 仰角 ${(v.camera.elevation * 180 / Math.PI).toFixed(0)}° / 距離 ${v.camera.distance.toFixed(1)} / 注視点 ${v.camera.target.map(n => n.toFixed(1)).join(',')}`;
+      v.attachOrbit({ onChange: show });
+      $('#b129').onclick = () => { Object.assign(v.camera, { target: [0,0,0], distance: 6, azimuth: .7, elevation: .5 }); v.draw(); show(); };
+      v.draw(); show();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 130 ===================== -->
+<section class="demo" id="n130">
+  <h2><span class="no">130</span>ビューキューブと投影方式 <small>正面・上面へのスナップ / 正投影と透視</small></h2>
+  <p class="what">CAD 系ビューアの右上にある立方体。<b>今どちらを向いているか</b>を示し、面や軸をクリックするとその向きへスナップする。図面的な確認には<b>正投影</b>（奥行きで大きさが変わらない＝寸法が読める）、全体像の把握には<b>透視投影</b>を使い分ける。</p>
+  <p class="how"><b>操作：</b>ボタンで視点をスナップ。投影方式を切り替えると、奥の部品の大きさの見え方が変わる。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c130"></canvas></div>
+  <div class="row">
+    <button data-v130="front">正面</button><button data-v130="top">上面</button><button data-v130="right">右</button><button data-v130="iso">等角</button>
+    <label><input type="checkbox" id="ortho130"> 正投影（寸法が読める）</label><span class="readout" id="o130"></span>
+  </div>
+  <div class="lib"><b>three.js なら</b><pre>// 透視 ⇄ 正投影は別クラスなので、カメラ自体を差し替える
+const cam = ortho ? new THREE.OrthographicCamera(-w,w,h,-h,.1,100)
+                  : new THREE.PerspectiveCamera(45, w/h, .1, 100);</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c130'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(4, .5), color: '#334155' });
+      [[-1.5, 0], [0, 0], [1.5, 0]].forEach(([x], i) =>
+        v.add({ id: 'p' + i, geo: Mini3D.Shapes.box(.8, .8, .8), color: ['#2563eb','#16a34a','#d97706'][i], position: [x, .4, -i * 1.2] }));
+      const views = { front: [0, 0], top: [0, 1.45], right: [Math.PI / 2, 0], iso: [.7, .5] };
+      const show = () => $('#o130').textContent = v.camera.ortho ? '正投影：奥の部品も同じ大きさ' : '透視投影：奥の部品が小さい';
+      $$('[data-v130]').forEach(b => b.onclick = () => {
+        const [a, e] = views[b.dataset.v130];
+        v.camera.azimuth = a; v.camera.elevation = e; v.draw();
+      });
+      $('#ortho130').onchange = e => { v.camera.ortho = e.target.checked; v.draw(); show(); };
+      v.attachOrbit(); v.draw(); show();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 131 ===================== -->
+<section class="demo" id="n131">
+  <h2><span class="no">131</span>WebGPU と WebGL2 <small>2026年1月に WebGPU が Baseline</small></h2>
+  <p class="what">ブラウザで 3D を描く API は 2つ。<b>WebGL2</b> はどこでも動く枯れた選択肢、<b>WebGPU</b> は 2026年1月に主要ブラウザで Baseline に到達した新しい API で、描画コールの束ね方が効率的なうえ<b>計算（コンピュートシェーダ）が使える</b>。業務アプリでの現実解は <a href="18-crossplatform.html#n113">113</a> と同じ段階的強化：<b>WebGPU があれば使い、無ければ WebGL2</b>。このページのデモは WebGL2 で動いている。</p>
+  <p class="how"><b>操作：</b>この端末の対応状況とアダプタ情報を表示する。</p>
+  <div class="stage"><table class="cmp" id="t131"></table></div>
+  <div class="lib"><b>選び方のコード（three.js も同じ考え方）</b><pre>const useWebGPU = 'gpu' in navigator &amp;&amp; await navigator.gpu.requestAdapter();
+const renderer = useWebGPU ? new THREE.WebGPURenderer() : new THREE.WebGLRenderer();
+// 素の WebGL2 なら canvas.getContext('webgl2') が null かどうかで分岐する</pre></div>
+  <script data-code>
+    (() => {
+      const rows = [];
+      const gl = document.createElement('canvas').getContext('webgl2');
+      rows.push(['WebGL2', gl ? '対応' : '非対応', gl ? gl.getParameter(gl.VERSION) : '—']);
+      const render = () => $('#t131').innerHTML = '<tr><th>API</th><th>この端末</th><th>詳細</th></tr>' +
+        rows.map(r => `<tr><td>${r[0]}</td><td><b>${r[1]}</b></td><td>${r[2]}</td></tr>`).join('');
+      render();
+      (async () => {
+        if (!('gpu' in navigator)) { rows.push(['WebGPU', '非対応', 'WebGL2 にフォールバックする']); return render(); }
+        try {
+          const ad = await navigator.gpu.requestAdapter();
+          const info = ad && (ad.info || {});
+          rows.push(['WebGPU', ad ? '対応' : 'アダプタなし', ad ? `${info.vendor || '?'} / ${info.architecture || info.description || '?'}` : 'GPU が使えない環境']);
+        } catch (e) { rows.push(['WebGPU', '取得失敗', e.message]); }
+        render();
+      })();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 132 ===================== -->
+<section class="demo" id="n132">
+  <h2><span class="no">132</span>ピッキング <small>レイキャスト と カラーIDバッファ</small></h2>
+  <p class="what">「クリックした先にどの部品があるか」を求める操作。2方式ある。<b>レイキャスト</b>＝画面の点から光線を飛ばし、三角形との交差を CPU で計算する（<b>当たった位置と法線まで分かる</b>ので計測に使える）。<b>カラーIDバッファ</b>＝各部品を「連番を色にして」描き、1px 読む（<b>三角形数が増えても遅くならない</b>代わりに、GPU の描画完了を待つ <code>readPixels</code> の同期待ちが毎回入る。位置も分からない）。部品数が少ないうちはレイキャストの方が速く、モデルが重くなるほどカラーIDが有利になる。55 の Canvas ヒットテストの 3D 版。</p>
+  <p class="how"><b>操作：</b>部品をクリック。方式を切り替えて、所要時間と得られる情報の差を見る。</p>
+  <div class="stage" style="padding:0"><div class="scene"><canvas class="cv" id="c132"></canvas><div class="label" id="l132" hidden></div></div></div>
+  <div class="row">
+    <label><input type="radio" name="m132" value="ray" checked> レイキャスト（位置も分かる）</label>
+    <label><input type="radio" name="m132" value="gpu"> カラーID（速い）</label>
+    <span class="readout" id="o132">部品をクリック</span>
+  </div>
+  <div class="lib"><b>three.js なら</b><pre>const ray = new THREE.Raycaster();
+ray.setFromCamera({ x: ndcX, y: ndcY }, camera);
+const hit = ray.intersectObjects(scene.children, true)[0];   // hit.point / hit.face.normal</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c132'), { background: '#0f172a' });
+      if (!v) return;
+      const colors = ['#2563eb', '#16a34a', '#d97706', '#db2777'];
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(4, .5), color: '#334155' });
+      for (let i = 0; i < 4; i++)
+        v.add({ id: '部品' + (i + 1), geo: i % 2 ? Mini3D.Shapes.cylinder(.4, 1, 20) : Mini3D.Shapes.box(.9, .9, .9),
+                color: colors[i], position: [(i % 2 ? -1.2 : 1.2), .5, (i < 2 ? -1 : 1)] });
+      $('#c132').addEventListener('click', e => {
+        const mode = $('input[name=m132]:checked').value, t0 = performance.now();
+        if (mode === 'ray') {
+          const hit = v.raycast(e.clientX, e.clientY);
+          $('#o132').textContent = hit
+            ? `${hit.object.id} / 交点 (${hit.point.map(n => n.toFixed(2)).join(', ')}) / ${(performance.now() - t0).toFixed(2)}ms`
+            : `何もない / ${(performance.now() - t0).toFixed(2)}ms`;
+          const l = $('#l132');
+          if (hit) { const p = v.project(hit.point); l.hidden = false; l.textContent = hit.object.id; l.style.left = p.x + 'px'; l.style.top = p.y + 'px'; }
+          else l.hidden = true;
+        } else {
+          const o = v.pickGPU(e.clientX, e.clientY);
+          $('#o132').textContent = (o ? o.id : '何もない') + ` / 位置は分からない / ${(performance.now() - t0).toFixed(2)}ms`;
+          $('#l132').hidden = true;
+        }
+      });
+      v.attachOrbit(); v.draw();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 133 ===================== -->
+<section class="demo" id="n133">
+  <h2><span class="no">133</span>変形ギズモ <small>軸ハンドルで動かす</small></h2>
+  <p class="what">選んだ部品を動かす取っ手。要点は3つ。①<b>軸に拘束する</b>（X ハンドルを掴んだら X しか動かない＝51 の軸固定の 3D 版）②<b>画面上で一定の大きさに見える</b>ようカメラ距離に比例させる（遠くの部品でも掴める）③掴んでいる間はカメラ操作を止める（52 の状態機械）。ドラッグ量は<b>軸を含みカメラに正対する平面</b>との交点から求める。</p>
+  <p class="how"><b>操作：</b>部品をクリックで選択 → 赤(X)・緑(Y)・青(Z) の棒をドラッグ。<kbd>Shift</kbd> で 0.25 刻みに吸着（134）。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c133"></canvas></div>
+  <div class="row"><span class="readout" id="o133">部品を選ぶ</span><button id="b133">位置を戻す</button></div>
+  <div class="lib"><b>three.js なら</b><pre>const gizmo = new TransformControls(camera, renderer.domElement);
+gizmo.attach(mesh); gizmo.setMode('translate'); gizmo.setTranslationSnap(0.25);
+gizmo.addEventListener('dragging-changed', e =&gt; controls.enabled = !e.value);  // ③</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c133'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(4, .25), color: '#334155' });
+      const parts = [0, 1].map(i => v.add({ id: '治具' + (i + 1), geo: Mini3D.Shapes.box(.8, .8, .8), color: '#2563eb', position: [i ? 1.2 : -1.2, .4, 0] }));
+      const AX = [[1,0,0], [0,1,0], [0,0,1]], AXC = ['#ef4444', '#22c55e', '#3b82f6'];
+      // 掴みやすさのため、見た目より太めにする（103 の当たり判定の話は 3D でも同じ）
+      const handles = AX.map((a, i) => v.add({ id: 'h' + i, geo: Mini3D.Shapes.cylinder(.1, 1.1, 10), color: AXC[i], visible: false,
+        rotation: i === 0 ? [0,0,-Math.PI/2] : i === 2 ? [Math.PI/2,0,0] : [0,0,0] }));
+      let sel = null, drag = null;
+      const layout = () => {                                   // ② 画面上で一定サイズに見せる
+        if (!sel) return;
+        const s = v.camera.distance / 6;
+        handles.forEach((h, i) => { h.visible = true; h.scale = [s, s, s];
+          h.position = sel.position.map((p, k) => p + AX[i][k] * 0.6 * s); });
+      };
+      const hideHandles = () => handles.forEach(h => h.visible = false);
+      const rayPlanePoint = (e, axis, origin) => {              // 軸を含み、カメラに正対する平面との交点
+        const r = v.ray(e.clientX, e.clientY);
+        const view = Mini3D.vec3.normalize(Mini3D.vec3.sub(v.eye(), origin));
+        let n = Mini3D.vec3.cross(Mini3D.vec3.cross(axis, view), axis);
+        n = Mini3D.vec3.normalize(n);
+        const den = Mini3D.vec3.dot(r.dir, n);
+        if (Math.abs(den) < 1e-6) return null;
+        const t = Mini3D.vec3.dot(Mini3D.vec3.sub(origin, r.origin), n) / den;
+        return Mini3D.vec3.add(r.origin, Mini3D.vec3.scale(r.dir, t));
+      };
+      const canvas = $('#c133');
+      canvas.addEventListener('pointerdown', e => {
+        const hit = v.raycast(e.clientX, e.clientY);
+        if (hit && hit.object.id.startsWith('h')) {             // ハンドルを掴んだ：カメラ操作は止める（③）
+          const i = +hit.object.id[1];
+          const start = rayPlanePoint(e, AX[i], sel.position);
+          drag = { axis: i, start, base: sel.position.slice() };
+          canvas.setPointerCapture(e.pointerId);
+        } else if (hit) { sel = hit.object; layout(); v.draw(); $('#o133').textContent = `${sel.id} を選択`; }
+        else { sel = null; hideHandles(); v.draw(); $('#o133').textContent = '部品を選ぶ'; }
+      });
+      canvas.addEventListener('pointermove', e => {
+        if (!drag || !sel) return;
+        const p = rayPlanePoint(e, AX[drag.axis], sel.position);
+        if (!p || !drag.start) return;
+        let d = Mini3D.vec3.dot(Mini3D.vec3.sub(p, drag.start), AX[drag.axis]);   // ① 軸方向の成分だけ取る
+        if (e.shiftKey) d = Math.round((drag.base[drag.axis] + d) / .25) * .25 - drag.base[drag.axis];
+        sel.position = drag.base.map((b, k) => b + AX[drag.axis][k] * d);
+        layout(); v.draw();
+        $('#o133').textContent = `${sel.id} 位置 (${sel.position.map(n => n.toFixed(2)).join(', ')})${e.shiftKey ? ' / 0.25 刻み' : ''}`;
+      });
+      canvas.addEventListener('pointerup', () => drag = null);
+      $('#b133').onclick = () => { parts.forEach((p, i) => p.position = [i ? 1.2 : -1.2, .4, 0]); layout(); v.draw(); };
+      v.attachOrbit({ filter: e => !drag });                    // ③ 掴んでいる間はカメラを回さない
+      v.draw();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 134 ===================== -->
+<section class="demo" id="n134">
+  <h2><span class="no">134</span>スナップ <small>グリッド / 面 / 角度</small></h2>
+  <p class="what">47 のスナップの 3D 版。位置の刻み（グリッド）、他の部品の<b>面に載せる</b>、角度の刻み（15°など）。判定は 47 と同じ「候補を列挙し、しきい値内で最も近いものに吸着」。3D では<b>吸着したことを画面で示す</b>（ガイド線・色変化）のがより重要で、見た目だけでは合っているか分からない。</p>
+  <p class="how"><b>操作：</b>スライダで部品を動かす。刻みを切り替えると、値が丸められる。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c134"></canvas></div>
+  <div class="row">
+    X <input type="range" id="x134" min="-2" max="2" step="0.01" value="-1">
+    <select id="s134"><option value="0">刻みなし</option><option value="0.25" selected>0.25</option><option value="0.5">0.5</option></select>
+    <label><input type="checkbox" id="f134" checked> 面に載せる</label>
+    <span class="readout" id="o134"></span>
+  </div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c134'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(3, .25), color: '#334155' });
+      const table = v.add({ id: 'table', geo: Mini3D.Shapes.box(3, .4, 2), color: '#475569', position: [0, -.2, 0] });
+      const part = v.add({ id: 'part', geo: Mini3D.Shapes.box(.6, .6, .6), color: '#2563eb', position: [-1, .3, 0] });
+      const update = () => {
+        const step = +$('#s134').value;
+        let x = +$('#x134').value;
+        const snappedX = step ? Math.round(x / step) * step : x;
+        const y = $('#f134').checked ? 0.3 : +(0.3 + Math.abs(Math.sin(x * 3)) * .4).toFixed(3);   // 面に載せない例
+        part.position = [snappedX, y, 0];
+        part.color = (step && Math.abs(snappedX - x) > 1e-6) ? '#16a34a' : '#2563eb';               // 吸着したら色で示す
+        $('#o134').textContent = `X ${x.toFixed(2)} → ${snappedX.toFixed(2)}${$('#f134').checked ? ' / 天板の面に載せる' : ' / 面を無視'}`;
+        v.draw();
+      };
+      ['#x134', '#s134', '#f134'].forEach(s => $(s).addEventListener('input', update));
+      v.attachOrbit(); update();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 135 ===================== -->
+<section class="demo" id="n135">
+  <h2><span class="no">135</span>選択の可視化 <small>強調・半透明・複数選択</small></h2>
+  <p class="what">11 の選択の 3D 版。3D では<b>選んだ物が他の部品の裏に隠れる</b>ため、色を変えるだけでは足りない。実務では①選択部品を強調色にする ②<b>それ以外を半透明にする</b>（中身が見える）③輪郭線を描く、のいずれかを使う。<kbd>Ctrl</kbd>/<kbd>⌘</kbd> で追加選択するのは 11 と同じ作法。</p>
+  <p class="how"><b>操作：</b>部品をクリック。<kbd>Ctrl</kbd>/<kbd>⌘</kbd>+クリックで追加。表示方式を切り替える。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c135"></canvas></div>
+  <div class="row">
+    <label><input type="radio" name="v135" value="color" checked> 色を変える</label>
+    <label><input type="radio" name="v135" value="ghost"> 他を半透明に</label>
+    <span class="readout" id="o135">選択なし</span>
+  </div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c135'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(4, .5), color: '#334155' });
+      const parts = [];
+      for (let i = 0; i < 6; i++) parts.push(v.add({ id: '部品' + (i + 1), geo: Mini3D.Shapes.box(.7, .7, .7), color: '#64748b',
+        position: [(i % 3 - 1) * 1.1, .4, (i < 3 ? -.7 : .7)] }));
+      const sel = new Set();
+      const paint = () => {
+        const ghost = $('input[name=v135]:checked').value === 'ghost';
+        parts.forEach(p => {
+          const on = sel.has(p);
+          p.color = on ? '#f59e0b' : '#64748b';
+          p.opacity = ghost && !on && sel.size ? .25 : 1;
+        });
+        $('#o135').textContent = sel.size ? [...sel].map(p => p.id).join(', ') : '選択なし';
+        v.draw();
+      };
+      $('#c135').addEventListener('click', e => {
+        const hit = v.raycast(e.clientX, e.clientY);
+        if (!hit) { sel.clear(); return paint(); }
+        if (!(e.ctrlKey || e.metaKey)) sel.clear();
+        sel.has(hit.object) ? sel.delete(hit.object) : sel.add(hit.object);
+        paint();
+      });
+      $$('input[name=v135]').forEach(r => r.onchange = paint);
+      v.attachOrbit(); paint();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 136 ===================== -->
+<section class="demo" id="n136">
+  <h2><span class="no">136</span>計測 <small>2点間の距離</small></h2>
+  <p class="what">現場で最もよく使われる 3D 機能。<b>132 のレイキャストが「当たった位置」を返す</b>ので、2点取れば距離が出る。実装で外せないのは①どの点を取ったかを 3D 上に示す ②寸法線と数値を<b>2D のラベルとして重ねる</b>（139 と同じ仕組み）③<b>単位と丸め</b>を明示する（モデルの 1.0 が 1m なのか 1mm なのかは形式とデータ次第で、glTF は m が既定）。</p>
+  <p class="how"><b>操作：</b>部品の面を2か所クリック。距離が出る。「やり直す」で消える。</p>
+  <div class="stage" style="padding:0"><div class="scene"><canvas class="cv" id="c136"></canvas><div class="label" id="l136a" hidden></div><div class="label" id="l136b" hidden></div><div class="label" id="l136d" hidden></div></div></div>
+  <div class="row"><span class="readout" id="o136">1点目をクリック</span><button id="b136">やり直す</button>
+    <select id="u136"><option value="1000">単位: mm（1.0 = 1000mm）</option><option value="1">単位: m</option></select></div>
+  <div class="lib"><b>three.js なら</b><pre>const a = ray.intersectObjects(parts)[0].point;   // 1点目
+const b = ray.intersectObjects(parts)[0].point;   // 2点目
+const mm = a.distanceTo(b) * 1000;                // glTF は m 単位</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c136'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(3, .5), color: '#334155' });
+      v.add({ id: '台', geo: Mini3D.Shapes.box(3, .3, 2), color: '#475569', position: [0, -.15, 0] });
+      v.add({ id: 'A', geo: Mini3D.Shapes.box(.8, 1.2, .8), color: '#2563eb', position: [-1, .6, 0] });
+      v.add({ id: 'B', geo: Mini3D.Shapes.cylinder(.4, .8, 20), color: '#16a34a', position: [1, .4, 0] });
+      const pts = [];
+      const marks = [];
+      const paint = () => {
+        marks.forEach(m => m.visible = false);
+        pts.forEach((p, i) => {
+          if (!marks[i]) marks[i] = v.add({ id: 'm' + i, geo: Mini3D.Shapes.box(.1, .1, .1), color: '#f59e0b' });
+          marks[i].visible = true; marks[i].position = p;
+        });
+        if (pts.length === 2) {                                  // 2点を結ぶ線
+          const line = v.get('line') || v.add({ id: 'line', geo: { pos: new Float32Array(6), lines: true }, color: '#f59e0b' });
+          line.geo.pos = new Float32Array([...pts[0], ...pts[1]]); line.geo._vao = null; line.visible = true;
+        } else if (v.get('line')) v.get('line').visible = false;
+        v.draw();
+        const u = +$('#u136').value;
+        [0, 1].forEach(i => {
+          const l = $(i ? '#l136b' : '#l136a');
+          if (!pts[i]) return l.hidden = true;
+          const s = v.project(pts[i]); l.hidden = false; l.textContent = (i ? 'P2' : 'P1'); l.style.left = s.x + 'px'; l.style.top = s.y + 'px';
+        });
+        const d = $('#l136d');
+        if (pts.length === 2) {
+          const mid = pts[0].map((n, k) => (n + pts[1][k]) / 2);
+          const dist = Mini3D.vec3.length(Mini3D.vec3.sub(pts[1], pts[0])) * u;
+          const s = v.project(mid); d.hidden = false; d.textContent = `${dist.toFixed(u === 1 ? 3 : 1)} ${u === 1 ? 'm' : 'mm'}`;
+          d.style.left = s.x + 'px'; d.style.top = s.y + 'px';
+          $('#o136').textContent = `2点間 ${dist.toFixed(u === 1 ? 3 : 1)} ${u === 1 ? 'm' : 'mm'}（やり直すで消える）`;
+        } else d.hidden = true;
+      };
+      $('#c136').addEventListener('click', e => {
+        const hit = v.raycast(e.clientX, e.clientY, o => !o.id.startsWith('m') && o.id !== 'line');
+        if (!hit) return;
+        if (pts.length >= 2) pts.length = 0;
+        pts.push(hit.point);
+        $('#o136').textContent = pts.length === 1 ? '2点目をクリック' : '';
+        paint();
+      });
+      $('#b136').onclick = () => { pts.length = 0; $('#o136').textContent = '1点目をクリック'; paint(); };
+      $('#u136').onchange = paint;
+      v.attachOrbit({ onChange: paint });
+      paint();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 137 ===================== -->
+<section class="demo" id="n137">
+  <h2><span class="no">137</span>断面 <small>クリッピング平面</small></h2>
+  <p class="what">組立の内部や、部品同士の干渉を見るために<b>手前を切り落とす</b>。実装は簡単で、フラグメントシェーダで「平面の表側にある画素を捨てる」だけ（<code>discard</code>）。注意点は<b>切り口が開いて見える</b>こと。中身が詰まって見える「キャップ」を作るには、裏面だけを別に描くなどの追加処理が要る。</p>
+  <p class="how"><b>操作：</b>軸とスライダで切る位置を変える。キャップの有無で見え方の違いを比べる。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c137"></canvas></div>
+  <div class="row">
+    <select id="a137"><option value="0">X で切る</option><option value="1">Y で切る</option><option value="2">Z で切る</option></select>
+    <input type="range" id="s137" min="-1.5" max="1.5" step="0.02" value="0.2" style="flex:1">
+    <label><input type="checkbox" id="cap137"> 切り口を塞ぐ（簡易キャップ）</label>
+  </div>
+  <div class="lib"><b>three.js なら</b><pre>renderer.localClippingEnabled = true;
+material.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(1,0,0), -0.2) ];
+// キャップは Stencil を使うか、断面用のメッシュを別に用意する</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c137'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'case', geo: Mini3D.Shapes.box(2.2, 1.4, 1.6), color: '#94a3b8', opacity: 1 });
+      v.add({ id: 'in1', geo: Mini3D.Shapes.cylinder(.35, 1.1, 20), color: '#2563eb', position: [-.5, 0, 0] });
+      v.add({ id: 'in2', geo: Mini3D.Shapes.box(.6, .6, .6), color: '#16a34a', position: [.6, -.2, .2] });
+      const cap = v.add({ id: 'cap', geo: Mini3D.Shapes.plane(2.4, 1.8), color: '#1f2937', visible: false, rotation: [0, 0, Math.PI / 2] });
+      const update = () => {
+        const ax = +$('#a137').value, off = +$('#s137').value;
+        const n = [0, 0, 0]; n[ax] = 1;
+        v.clip = { normal: n, offset: off };
+        cap.visible = $('#cap137').checked;
+        cap.rotation = ax === 0 ? [0, 0, Math.PI / 2] : ax === 1 ? [0, 0, 0] : [Math.PI / 2, 0, 0];
+        cap.position = n.map(k => k * (off - 0.001));
+        v.draw();
+      };
+      ['#a137', '#s137', '#cap137'].forEach(s => $(s).addEventListener('input', update));
+      v.attachOrbit(); update();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 138 ===================== -->
+<section class="demo" id="n138">
+  <h2><span class="no">138</span>分解図と組立手順 <small>Exploded view</small></h2>
+  <p class="what">部品を中心から離して、重なりを解いて見せる。作業手順書では<b>段階的に離す／1部品ずつ順に出す</b>ことで組立順を示す。実装は「各部品に離す方向を持たせ、係数 t を 0→1 に動かす」だけ。順に出す演出は 64 のスタガーと同じで、<code>t</code> を部品ごとに遅らせる。</p>
+  <p class="how"><b>操作：</b>スライダで分解、「手順を再生」で順に組み上がる。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c138"></canvas></div>
+  <div class="row">分解 <input type="range" id="s138" min="0" max="1" step="0.01" value="0" style="flex:1"><button id="b138">手順を再生</button><span class="readout" id="o138"></span></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c138'), { background: '#0f172a' });
+      if (!v) return;
+      const defs = [
+        ['ベース', Mini3D.Shapes.box(2, .3, 1.4), '#475569', [0, -.5, 0], [0, -1, 0]],
+        ['本体',   Mini3D.Shapes.box(1.4, .8, 1), '#64748b', [0, .1, 0], [0, 0, 0]],
+        ['カバー', Mini3D.Shapes.box(1.5, .2, 1.1), '#94a3b8', [0, .6, 0], [0, 1, 0]],
+        ['ボルト', Mini3D.Shapes.cylinder(.12, .6, 12), '#2563eb', [.5, .9, .3], [.6, 1.4, .4]],
+      ];
+      const parts = defs.map(([id, geo, color, home, dir]) => ({ o: v.add({ id, geo, color, position: home.slice() }), home, dir }));
+      const apply = t => {
+        parts.forEach((p, i) => {
+          const ti = Math.max(0, Math.min(1, (t - i * .12) / (1 - .12 * (parts.length - 1))));   // 部品ごとに遅らせる（64）
+          p.o.position = p.home.map((h, k) => h + p.dir[k] * ti * 1.2);
+        });
+        v.draw(); $('#o138').textContent = t === 0 ? '組み上がり' : t === 1 ? '完全に分解' : `分解 ${(t * 100) | 0}%`;
+      };
+      $('#s138').addEventListener('input', e => apply(+e.target.value));
+      $('#b138').onclick = () => {                                  // 1→0 へ動かす＝組み立てる
+        const t0 = performance.now(), dur = 1600;
+        const step = now => { const k = Math.min(1, (now - t0) / dur); const t = 1 - k;
+          $('#s138').value = t; apply(t); if (k < 1) requestAnimationFrame(step); };
+        apply(1); $('#s138').value = 1; requestAnimationFrame(step);
+      };
+      v.attachOrbit(); apply(0);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 139 ===================== -->
+<section class="demo" id="n139">
+  <h2><span class="no">139</span>注釈・ホットスポット <small>3D 座標に貼り付くラベル</small></h2>
+  <p class="what">17 のツールチップの 3D 版。ラベルは <b>DOM 要素</b>のままにして、<code>project()</code> で 3D 座標を画面座標に変換して毎フレーム位置を合わせるのが定石（文字は DOM の方が読みやすく、選択もできる）。要点は<b>裏側に回ったら薄くする／隠す</b>こと。厳密には「そのラベル位置がカメラから見えているか」をレイキャストで判定する（遮蔽判定）。</p>
+  <p class="how"><b>操作：</b>カメラを回すと、部品の裏に回ったラベルが薄くなる。ラベルをクリックすると内容が出る。</p>
+  <div class="stage" style="padding:0"><div class="scene"><canvas class="cv" id="c139"></canvas><div id="h139"></div></div></div>
+  <div class="row"><label><input type="checkbox" id="occ139" checked> 遮蔽を判定して薄くする</label><span class="readout" id="o139">ラベルをクリック</span></div>
+  <div class="lib"><b>model-viewer なら</b><pre>&lt;model-viewer src="part.glb"&gt;
+  &lt;button slot="hotspot-1" data-position="0.1 0.5 0.2" data-normal="0 1 0"&gt;締結トルク 12N・m&lt;/button&gt;
+&lt;/model-viewer&gt;   &lt;!-- 位置合わせと隠面処理はタグ側がやる --&gt;</pre></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c139'), { background: '#0f172a' });
+      if (!v) return;
+      v.add({ id: 'grid', geo: Mini3D.Shapes.gridLines(3, .5), color: '#334155' });
+      v.add({ id: 'body', geo: Mini3D.Shapes.box(1.6, 1, 1.2), color: '#64748b' });
+      const spots = [
+        { p: [0, .5, 0], text: '天面：ここに銘板を貼る' },
+        { p: [.8, 0, 0], text: '右面：締結トルク 12N・m' },
+        { p: [0, 0, -.6], text: '背面：配線の逃げに注意' },
+      ];
+      const host = $('#h139');
+      host.innerHTML = spots.map((s, i) => `<div class="label hot" data-i="${i}">${i + 1}</div>`).join('');
+      const layout = () => {
+        spots.forEach((s, i) => {
+          const el = host.children[i], q = v.project(s.p);
+          el.style.left = q.x + 'px'; el.style.top = q.y + 'px';
+          let hidden = q.behind;
+          if (!hidden && $('#occ139').checked) {
+            // 遮蔽判定：その画面位置にレイを飛ばし、最初に当たった点がラベル位置と一致するか。
+            // （距離で比べるとレイの起点＝ニアプレーンとカメラ位置のずれを踏まえる必要があり、点で比べる方が確実）
+            const r = v.canvas.getBoundingClientRect();
+            const hit = v.raycast(r.left + q.x, r.top + q.y);
+            if (!hit || Mini3D.vec3.length(Mini3D.vec3.sub(hit.point, s.p)) > 0.05) hidden = true;
+          }
+          el.classList.toggle('dim', hidden);
+        });
+      };
+      host.addEventListener('click', e => { const i = e.target.dataset.i; if (i != null) $('#o139').textContent = spots[i].text; });
+      $('#occ139').onchange = layout;
+      v.attachOrbit({ onChange: layout });
+      v.draw(); layout();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 140 ===================== -->
+<section class="demo" id="n140">
+  <h2><span class="no">140</span>モデルの読み込みと変換 <small>glTF / GLB と、CAD 形式からの変換</small></h2>
+  <p class="what"><b>Web の 3D の標準は glTF（.gltf / .glb）</b>で、「3D の JPEG」と呼ばれる転送用の形式。<b>製造業で手元にあるのは STEP・IGES・IFC・DWG</b>だが、これらはブラウザで直接は開けず<b>事前の変換が要る</b>（IFC は web-ifc、STEP は OpenCascade 系のツールで変換するのが定番）。設計データをそのまま配らず「表示用に変換したもの」を配るのは、容量と機密の両面で正しい。</p>
+  <p class="how"><b>操作：</b>下の箱を glTF に書き出し、それを読み込み直して表示する（JSON の中身も見える）。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c140"></canvas></div>
+  <div class="row"><button id="b140" class="primary">glTF に書き出して読み込み直す</button><span class="readout" id="o140">-</span></div>
+  <details class="code" style="margin-top:8px"><summary>生成された glTF（抜粋）</summary><pre id="j140" style="max-height:200px"></pre></details>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>手元の形式</th><th>ブラウザで開けるか</th><th>実務での扱い</th></tr>
+    <tr><td>STEP / IGES</td><td>直接は不可</td><td>OpenCascade 系で glTF に変換してから配る</td></tr>
+    <tr><td>IFC（建築・設備）</td><td>web-ifc で可</td><td>そのまま読むか、glTF に変換</td></tr>
+    <tr><td>DWG / DXF（2D 図面）</td><td>DXF なら自前解析も可</td><td>2D は SVG に変換した方が軽い</td></tr>
+    <tr><td>STL</td><td>可（単純な形式）</td><td>法線と単位に注意。色を持てない</td></tr>
+    <tr><td>glTF / GLB</td><td><b>可（標準）</b></td><td>Draco / Meshopt で圧縮、LOD を用意</td></tr>
+  </table>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c140'), { background: '#0f172a' });
+      if (!v) return;
+      const src = Mini3D.Shapes.box(1.2, 1.2, 1.2);
+      v.add({ id: 'src', geo: src, color: '#64748b', position: [-1, 0, 0] });
+      const b64 = buf => { let s = ''; const u = new Uint8Array(buf); for (let i = 0; i < u.length; i++) s += String.fromCharCode(u[i]); return btoa(s); };
+      // --- 書き出し：位置・法線・索引を1つのバッファに詰め、アクセサで場所を示す（これが glTF の骨格） ---
+      const exportGltf = geo => {
+        const idx = new Uint16Array(geo.idx), pos = geo.pos, nrm = geo.nrm;
+        const bytes = new Uint8Array(pos.byteLength + nrm.byteLength + Math.ceil(idx.byteLength / 4) * 4);
+        bytes.set(new Uint8Array(pos.buffer), 0);
+        bytes.set(new Uint8Array(nrm.buffer), pos.byteLength);
+        bytes.set(new Uint8Array(idx.buffer), pos.byteLength + nrm.byteLength);
+        const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+        for (let i = 0; i < pos.length; i += 3) for (let k = 0; k < 3; k++) { min[k] = Math.min(min[k], pos[i+k]); max[k] = Math.max(max[k], pos[i+k]); }
+        return {
+          asset: { version: '2.0', generator: 'ui-guide mini3d' },
+          scenes: [{ nodes: [0] }], scene: 0, nodes: [{ mesh: 0, name: '部品' }],
+          meshes: [{ primitives: [{ attributes: { POSITION: 0, NORMAL: 1 }, indices: 2, mode: 4 }] }],
+          accessors: [
+            { bufferView: 0, componentType: 5126, count: pos.length / 3, type: 'VEC3', min, max },   // 5126 = FLOAT
+            { bufferView: 1, componentType: 5126, count: nrm.length / 3, type: 'VEC3' },
+            { bufferView: 2, componentType: 5123, count: idx.length, type: 'SCALAR' },               // 5123 = UNSIGNED_SHORT
+          ],
+          bufferViews: [
+            { buffer: 0, byteOffset: 0, byteLength: pos.byteLength },
+            { buffer: 0, byteOffset: pos.byteLength, byteLength: nrm.byteLength },
+            { buffer: 0, byteOffset: pos.byteLength + nrm.byteLength, byteLength: idx.byteLength },
+          ],
+          buffers: [{ byteLength: bytes.byteLength, uri: 'data:application/octet-stream;base64,' + b64(bytes.buffer) }],
+        };
+      };
+      // --- 読み込み：アクセサの指す範囲を型付き配列として取り出すだけ ---
+      const importGltf = async json => {
+        const bin = await (await fetch(json.buffers[0].uri)).arrayBuffer();
+        const read = (i, Ctor) => { const a = json.accessors[i], bv = json.bufferViews[a.bufferView];
+          return new Ctor(bin, bv.byteOffset, a.count * (a.type === 'VEC3' ? 3 : 1)); };
+        const prim = json.meshes[0].primitives[0];
+        return { pos: read(prim.attributes.POSITION, Float32Array), nrm: read(prim.attributes.NORMAL, Float32Array), idx: read(prim.indices, Uint16Array) };
+      };
+      $('#b140').onclick = async () => {
+        const json = exportGltf(src);
+        const text = JSON.stringify(json, null, 1);
+        $('#j140').textContent = text.replace(/("uri": "data:[^"]{40})[^"]*/, '$1…（base64 が続く）');
+        const geo = await importGltf(json);
+        const old = v.get('loaded'); if (old) v.objects.splice(v.objects.indexOf(old), 1);
+        v.add({ id: 'loaded', geo, color: '#2563eb', position: [1, 0, 0] });
+        v.draw();
+        $('#o140').textContent = `書き出し ${(text.length / 1024).toFixed(1)}KB → 読み込み 頂点 ${geo.pos.length / 3} / 三角形 ${geo.idx.length / 3}（右が読み込んだもの）`;
+      };
+      v.attachOrbit(); v.draw();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 141 ===================== -->
+<section class="demo" id="n141">
+  <h2><span class="no">141</span>大規模モデルの性能 <small>描画コールとフレーム時間</small></h2>
+  <p class="what">54・F9・F10 の 3D 版。3D で最初に効くのは<b>描画コールの数</b>（部品ごとに1回 GPU に命令すると、部品数がそのままコストになる）。対策は①同じ形は<b>まとめて一度に描く</b>（インスタンス化）②画面外を描かない（カリング）③遠くは粗いモデルに差し替える（LOD）。現場のタブレットは GPU が弱いので、<b>必ず実機で測る</b>。</p>
+  <p class="how"><b>操作：</b>部品数を変えてフレーム時間を見る。数百を超えると描画コールが効いてくる。</p>
+  <div class="stage" style="padding:0"><canvas class="cv" id="c141"></canvas></div>
+  <div class="row">部品数 <input type="range" id="n141" min="10" max="1200" step="10" value="200"><span class="readout" id="o141">-</span></div>
+  <script data-code>
+    (() => {
+      const v = Mini3D.createViewer($('#c141'), { background: '#0f172a' });
+      if (!v) return;
+      const geo = Mini3D.Shapes.box(.18, .18, .18);                 // 形は共有（GPU へのアップロードは1回）
+      const build = n => {
+        v.objects.length = 0;
+        for (let i = 0; i < n; i++) {
+          const a = i * 0.618 * Math.PI * 2, r = .3 + (i / n) * 3.2;
+          v.add({ id: 'p' + i, geo, color: i % 3 ? '#2563eb' : '#94a3b8',
+                  position: [Math.cos(a) * r, (i % 12) * .12 - .7, Math.sin(a) * r] });
+        }
+      };
+      let frames = 0, acc = 0, last = performance.now(), raf = 0;
+      const loop = () => {
+        v.camera.azimuth += 0.004; v.draw();
+        const now = performance.now(); acc += now - last; last = now;
+        if (++frames >= 30) { $('#o141').textContent = `部品 ${v.objects.length} / 描画コール ${v.objects.length} 回 / 平均 ${(acc / frames).toFixed(1)} ms/frame`; frames = 0; acc = 0; }
+        raf = requestAnimationFrame(loop);
+      };
+      $('#n141').addEventListener('input', e => build(+e.target.value));
+      build(200);
+      const io = new IntersectionObserver(([e]) => {                 // 見えている間だけ回す（54 の考え方）
+        if (e.isIntersecting && !raf) { last = performance.now(); raf = requestAnimationFrame(loop); }
+        else if (!e.isIntersecting && raf) { cancelAnimationFrame(raf); raf = 0; }
+      });
+      io.observe($('#c141'));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 142 ===================== -->
+<section class="demo" id="n142">
+  <h2><span class="no">142</span>AR で現物と重ねる <small>WebXR / Scene Viewer / Quick Look</small></h2>
+  <p class="what">現場で「図面の部品が、実際にその場所へ収まるか」を確かめる使い方。<b>Web の AR は単一の API ではなく、端末ごとに別の仕組みへ橋渡しする</b>のが実情：Android は <b>WebXR</b>（ブラウザ内でそのまま）か <b>Scene Viewer</b>（OS のアプリへ渡す）、iOS は <b>Quick Look</b>（<code>.usdz</code> を OS に渡す）。<code>&lt;model-viewer&gt;</code> はこの3つを自動で切り替える。<b>glTF と USDZ の2形式を用意する</b>必要がある点が実務上の最大の注意。</p>
+  <p class="how"><b>操作：</b>この端末で AR が使えるかを判定する。現場のスマートフォン・タブレットで開くと結果が変わる。</p>
+  <div class="stage">
+    <table class="cmp" id="t142"></table>
+    <p class="note" style="margin-top:8px">この資料は依存なしを方針としているため <code>&lt;model-viewer&gt;</code> は読み込んでいない。実装時は下のタグを置くだけでよい。</p>
+  </div>
+  <div class="lib"><b>実装（これだけで3経路に対応する）</b><pre>&lt;script type="module" src="model-viewer.min.js"&gt;&lt;/script&gt;
+&lt;model-viewer
+  src="jig.glb"                    &lt;!-- Android・PC 用 --&gt;
+  ios-src="jig.usdz"               &lt;!-- iOS の Quick Look 用（別に用意する） --&gt;
+  ar ar-modes="webxr scene-viewer quick-look"
+  ar-scale="fixed"                 &lt;!-- 実寸で置く。現物合わせでは必須 --&gt;
+  ar-placement="floor"             &lt;!-- 床に置く（wall も選べる） --&gt;
+  camera-controls touch-action="pan-y"&gt;
+  &lt;button slot="ar-button"&gt;現物に重ねる&lt;/button&gt;
+&lt;/model-viewer&gt;</pre></div>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th style="width:150px">現場での論点</th><th>実務上の判断</th></tr>
+    <tr><td>寸法</td><td>glTF は <b>1.0 = 1m</b>。CAD から変換するとき単位を間違えると 1000 倍で出る。<code>ar-scale="fixed"</code> で拡大縮小を禁じ、実寸で確認させる</td></tr>
+    <tr><td>形式の二重管理</td><td>iOS のために <code>.usdz</code> も要る。変換を CI に組み込み、glTF が更新されたら自動で作り直す</td></tr>
+    <tr><td>置く場所の検出</td><td>床・壁の平面検出が要る。暗い場所・光沢面・広い無地の床では検出が不安定</td></tr>
+    <tr><td>現場の制約</td><td>手袋・保護メガネ・粉塵。片手が塞がる操作は危険。<b>歩きながら使わせない</b>（据え置きで確認する運用にする）</td></tr>
+    <tr><td>配布</td><td>HTTPS 必須。社内ネットワークのみで配るなら証明書の準備が要る</td></tr>
+    <tr><td>代替</td><td>AR が使えない端末には、130 の正面・上面ビューと 136 の計測で代替できる導線を必ず残す</td></tr>
+  </table>
+  <script data-code>
+    (() => {
+      const rows = [
+        ['WebXR（immersive-ar）', () => 'xr' in navigator ? navigator.xr.isSessionSupported('immersive-ar').then(v => v ? '使える' : '使えない').catch(() => '判定不可') : Promise.resolve('navigator.xr が無い'), 'Android Chrome など。ブラウザ内で AR が動く'],
+        ['WebXR（immersive-vr）', () => 'xr' in navigator ? navigator.xr.isSessionSupported('immersive-vr').then(v => v ? '使える' : '使えない').catch(() => '判定不可') : Promise.resolve('navigator.xr が無い'), 'ヘッドセット向け'],
+        ['Scene Viewer', () => Promise.resolve(/Android/i.test(navigator.userAgent) ? '経路あり（Android）' : '対象外'), 'Android で OS のビューアに渡す'],
+        ['Quick Look', () => Promise.resolve(/iPhone|iPad|Macintosh/.test(navigator.userAgent) ? '経路あり（iOS/macOS・.usdz が必要）' : '対象外'), 'iOS で OS のビューアに渡す'],
+        ['カメラ許可', () => navigator.permissions ? navigator.permissions.query({ name: 'camera' }).then(p => p.state).catch(() => '判定不可') : Promise.resolve('判定不可'), 'AR にはカメラの許可が要る'],
+        ['安全なコンテキスト', () => Promise.resolve(isSecureContext ? 'HTTPS（または localhost）' : 'HTTP → AR もカメラも使えない'), 'AR は HTTPS 必須'],
+      ];
+      const t = $('#t142');
+      t.innerHTML = '<tr><th>経路</th><th>この端末</th><th>説明</th></tr>' + rows.map(r => `<tr><td>${r[0]}</td><td>判定中…</td><td>${r[2]}</td></tr>`).join('');
+      rows.forEach((r, i) => r[1]().then(val => t.rows[i + 1].cells[1].innerHTML = `<b>${val}</b>`));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 143 ===================== -->
+<section class="demo" id="n143">
+  <h2><span class="no">143</span>ライブラリ選定と依存方針 <small>自前 / three.js / model-viewer / web-ifc</small></h2>
+  <p class="what">ここまでのデモは<b>依存なしの約 350 行</b>で動いている。これは「中で何が起きているか」を見せるためであり、実務では目的に合うものを選ぶ。判断軸は<b>やりたいことの範囲・配布サイズ・オフライン動作・保守の担い手</b>。業務アプリでは「表示と計測だけ」なら <code>&lt;model-viewer&gt;</code> で足り、編集が要るなら three.js、建築・設備なら web-ifc、という切り分けになる。</p>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <table class="cmp">
+    <tr><th style="width:130px">選択肢</th><th>できること</th><th>目安のサイズ</th><th>向いている場面</th></tr>
+    <tr><td class="k">自前（このページ）</td><td>表示・カメラ・ピック・計測・断面の最小限</td><td>約 12KB</td><td>仕組みを理解する。極小の埋め込み表示</td></tr>
+    <tr><td class="k">&lt;model-viewer&gt;</td><td>glTF 表示、AR、注釈、カメラ操作が<b>タグだけ</b>で完結</td><td>数百 KB</td><td><b>閲覧と AR が主目的</b>。作り込みが不要な現場向け表示</td></tr>
+    <tr><td class="k">three.js</td><td>編集・ギズモ・シェーダ・物理まで何でも</td><td>数百 KB〜（使う分だけ）</td><td><b>配置や寸法を編集する</b>。独自の作り込みが要る</td></tr>
+    <tr><td class="k">web-ifc</td><td>IFC を直接読み、属性情報も扱える</td><td>数 MB（WASM）</td><td>建築・設備・プラント（BIM）</td></tr>
+    <tr><td class="k">OpenCascade 系</td><td>STEP/IGES の読み込み・変換</td><td>数十 MB（WASM）</td><td>ブラウザで CAD 形式を直接扱う必要がある場合。<b>通常はサーバで変換</b>する</td></tr>
+  </table>
+  <table class="cmp" style="margin-top:10px">
+    <tr><th style="width:130px">この資料の操作</th><th>自前（mini3d）</th><th>three.js での書き方</th></tr>
+    <tr><td>カメラ操作（129）</td><td><code>v.attachOrbit()</code></td><td><code>new OrbitControls(camera, dom)</code></td></tr>
+    <tr><td>ピッキング（132）</td><td><code>v.raycast(x, y)</code></td><td><code>new THREE.Raycaster()</code> + <code>intersectObjects()</code></td></tr>
+    <tr><td>ギズモ（133）</td><td>自前で軸ハンドルを描く</td><td><code>new TransformControls(camera, dom)</code></td></tr>
+    <tr><td>断面（137）</td><td>シェーダで <code>discard</code></td><td><code>material.clippingPlanes = [new THREE.Plane(...)]</code></td></tr>
+    <tr><td>読み込み（140）</td><td>glTF の最小パーサ</td><td><code>new GLTFLoader().load()</code></td></tr>
+    <tr><td>注釈（139）</td><td><code>v.project()</code> + DOM</td><td><code>CSS2DRenderer</code> / model-viewer の hotspot</td></tr>
+    <tr><td>AR（142）</td><td>—（自前では実質不可）</td><td><code>&lt;model-viewer ar&gt;</code> か WebXR を直接</td></tr>
+  </table>
+  <p class="note">オフライン配布（この資料の単一ファイル版のような形）にする場合、ライブラリは CDN ではなく<b>同梱</b>する必要がある。ライセンス表記（three.js は MIT）を忘れない。</p>
+  </div>
+</section>
+</main>
+</div>
+</body>
+</html>
