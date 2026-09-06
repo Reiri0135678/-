@@ -6,6 +6,7 @@ export { createHistory } from './undo.js';
 export { registerHotkeys } from './hotkeys.js';
 export { debounce, substringMatch, fuzzyMatch, highlight, search } from './search.js';
 export { createOfflineQueue } from './offline-queue.js';
+export { retry, withRetry, httpError, parseRetryAfter, isTransient, backoffDelay, createLimiter } from './retry.js';
 export { threeWayMerge, wordDiff, diffToHtml } from './merge.js';
 export { createPersistentStore } from './store.js';
 export { createSyncChannel } from './sync.js';

@@ -150,7 +150,7 @@ const q = createOfflineQueue({ storageKey: 'ex12', send: async job => {
 
   <div class="ex"><h2>課題13：再試行を「見える」ようにする<span class="lv lv2">2</span></h2>
     <p class="goal">122 の再試行に、16 のトーストと進行表示を足す。再試行中は「送信中（再試行 2 回目・あと 1.4 秒）」と出し、最終的に失敗したら 79 のキューへ積む。</p>
-    <p class="base">対象：<a href="20-integration.html#n122">122</a> <a class="pg" href="14-playground.html#n122">▶ プレイグラウンドで開く</a> ＋ <a href="02-basic.html#n16">16</a> ＋ <a href="05-advanced.html#n79">79</a>　ヒント：<code>call()</code> に <code>onRetry(attempt, waitMs)</code> を渡し、待ち時間は <code>setInterval</code> で残り秒数を減らして表示する。黙って待つと利用者が二重に押す＝それを防ぐのが目的。</p>
+    <p class="base">対象：<a href="20-integration.html#n122">122</a> <a class="pg" href="14-playground.html#n122">▶ プレイグラウンドで開く</a> ＋ <a href="02-basic.html#n16">16</a> ＋ <a href="05-advanced.html#n79">79</a>　ヒント：<code>call()</code> に <code>onRetry(attempt, waitMs)</code> を渡し、待ち時間は <code>setInterval</code> で残り秒数を減らして表示する。黙って待つと利用者が二重に押す＝それを防ぐのが目的。再試行そのものは <a href="../../ui-kit/retry.js">ui-kit/retry.js</a> の <code>retry(fn, {onRetry})</code> をそのまま使ってよい（この課題の主眼は<b>見せ方</b>）。</p>
     <details><summary>解答例（要点）</summary><pre>async function call(body, mode, onRetry) {
   for (let attempt = 0; attempt &lt;= max; attempt++) {
     const res = await fakeApi(body, idemKey);

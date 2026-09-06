@@ -5,13 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const dir = path.dirname(fileURLToPath(import.meta.url));
-const modules = ['drag', 'camera', 'virtual-list', 'undo', 'hotkeys', 'search', 'offline-queue', 'merge', 'store', 'sync', 'focus-trap', 'position', 'toast', 'sortable', 'split'];
+const modules = ['drag', 'camera', 'virtual-list', 'undo', 'hotkeys', 'search', 'offline-queue', 'retry', 'merge', 'store', 'sync', 'focus-trap', 'position', 'toast', 'sortable', 'split'];
 const names = [];
 let body = '';
 for (const m of modules) {
   let src = fs.readFileSync(path.join(dir, m + '.js'), 'utf8');
   // export function foo / export const foo → 名前を集めて export を外す
-  src = src.replace(/^export (function|const|let|class) (\w+)/gm, (_, kind, name) => { names.push(name); return `${kind} ${name}`; });
+  src = src.replace(/^export (async function|function|const|let|class) (\w+)/gm, (_, kind, name) => { names.push(name); return `${kind} ${name}`; });
   if (/^\s*(import|export)\b/m.test(src)) throw new Error(`${m}.js: 未対応の import/export があります`);
   body += `\n// ---- ${m}.js ----\n${src}\n`;
 }

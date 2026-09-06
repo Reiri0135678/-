@@ -393,7 +393,22 @@ const enc = safeStorage.encryptString(refreshToken);             // ④ OS の�
     <tr><td class="k">上限を決める</td><td>永久に再試行すると詰まりが伝播する</td><td>無限リトライ＋画面が固まる</td></tr>
     <tr><td class="k">同時実行数を絞る</td><td>そもそも 429 を出さないのが最善</td><td>1000 件を <code>Promise.all</code> で一気に投げる</td></tr>
   </table>
-  <p class="note">画面側の見せ方：再試行中は「送信中（再試行 2 回目）」と<b>状態を出す</b>。黙って待つと利用者が二重に押す。最終的に失敗したら 88 の再送キュー（オフライン待ち行列）に積み、後で自動再開する。</p>
+  <p class="note">画面側の見せ方：再試行中は「送信中（再試行 2 回目）」と<b>状態を出す</b>。黙って待つと利用者が二重に押す。最終的に失敗したら 79 の再送キュー（オフライン待ち行列）に積み、後で自動再開する。アクセシビリティ上も、この状態は <code>aria-live="polite"</code> で伝える（<a href="10-accessibility.html#a6">A6</a>）。</p>
+  <p class="note">この処理は部品として切り出してある：<b><a href="../../ui-kit/retry.js">ui-kit/retry.js</a></b>。<code>retry(fn, {retries, baseMs, shouldRetry, onRetry})</code> ／ <code>withRetry(fn, opts)</code>（冪等キーを固定して渡す）／ <code>httpError(res)</code>（<code>Retry-After</code> を読んだ Error を作る）／ <code>createLimiter(n)</code>（同時実行数を絞る＝そもそも 429 を出さない）。<code>fetch</code> の例：</p>
+  <div class="lib" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1d1f23">
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">import { withRetry, httpError, createLimiter } from '../../ui-kit/index.js';
+
+const post = withRetry(async (body, { signal, idempotencyKey }) =&gt; {
+  const res = await fetch('/api/orders', { method: 'POST', signal,
+    headers: { 'content-type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(body) });
+  if (!res.ok) throw httpError(res);              // 429/5xx は再試行、4xx はそのまま失敗
+  return res.json();
+}, { retries: 4, onRetry: i =&gt; setStatus(`再試行 ${i.attempt} 回目（あと ${Math.round(i.delay / 100) / 10} 秒）`) });
+
+const limit = createLimiter(3);                   // 一気に投げない
+await Promise.all(rows.map(r =&gt; limit(() =&gt; post(r, { idempotencyKey: `order-${r.id}` }))));</pre>
+  </div>
 </section>
 
 <!-- ===================== 123 ===================== -->

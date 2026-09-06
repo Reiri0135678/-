@@ -54,6 +54,22 @@ export interface OfflineQueue<J = any> {
 }
 export function createOfflineQueue<J = any>(opts: { storageKey: string; send: (job: J & { id: number }) => Promise<unknown>; isOnline?: () => boolean; storage?: Pick<Storage, 'getItem' | 'setItem'> | null }): OfflineQueue<J>;
 
+export interface HttpError extends Error { status?: number; retryAfter?: number | null }
+export function httpError(res: Response): HttpError;
+export function parseRetryAfter(value: string | null | undefined): number | null;
+export function isTransient(err: any): boolean;
+export function backoffDelay(attempt: number, opts?: { baseMs?: number; maxMs?: number; retryAfterSec?: number | null; jitter?: () => number }): number;
+export interface RetryOptions {
+  retries?: number; baseMs?: number; maxMs?: number;
+  shouldRetry?: (err: any, attempt: number) => boolean;
+  onRetry?: (info: { attempt: number; delay: number; error: any }) => void;
+  signal?: AbortSignal | null; jitter?: () => number;
+  sleepFn?: (ms: number, signal?: AbortSignal | null) => Promise<void>;
+}
+export function retry<T>(fn: (ctx: { attempt: number; signal: AbortSignal | null }) => Promise<T> | T, opts?: RetryOptions): Promise<T>;
+export function withRetry<A, T>(fn: (arg: A, ctx: { attempt: number; signal: AbortSignal | null; idempotencyKey: string | null }) => Promise<T> | T, opts?: RetryOptions): (arg: A, call?: { idempotencyKey?: string | null; signal?: AbortSignal | null }) => Promise<T>;
+export function createLimiter(concurrency?: number): <T>(task: () => Promise<T> | T) => Promise<T>;
+
 export type Change = 'mine' | 'theirs' | 'both' | 'none';
 export function threeWayMerge<T extends Record<string, any>>(base: T, mine: T, theirs: T, opts?: { prefer?: 'mine' | 'theirs' }): { merged: T; conflicts: { key: keyof T; base: any; mine: any; theirs: any }[]; changes: Record<keyof T, Change> };
 export function wordDiff(a: string, b: string): { type: 'same' | 'del' | 'ins'; text: string }[];

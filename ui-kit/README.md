@@ -25,6 +25,7 @@ import { createVirtualList, registerHotkeys, createPersistentStore } from './ui-
 | `hotkeys.js` | `registerHotkeys({'mod+s': fn}, {ignoreInputs, skipPrevented})` |
 | `search.js` | `debounce`, `substringMatch`, `fuzzyMatch`, `highlight`, `search(items, needle, {fuzzy})` |
 | `offline-queue.js` | `createOfflineQueue({storageKey, send, isOnline})` |
+| `retry.js` | `retry(fn, {retries, baseMs, shouldRetry, onRetry})`, `withRetry(fn, opts)`, `httpError(res)`, `parseRetryAfter`, `isTransient`, `backoffDelay`, `createLimiter(n)` |
 | `merge.js` | `threeWayMerge(base, mine, theirs)`, `wordDiff(a, b)`, `diffToHtml(parts)` |
 | `store.js` | `createPersistentStore(key, defaults, {debounceMs})` |
 | `sync.js` | `createSyncChannel(name, {onState})` |

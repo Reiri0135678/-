@@ -28,7 +28,7 @@
 | 07 | `07-implementation-plan.md` | 実装計画：部品ライブラリ化（完了）と Mission Bridge への適用手順・確認事項 | 計画 |
 | - | `assets/guide.css` / `assets/guide.js` / `assets/catalog-data.js` | 共通スタイル、目次生成、コード表示ランタイム、カタログデータ（01 と 11 が共有） | - |
 | - | `assets/mini3d.js` | 依存ゼロの WebGL2 レンダラ（行列演算・形状生成・レイキャスト・GPU ピッキング・クリッピング・射影）。21 のデモが使う | - |
-| - | `../ui-kit/` | デモから切り出した再利用部品（15モジュール、テスト26件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
+| - | `../ui-kit/` | デモから切り出した再利用部品（16モジュール、テスト34件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
 | - | `build.mjs` | デモ抽出（`assets/demo-data.js`）・検索索引（`assets/search-index.js`）・収録一覧（`assets/manifest.js`）・単一ファイル版（`dist/ui-guide-standalone.html`）の生成。デモを編集したら `npm run build:docs` | - |
 | - | `assets/bundler.js` / `assets/standalone-shell.js` | 単一ファイル版の組み立て処理と、生成物の中で動くランタイム。ブラウザ（16）と Node（build.mjs）が同じものを使う | - |
 | - | `dist/ui-guide-standalone.html` | 生成済みの単一ファイル版（約 0.7 MB）。ダブルクリックで開き、そのまま配布できる | 生成物 |

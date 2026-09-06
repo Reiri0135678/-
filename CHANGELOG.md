@@ -13,6 +13,9 @@
   - `09-exercises.html`：課題13〜16 を追加（再試行の可視化 / Webhook の順序入れ替わり / 計測のスナップ / 3Dビューのキーボード操作）
   - `12-electron.html`・`13-kintone.html` から Y層（122 レート制限・126 機器連携・120/121 鍵の置き場所）への導線を追加
   - `19-plan-integration-3d.md` の冒頭に実装済みであることと採用した依存方針を明記
+- `ui-kit/retry.js`（16 個目の部品）：122 のレート制限対応を切り出した。`retry(fn, {retries, baseMs, maxMs, shouldRetry, onRetry, signal})`、`withRetry(fn, opts)`（冪等キーを再試行間で固定して渡す）、`httpError(res)`（`Retry-After` を秒に直して持つ Error を作る）、`parseRetryAfter`（秒数と HTTP-date の両方）、`isTransient`（429 / 408 / 5xx / 通信断のみ再試行）、`backoffDelay`（指数バックオフ＋ジッター）、`createLimiter(n)`（同時実行数を絞る）。`AbortSignal` で待機中も中断できる。型定義・単一ファイル版・テスト8件を追加（ui-kit 全体で 34件）
+  - `ui-kit/build.mjs` が `export async function` も扱えるようにした
+  - カタログ 122 に部品バッジ、デモ 122 に `fetch` での使用例を追加
 - 検証：`test/verify.mjs` に Y層・Z層・A7・クイズ・全デモ実行のチェックを追加（122件）
 
 ## 第9弾（最新機能とクロスプラットフォーム）
