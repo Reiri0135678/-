@@ -1,6 +1,8 @@
 // 教材のビルド（依存なし）: node docs/ui-guide/build.mjs
-//  - assets/demo-data.js   : 各デモの HTML / CSS / JS を抽出（14-playground.html が使う）
-//  - assets/search-index.js: 全ページの見出し・説明の索引（00-index.html の横断検索が使う）
+//  - assets/demo-data.js       : 各デモの HTML / CSS / JS を抽出（14-playground.html が使う）
+//  - assets/search-index.js    : 全ページの見出し・説明の索引（00-index.html の横断検索が使う）
+//  - assets/manifest.js        : 単一ファイル版に収録するファイル一覧（16-bundler.html が使う）
+//  - dist/ui-guide-standalone.html : 単一ファイル版（assets/bundler.js と同じ処理。ブラウザだけでも 16-bundler.html から作れる）
 // デモページを編集したら再実行する（verify.mjs が古さを検知する）。
 import fs from 'node:fs';
 import path from 'node:path';
@@ -45,4 +47,29 @@ function body2sections(html) {
 const banner = `// 自動生成（node docs/ui-guide/build.mjs）。手で編集しない。\n`;
 fs.writeFileSync(path.join(dir, 'assets', 'demo-data.js'), banner + 'window.DEMOS = ' + JSON.stringify(demos) + ';\n');
 fs.writeFileSync(path.join(dir, 'assets', 'search-index.js'), banner + 'window.SEARCH_INDEX = ' + JSON.stringify(index) + ';\n');
+
+// ---- 単一ファイル版 ----
+// 収録対象（リポジトリ相対のキー）。ブラウザ版（16-bundler.html）もこの一覧を読んで同じものを集める。
+const root = path.resolve(dir, '..', '..');
+const rel = p => path.relative(root, p).split(path.sep).join('/');
+const listDir = (d, re) => fs.existsSync(d) ? fs.readdirSync(d).filter(f => re.test(f)).map(f => rel(path.join(d, f))) : [];
+const manifest = [
+  ...listDir(dir, /\.(html|md)$/),
+  ...listDir(path.join(dir, 'assets'), /\.(js|css)$/),
+  ...listDir(path.join(root, 'ui-kit'), /\.(js|md|ts)$/),
+  ...listDir(path.join(root, 'ui-kit', 'dist'), /\.js$/),
+  ...listDir(path.join(root, 'ui-kit', 'example'), /\.html$/),
+].sort().filter(k => k !== 'docs/ui-guide/assets/manifest.js');   // 自分自身は入れない（毎回中身が変わるため）
+fs.writeFileSync(path.join(dir, 'assets', 'manifest.js'), banner + 'window.UI_GUIDE_MANIFEST = ' + JSON.stringify(manifest, null, 0) + ';\n');
+
+const files = {};
+for (const key of manifest) files[key] = fs.readFileSync(path.join(root, key), 'utf8');
+new Function(fs.readFileSync(path.join(dir, 'assets', 'bundler.js'), 'utf8'))();   // globalThis.UIGuideBundler を定義
+// 生成日は入力の最終更新日から決める（同じ入力なら同じ出力になり、verify.mjs の鮮度チェックが安定する）
+const newest = Math.max(...manifest.map(k => fs.statSync(path.join(root, k)).mtimeMs));
+const html = globalThis.UIGuideBundler.buildStandalone(files, { date: new Date(newest).toISOString().slice(0, 10) });
+fs.mkdirSync(path.join(dir, 'dist'), { recursive: true });
+fs.writeFileSync(path.join(dir, 'dist', 'ui-guide-standalone.html'), html);
+
 console.log(`demo-data.js: ${demos.length} demos / search-index.js: ${index.length} entries`);
+console.log(`manifest.js: ${manifest.length} files / dist/ui-guide-standalone.html: ${(html.length / 1024 / 1024).toFixed(2)} MB`);

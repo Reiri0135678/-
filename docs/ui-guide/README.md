@@ -17,12 +17,15 @@
 | 11 | `11-quiz.html` | 名称当てクイズ（カタログのデータから出題、層・問題数・英語名モード） | 完成 |
 | 12 | `12-electron.html` | Electron 実装リファレンス（参照用、コードは実行されない） | 完成 |
 | 13 | `13-kintone.html` | kintone 連携リファレンス（参照用、上限値は公式で要確認） | 完成 |
+| 16 | `16-bundler.html` | 単一ファイル版を作るバンドラ（ブラウザだけで生成。Node 不要） | 完成 |
 | 15 | `15-curriculum.html` | 学習カリキュラム（7ステップ、到達目標、チェック保存） | 完成 |
 | 14 | `14-playground.html` | プレイグラウンド：各デモの HTML / CSS / JS を編集して即実行（`assets/demo-data.js` を `build.mjs` が生成） | 完成 |
 | 07 | `07-implementation-plan.md` | 実装計画：部品ライブラリ化（完了）と Mission Bridge への適用手順・確認事項 | 計画 |
 | - | `assets/guide.css` / `assets/guide.js` / `assets/catalog-data.js` | 共通スタイル、目次生成、コード表示ランタイム、カタログデータ（01 と 11 が共有） | - |
 | - | `../ui-kit/` | デモから切り出した再利用部品（15モジュール、テスト26件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
-| - | `build.mjs` | デモ抽出（`assets/demo-data.js`）と検索索引（`assets/search-index.js`）の生成。デモを編集したら `npm run build:docs` | - |
+| - | `build.mjs` | デモ抽出（`assets/demo-data.js`）・検索索引（`assets/search-index.js`）・収録一覧（`assets/manifest.js`）・単一ファイル版（`dist/ui-guide-standalone.html`）の生成。デモを編集したら `npm run build:docs` | - |
+| - | `assets/bundler.js` / `assets/standalone-shell.js` | 単一ファイル版の組み立て処理と、生成物の中で動くランタイム。ブラウザ（16）と Node（build.mjs）が同じものを使う | - |
+| - | `dist/ui-guide-standalone.html` | 生成済みの単一ファイル版（約 0.7 MB）。ダブルクリックで開き、そのまま配布できる | 生成物 |
 | - | `test/verify.mjs` | 教材ページの検証（JSエラー、リンク、デモ数、代表操作、タッチスワイプ）。`npm run test:docs` | - |
 
 ## デモページの読み方

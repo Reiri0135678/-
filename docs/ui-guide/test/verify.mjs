@@ -18,11 +18,14 @@ const results = []; const ok = (name, pass, detail = '') => results.push({ name,
 const demoIds = new Set([...fs.readFileSync(path.join(dir, 'assets', 'demo-data.js'), 'utf8').matchAll(/"id":"(\w+)"/g)].map(m => m[1]));
 
 // 0: 生成物（demo-data / search-index）が最新か（build.mjs を一時出力と比較）
-{ const { execFileSync } = await import('node:child_process'); const os = await import('node:os');
-  const before = ['demo-data.js', 'search-index.js'].map(f => fs.readFileSync(path.join(dir, 'assets', f), 'utf8'));
+{ const { execFileSync } = await import('node:child_process');
+  const targets = ['assets/demo-data.js', 'assets/search-index.js', 'assets/manifest.js', 'dist/ui-guide-standalone.html'];
+  const read = () => targets.map(f => fs.readFileSync(path.join(dir, f), 'utf8').replace(/"generated":"[^"]*"/, ''));  // 生成日は比較から外す
+  const before = read();
   execFileSync(process.execPath, [path.join(dir, 'build.mjs')], { stdio: 'ignore' });
-  const after = ['demo-data.js', 'search-index.js'].map(f => fs.readFileSync(path.join(dir, 'assets', f), 'utf8'));
-  ok('生成物が最新（npm run build:docs 済み）', before[0] === after[0] && before[1] === after[1], '再生成して差分をコミットしてください'); }
+  const after = read();
+  const stale = targets.filter((_, i) => before[i] !== after[i]);
+  ok('生成物が最新（npm run build:docs 済み）', stale.length === 0, '再生成が必要: ' + stale.join(', ')); }
 
 // 1〜3: 全ページ
 for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.html')).sort()) {
@@ -98,6 +101,27 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   await p.click('#days input[type=checkbox]'); await p.reload(); await p.waitForTimeout(200);
   ok('15 カリキュラム: チェックが再読込後も残る', (await p.$$eval('#days input:checked', i => i.length)) === 1);
   await p.evaluate(() => localStorage.removeItem('ui-guide.curriculum'));
+  await p.close(); }
+
+{ // 単一ファイル版：1枚だけで資料が動くか（ナビ・デモ・ページ間リンク・プレイグラウンド）
+  const p = await browser.newPage({ viewport: { width: 1300, height: 900 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  const bundle = 'file://' + path.join(dir, 'dist', 'ui-guide-standalone.html');
+  await p.goto(bundle); await p.waitForTimeout(900);
+  const f = () => p.frameLocator('#ug-frame');
+  ok('単一ファイル版: JSエラーなし・ナビが並ぶ', errs.length === 0 && (await p.$$eval('#ug-nav a', a => a.length)) >= 15, errs.join(' | '));
+  await f().locator('#gq').fill('慣性'); await p.waitForTimeout(500);
+  await f().locator('#gres a').first().click(); await p.waitForTimeout(900);
+  ok('単一ファイル版: 横断検索の結果からページ間を移動できる', (await p.textContent('#ug-path')).includes('03-custom.html'));
+  await p.click('#ug-nav a[data-key="docs/ui-guide/02-basic.html"]'); await p.waitForTimeout(900);
+  await f().locator('#s15-open').click(); await p.waitForTimeout(300);
+  ok('単一ファイル版: デモが動く（01 の 100 行・15 のモーダル）', (await f().locator('#s01-box div').count()) === 100 && (await f().locator('#s15-dlg').evaluate(d => d.open)));
+  await p.goto(bundle + '#docs/ui-guide/14-playground.html@n28'); await p.waitForTimeout(1500);
+  ok('単一ファイル版: プレイグラウンドが指定デモを開き、内側でも動く',
+    (await p.frameLocator('#ug-frame').locator('#d-title').textContent()).includes('慣性') &&
+    (await p.frameLocator('#ug-frame').frameLocator('#frame').locator('#s28-ball').count()) === 1);
+  await p.goto(bundle + '#ui-kit/example/index.html'); await p.waitForTimeout(1500);
+  ok('単一ファイル版: ui-kit 実例アプリも動く', (await p.frameLocator('#ug-frame').locator('#list .row').count()) > 5);
   await p.close(); }
 
 await browser.close();

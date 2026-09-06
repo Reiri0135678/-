@@ -1,5 +1,11 @@
 # 変更履歴
 
+## 第8弾（単一ファイル化）
+- `docs/ui-guide/dist/ui-guide-standalone.html`：資料一式（ui-kit の部品と実例アプリを含む 42 ファイル）を外部参照なしの 1 枚にまとめた版
+- `docs/ui-guide/16-bundler.html`：その 1 枚をブラウザだけで作るバンドラ（Node 不要。フォルダ選択なら `file://` でも動く）
+- `docs/ui-guide/assets/bundler.js` / `standalone-shell.js`：組み立て処理と生成物のランタイム。ブラウザと Node が同じものを使い、出力は同一
+- `build.mjs`：`assets/manifest.js`（収録一覧）と単一ファイル版も生成するよう拡張
+
 ## 第7弾（学習の道筋）
 - 学習カリキュラム `15-curriculum.html`：7ステップ、到達目標、チェック保存
 - プレイグラウンド：デモごとの下書き自動保存と破棄

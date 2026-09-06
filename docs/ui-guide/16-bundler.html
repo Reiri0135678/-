@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>単一ファイル版を作る（バンドラ）</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<script src="assets/manifest.js"></script>
+<script src="assets/bundler.js"></script>
+<style>
+  .tierF { background: #475569; }
+  main.single { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0 0 10px; font-size: 13.5px; }
+  .log { height: 150px; }
+  .big { font-size: 15px; padding: 10px 18px; }
+  .files { font: 11.5px ui-monospace, Menlo, Consolas, monospace; color: var(--muted); max-height: 120px; overflow: auto; margin-top: 8px; }
+  #preview { width: 100%; height: 420px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-top: 10px; }
+  .ng { color: #dc2626; } .ok { color: #16a34a; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>単一ファイル版を作る <span class="tier tierF">バンドラ</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="14-playground.html">プレイグラウンド</a></nav>
+</header>
+<main class="single">
+  <div class="lead">この資料一式（<b id="n-manifest">-</b> ファイル）を、外部ファイルを一切参照しない <b>1 枚の HTML</b> にまとめる。Node もビルドツールも使わず、このページの JavaScript だけで生成する。できたファイルはダブルクリックで開け、そのまま配布・持ち出しができる。</div>
+
+  <div class="card">
+    <h2>1. 元のファイルを読み込む</h2>
+    <p>どちらか一方でよい。<b>フォルダ選択</b>はファイルを開いただけの状態（<code>file://</code>）でも使える。<b>このページから読み込む</b>はローカルサーバ経由（<code>http://</code>）でだけ使える。</p>
+    <div class="row">
+      <label class="btn" style="cursor:pointer;padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;background:var(--card)">
+        📁 フォルダを選択（リポジトリのルート）
+        <input type="file" id="pick" webkitdirectory directory multiple hidden>
+      </label>
+      <button id="fetch">🌐 このページから読み込む</button>
+      <span class="readout" id="state">未読み込み</span>
+    </div>
+    <div class="files" id="files"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. 生成する</h2>
+    <p>読み込んだ内容を <code>assets/bundler.js</code> がそのまま 1 枚の HTML に組み立てる（Node 版の <code>npm run build:docs</code> と同じ処理・同じ結果）。</p>
+    <div class="row">
+      <button id="build" class="primary big" disabled>単一 HTML を生成</button>
+      <a id="download" class="btn" download="ui-guide-standalone.html" hidden style="padding:6px 12px;border:1px solid #cbd5e1;border-radius:6px;text-decoration:none">⬇ ダウンロード</a>
+      <span class="readout" id="size"></span>
+    </div>
+    <div class="log" id="log"></div>
+    <iframe id="preview" title="生成結果のプレビュー" hidden></iframe>
+  </div>
+
+  <div class="card">
+    <h2>仕組み</h2>
+    <p>ページごとに「完全な HTML 文書」を組み立てて <code>iframe</code> の <code>srcdoc</code> に入れて表示する。元ファイルと同じ順序でスタイルとスクリプトが動くのでデモはそのまま動き、ページ間で CSS が衝突しない。ページ内のリンクは <code>iframe</code> の中で横取りして親に伝え、親が該当ページへ切り替える。実装は <code>assets/bundler.js</code>（組み立て）と <code>assets/standalone-shell.js</code>（生成物の中で動く部分）の2つだけ。</p>
+    <p class="note">注意：<code>docs/ui-guide</code> だけでなくリポジトリのルートを選ぶと、<code>ui-kit</code> の部品と実例アプリも収録される。フォルダ選択ではブラウザが確認ダイアログを出すが、ファイルはどこにも送信されず、すべてこのページの中だけで処理される。</p>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = s => document.querySelector(s);
+  const MANIFEST = window.UI_GUIDE_MANIFEST || [];
+  const files = {};
+  $('#n-manifest').textContent = MANIFEST.length;
+  const log = m => logTo($('#log'), m);
+
+  const report = () => {
+    const got = Object.keys(files).length, missing = MANIFEST.filter(k => files[k] == null);
+    $('#state').textContent = `${got} / ${MANIFEST.length} ファイル`;
+    $('#state').className = 'readout ' + (missing.length ? 'ng' : 'ok');
+    $('#files').innerHTML = missing.length ? '不足: ' + missing.join('　') : '不足なし';
+    $('#build').disabled = got === 0;
+  };
+
+  // --- 経路A: フォルダ選択（file:// でも使える） ---
+  // 選ばれたフォルダ名が前に付くので、末尾一致でマニフェストのキーに割り当てる
+  const matchKey = path => MANIFEST.find(k => path === k || path.endsWith('/' + k))
+    || MANIFEST.find(k => !files[k] && path.split('/').slice(-2).join('/') === k.split('/').slice(-2).join('/'));
+  $('#pick').addEventListener('change', async e => {
+    const list = [...e.target.files];
+    log(`フォルダから ${list.length} ファイルを走査`);
+    for (const f of list) {
+      const key = matchKey(f.webkitRelativePath || f.name);
+      if (key && files[key] == null) files[key] = await f.text();
+    }
+    report(); log(`読み込み完了: ${Object.keys(files).length} ファイル`);
+  });
+
+  // --- 経路B: このページから読み込む（http:// のとき） ---
+  $('#fetch').addEventListener('click', async () => {
+    if (location.protocol === 'file:') { log('file:// では読み込めない（ブラウザがローカルファイルの取得を禁じている）。フォルダ選択を使う。'); return; }
+    log('読み込み中…');
+    for (const key of MANIFEST) {
+      try {
+        const res = await fetch('../../' + key);          // このページは docs/ui-guide/ にある
+        if (res.ok) files[key] = await res.text(); else log(`取得失敗 ${res.status}: ${key}`);
+      } catch (err) { log('取得失敗: ' + key); }
+    }
+    report(); log(`読み込み完了: ${Object.keys(files).length} ファイル`);
+  });
+
+  // --- 生成 ---
+  $('#build').addEventListener('click', () => {
+    try {
+      const html = UIGuideBundler.buildStandalone(files, { date: new Date().toISOString().slice(0, 10) });
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = $('#download'); a.href = url; a.hidden = false;
+      $('#size').textContent = `${(blob.size / 1024 / 1024).toFixed(2)} MB`;
+      $('#preview').hidden = false; $('#preview').src = url;
+      log(`生成しました（${(blob.size / 1024 / 1024).toFixed(2)} MB）。下のプレビューで確認し、ダウンロードして配布できる。`);
+    } catch (err) { log('生成に失敗: ' + err.message); }
+  });
+
+  report();
+  log(location.protocol === 'file:' ? 'file:// で開いている → 「フォルダを選択」を使う' : 'http:// で開いている → どちらの経路も使える');
+})();
+</script>
+</body>
+</html>
