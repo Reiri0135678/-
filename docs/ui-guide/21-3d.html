@@ -308,6 +308,7 @@ gizmo.addEventListener('dragging-changed', e =&gt; controls.enabled = !e.value);
         $('#o134').textContent = `X ${x.toFixed(2)} → ${snappedX.toFixed(2)}${$('#f134').checked ? ' / 天板の面に載せる' : ' / 面を無視'}`;
         v.draw();
       };
+      // check-ime-ignore : range / checkbox のため変換が発生しない
       ['#x134', '#s134', '#f134'].forEach(s => $(s).addEventListener('input', update));
       v.attachOrbit(); update();
     })();
@@ -451,6 +452,7 @@ material.clippingPlanes = [ new THREE.Plane(new THREE.Vector3(1,0,0), -0.2) ];
         cap.position = n.map(k => k * (off - 0.001));
         v.draw();
       };
+      // check-ime-ignore : range / checkbox のため変換が発生しない
       ['#a137', '#s137', '#cap137'].forEach(s => $(s).addEventListener('input', update));
       v.attachOrbit(); update();
     })();

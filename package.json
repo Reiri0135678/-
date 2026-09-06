@@ -6,7 +6,8 @@
   "scripts": {
     "build": "node ui-kit/build.mjs",
     "test": "node ui-kit/test/run.mjs",
-    "test:docs": "node docs/ui-guide/test/verify.mjs",
-    "build:docs": "node docs/ui-guide/build.mjs"
+    "test:docs": "node docs/ui-guide/test/verify.mjs && node tools/test/check-ime.test.mjs",
+    "build:docs": "node docs/ui-guide/build.mjs",
+    "check:ime": "node tools/check-ime.mjs"
   }
 }

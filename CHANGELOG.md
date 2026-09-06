@@ -1,5 +1,18 @@
 # 変更履歴
 
+## 第11弾（IME 検査ツールと、それが見つけた修正）
+- `tools/check-ime.mjs`（新規）：**任意のフォルダを走査して、日本語入力の変換中イベントを誤処理していそうな箇所を報告する**。依存なし・読み取りのみ。DOM / React / Vue / Svelte / jQuery の登録の書き方に対応し、`要修正 / 要確認 / 目視` の3段階で file:line と直し方を出す。意図的に対策しない箇所は `check-ime-ignore` コメントで除外できる。`npm run check:ime -- <フォルダ>`
+- `tools/test/check-ime.test.mjs`：検査器の自己テスト（壊れた書き方を必ず拾い、対策済みの書き方は指摘しない、を固定。9件）
+- **この検査で、資料本体に同型のバグが4件残っていたことが判明し、修正した**
+  - `00-index.html` 横断検索：変換中に検索が走っていた
+  - `05-advanced.html` 81 ワークスペース／82 ルーティングの絞り込み：変換中に絞り込みと再描画が走っていた
+  - `ui-kit/example/index.html` 実例アプリの検索：同上
+  - `14-playground.html` の Ctrl/⌘+Enter：変換中にも実行されていた
+  - いずれも `isComposing` で弾き、`compositionend` で1回だけ走らせる形に統一
+- 誤検出だった箇所（canvas・range/checkbox・下書き保存・`e.target === td` で除外済みの箇所）には、理由を書いた `check-ime-ignore` を付けた
+- 検証：`test:docs` に 00 横断検索と 81 絞り込みの回帰テストを追加（126件）。`npm run test:docs` は検査器の自己テストも続けて実行する
+
+
 ## 第10弾（サードパーティ連携と 3D・AR）
 - `20-integration.html`（Y層 114〜127）：連携方式の選び方、iframe と `postMessage`、`sandbox` / `frame-ancestors`、埋め込みでログインが切れる問題（3rd party Cookie / CHIPS / Storage Access API）、CORS とプリフライト、OAuth 2.1 と PKCE（`crypto.subtle` で実際に S256 を計算）、Electron の認証と `safeStorage`、鍵を画面に置かない、レート制限と再試行（429 / `Retry-After` / 指数バックオフ＋ジッター / 冪等キー）、Webhook の受け側（HMAC 署名の定数時間比較・リプレイ拒否・冪等）、反映方式の選び方（ポーリング／SSE／WebSocket を同じ画面で比較）、ファイルの授受（File System Access / ドロップ / 貼り付け / Web Share を実測）、現場機器との連携（WebHID / WebSerial / WebUSB ＋ キーボード型リーダーの判定）、埋め込みウィジェットと Shadow DOM
 - `21-3d.html`（Z層 128〜143）：座標系と行列、カメラ操作（オービット／パン／ドリー）、ビューキューブと投影方式、WebGPU と WebGL2、ピッキング（レイキャストとカラーID の実測比較）、変形ギズモ、スナップ、選択の可視化、計測、断面（クリッピング平面）、分解図、注釈・ホットスポット（遮蔽判定つき）、glTF の書き出し／読み込みと CAD 形式からの変換、大規模モデルの性能、AR（WebXR / Scene Viewer / Quick Look の対応を実測）、ライブラリ選定

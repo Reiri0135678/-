@@ -544,6 +544,7 @@
       $$('.s38 td').forEach(td => {
         td.addEventListener('dblclick', () => edit(td));
         // Enter は td 自身に来たときだけ編集開始。入力欄から上がってきた確定の Enter で再び開かないようにする
+        // check-ime-ignore : e.target === td で入力欄からの確定 Enter を除外済み（td 上では変換が起きない）
         td.addEventListener('keydown', e => { if (e.target === td && e.key === 'Enter' && !td.querySelector('input')) edit(td); });
       });
     })();

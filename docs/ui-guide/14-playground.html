@@ -84,8 +84,10 @@ ${extra}<style>body{padding:14px;background:#f6f7f9}section.demo{margin:0}<\/sty
   $('#run').onclick = run;
   $('#reset').onclick = () => { $('#ed-html').value = current.html; $('#ed-css').value = current.css; $('#ed-js').value = current.js; run(); };
   $('#discard').onclick = () => { try { localStorage.removeItem(KEY(current.id)); } catch {} load(current.id, { useDraft: false }); };
+  // check-ime-ignore : 下書きの自動保存のみ。未確定の文字が保存されても確定時に上書きされる
   let saveTimer; document.querySelectorAll('textarea').forEach(t => t.addEventListener('input', () => { clearTimeout(saveTimer); saveTimer = setTimeout(saveDraft, 300); }));
-  document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
+  document.addEventListener('keydown', e => { if (e.isComposing || e.keyCode === 229) return;   // 変換中は実行しない
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); run(); } });
   // textarea で Tab をインデントに
   document.querySelectorAll('textarea').forEach(t => t.addEventListener('keydown', e => { if (e.key === 'Tab') { e.preventDefault(); const s = t.selectionStart; t.setRangeText('  ', s, t.selectionEnd, 'end'); } }));
   load((location.hash || '#n02').slice(1));

@@ -105,7 +105,7 @@
     $('#again').onclick = start;
   };
   $('#start').onclick = start;
-  document.addEventListener('keydown', e => { if (/^[1-4]$/.test(e.key) && !$('#q').hidden) $$('.choice')[+e.key - 1]?.click(); if (e.key === 'Enter' && $('#nextBtn')) $('#nextBtn').click(); });
+  document.addEventListener('keydown', e => { if (e.isComposing || e.keyCode === 229) return; if (/^[1-4]$/.test(e.key) && !$('#q').hidden) $$('.choice')[+e.key - 1]?.click(); if (e.key === 'Enter' && $('#nextBtn')) $('#nextBtn').click(); });
 })();
 </script>
 </body>

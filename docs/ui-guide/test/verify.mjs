@@ -212,6 +212,24 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   await p.$eval('#s74-q', el => { el.value = '部品12'; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); });
   await p.waitForTimeout(500);
   ok('74 検索: 変換確定で1回だけ走る', (await p.textContent('#s74-out')) !== before);
+  // 横断検索（00）と絞り込み（81）も、変換中は走らないこと
+  await p.goto(url('00-index.html')); await p.waitForTimeout(400);
+  await p.$eval('#gq', el => { el.value = 'かん'; el.dispatchEvent(new InputEvent('input', { isComposing: true, bubbles: true })); });
+  await p.waitForTimeout(400);
+  ok('00 横断検索: 変換中は検索が走らない', (await p.textContent('#gcount')).trim() === '');
+  await p.$eval('#gq', el => { el.value = '慣性'; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); });
+  await p.waitForTimeout(400);
+  ok('00 横断検索: 変換確定で走る', /件/.test(await p.textContent('#gcount')));
+  await p.goto(url('05-advanced.html')); await p.waitForTimeout(600);
+  const n81 = () => p.$$eval('#s81-list div', d => d.length);
+  const before81 = await n81();
+  await p.$eval('#s81-filter', el => { el.value = '#1005'; el.dispatchEvent(new InputEvent('input', { isComposing: true, bubbles: true })); });
+  await p.waitForTimeout(300);
+  ok('81 絞り込み: 変換中は絞られない', (await n81()) === before81, `${before81} -> ${await n81()}`);
+  await p.$eval('#s81-filter', el => { el.value = '#1005'; el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true })); });
+  await p.waitForTimeout(300);
+  ok('81 絞り込み: 変換確定で絞られる', (await n81()) < before81, `${await n81()}`);
+
   await p.goto(url('03-custom.html')); await p.waitForTimeout(400);
   await p.dblclick('.s38 td');
   await p.$eval('.s38 td input', el => { el.value = 'けんさ'; el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true, bubbles: true })); });

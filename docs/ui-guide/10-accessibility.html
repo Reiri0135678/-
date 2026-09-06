@@ -205,6 +205,7 @@
       };
 
       // ② キーボードだけで一巡できるようにする
+      // check-ime-ignore : canvas は文字入力欄ではないため変換が発生しない
       c.addEventListener('keydown', e => {
         const n = PARTS.length;
         if (e.key === 'ArrowRight' || e.key === 'ArrowDown') select((sel + 1 + n) % n);

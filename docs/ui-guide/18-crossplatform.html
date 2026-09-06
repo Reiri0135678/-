@@ -186,6 +186,7 @@
     (() => {
       const bad = $('#s107-bad'), good = $('#s107-good');
       bad.addEventListener('input', e => logTo($('#s107-bad-log'), `検索実行: 「${e.target.value}」`));
+      // check-ime-ignore : ここは「対策していない例」を見せるためのコード（意図的に isComposing を見ない）
       bad.addEventListener('keydown', e => { if (e.key === 'Enter') logTo($('#s107-bad-log'), '★ 決定として処理（変換確定の Enter でも発火）'); });
 
       // 対策：変換中（isComposing）は何もしない。compositionend で1回だけ処理する。

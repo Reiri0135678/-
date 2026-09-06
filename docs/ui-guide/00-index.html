@@ -80,14 +80,16 @@
   const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
   const mark = (text, terms) => { let h = esc(text); terms.forEach(t => { h = h.replace(new RegExp(esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); }); return h; };
   let timer;
-  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => {
+  const runSearch = () => { clearTimeout(timer); timer = setTimeout(() => {
     const terms = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!terms.length) { res.innerHTML = ''; count.textContent = ''; return; }
     const hits = SEARCH_INDEX.map(e => { const hay = (e.title + ' ' + e.text).toLowerCase(); const score = terms.reduce((a, t) => a + (e.title.toLowerCase().includes(t) ? 3 : 0) + (hay.includes(t) ? 1 : 0), 0); return { e, score }; })
       .filter(h => terms.every(t => (h.e.title + ' ' + h.e.text).toLowerCase().includes(t))).sort((a, b) => b.score - a.score).slice(0, 30);
     count.textContent = `${hits.length} 件`;
     res.innerHTML = hits.map(({ e }) => `<a href="${e.page}${e.id ? '#' + e.id : ''}"><b>${mark(e.title, terms)}</b> <small>— ${e.pageTitle}</small><br>${mark(e.text.slice(0, 160), terms)}…</a>`).join('') || '<div class="note">該当なし</div>';
-  }, 200); });
+  }, 200); };
+  q.addEventListener('input', e => { if (e.isComposing) return; runSearch(); });   // 変換中は検索しない
+  q.addEventListener('compositionend', runSearch);                                  // 確定で1回だけ
 })();
 </script>
 </body>
