@@ -1,5 +1,8 @@
 # QC Board
 
+> このリポジトリには UI操作レクチャー資料(`docs/ui-guide/`)と `ui-kit/` も同居している。
+> QC Board のファイルはすべてこの `qc-board/` 配下にあり、コマンドはこのフォルダで実行する。
+
 品質管理室が各部門から紙で受け取っている検査依頼をデジタル化するための業務アプリ。
 **ブラウザから多人数で同時に書き込めるホワイトボード**を土台に、後段でスプレッドシート式リスト・画像一覧・kintone 連携を載せていく。
 
@@ -160,7 +163,7 @@ Electron の `WebContentsView` / `<webview>` はトップレベル扱いなの�
 
 ## CI
 
-GitHub Actions(`.github/workflows/ci.yml`)で push / PR ごとに型チェック・ビルド・E2E を実行する。
+GitHub Actions(`.github/workflows/qc-board-ci.yml`)で push / PR ごとに型チェック・ビルド・E2E を実行する。
 
 ## E2E テスト(同期の検証)
 

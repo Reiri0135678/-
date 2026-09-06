@@ -213,8 +213,9 @@ Resources:
           mkdir -p /usr/local/lib/docker/cli-plugins
           curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$(uname -m)" -o /usr/local/lib/docker/cli-plugins/docker-compose
           chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-          git clone --branch '${GitRef}' '${RepoUrl}' /opt/qc-board
-          cd /opt/qc-board/deploy
+          # リポジトリには他のプロジェクトも同居しているので、qc-board/ サブフォルダを使う
+          git clone --branch '${GitRef}' '${RepoUrl}' /opt/qc-board-repo
+          cd /opt/qc-board-repo/qc-board/deploy
           cat > .env <<EOF
           QC_DOMAIN=${DomainName}
           QC_ALLOW_IPS=${AllowIps}
@@ -227,13 +228,13 @@ Resources:
           chmod 600 .env
           docker compose --env-file .env up -d --build
           # 日次で S3 へバックアップを同期(03:30 UTC = 12:30 JST)
-          echo '30 3 * * * root /usr/bin/aws s3 sync /opt/qc-board/deploy/backups s3://${BackupBucket}/qc-board/ --delete >> /var/log/qc-board-s3-sync.log 2>&1' > /etc/cron.d/qc-board-backup
+          echo '30 3 * * * root /usr/bin/aws s3 sync /opt/qc-board-repo/qc-board/deploy/backups s3://${BackupBucket}/qc-board/ --delete >> /var/log/qc-board-s3-sync.log 2>&1' > /etc/cron.d/qc-board-backup
           chmod 644 /etc/cron.d/qc-board-backup
           # 更新用の小さなスクリプト
           cat > /usr/local/bin/qc-board-update <<'EOS'
           #!/bin/bash
           set -e
-          cd /opt/qc-board && git pull && cd deploy && docker compose --env-file .env up -d --build
+          cd /opt/qc-board-repo && git pull && cd qc-board/deploy && docker compose --env-file .env up -d --build
           EOS
           chmod +x /usr/local/bin/qc-board-update
 
@@ -268,5 +269,5 @@ Outputs:
     Description: 初期設定の進行状況(接続後に確認)
     Value: sudo tail -f /var/log/qc-board-setup.log
   AddUserCommand:
-    Description: ユーザー登録(接続後、/opt/qc-board/deploy で実行)
+    Description: ユーザー登録(接続後、/opt/qc-board-repo/qc-board/deploy で実行)
     Value: sudo docker compose exec qc-board node scripts/add-user.mjs <名前> '<パスワード>' admin

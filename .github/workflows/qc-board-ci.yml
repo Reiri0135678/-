@@ -1,13 +1,24 @@
-name: CI
+name: QC Board CI
 
+# qc-board/ 配下が変わったときだけ走らせる(このリポジトリには UI 教材 / ui-kit も同居している)
 on:
   push:
     branches: [main]
+    paths:
+      - 'qc-board/**'
+      - '.github/workflows/qc-board-ci.yml'
   pull_request:
+    paths:
+      - 'qc-board/**'
+      - '.github/workflows/qc-board-ci.yml'
 
 permissions:
   contents: read
   packages: write
+
+defaults:
+  run:
+    working-directory: qc-board
 
 jobs:
   check:
@@ -19,6 +30,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
+          cache-dependency-path: qc-board/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
@@ -54,7 +66,7 @@ jobs:
       - name: Build (and push on main)
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./qc-board
           push: ${{ github.event_name == 'push' }}
           tags: |
             ghcr.io/reiri0135678/qc-board:latest

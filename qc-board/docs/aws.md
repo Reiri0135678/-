@@ -19,10 +19,10 @@
 
 ## 近道: CloudFormation で一式を作る
 
-`deploy/cloudformation.yml` を CloudFormation コンソールでスタック作成すると、1〜3 節(EC2・固定 IP・セキュリティグループ・
+`qc-board/deploy/cloudformation.yml` を CloudFormation コンソールでスタック作成すると、1〜3 節(EC2・固定 IP・セキュリティグループ・
 IAM ロール・S3 バケット・Docker 導入・起動・日次 S3 同期)までを自動で行う。手で作る場合は次節以降を読む。
 
-1. CloudFormation → スタックの作成 → テンプレートをアップロード → `deploy/cloudformation.yml`
+1. CloudFormation → スタックの作成 → テンプレートをアップロード → `qc-board/deploy/cloudformation.yml`
 2. パラメータ:
    - `VpcId` / `SubnetId`(必須): 配置先。サブネットは**パブリック**(インターネットゲートウェイへの経路がある)ものを選ぶ
    - `DomainName`(必須): 証明書を取るドメイン
@@ -67,8 +67,8 @@ AWS Organizations で別アカウントを作り、そこにこのスタック�
 
 ### GHCR のイメージを使う(EC2 でビルドしない)
 
-CI(`.github/workflows/ci.yml` の docker ジョブ)が `main` への push ごとに `ghcr.io/reiri0135678/qc-board:latest` を公開する。
-EC2 側でビルドする代わりに使うには、`deploy/docker-compose.yml` の `build: ..` を `image: ghcr.io/reiri0135678/qc-board:latest` に
+CI(`.github/workflows/qc-board-ci.yml` の docker ジョブ)が `main` への push ごとに `ghcr.io/reiri0135678/qc-board:latest` を公開する。
+EC2 側でビルドする代わりに使うには、`qc-board/deploy/docker-compose.yml` の `build: ..` を `image: ghcr.io/reiri0135678/qc-board:latest` に
 置き換える。パッケージが非公開のままなら EC2 で `docker login ghcr.io` が必要(GitHub のパッケージ設定で公開にすれば不要)。
 
 ## 0. 事前に決めること
@@ -108,8 +108,8 @@ exit   # 再ログインして docker グループを反映
 
 ```bash
 docker --version && docker compose version
-git clone <このリポジトリの URL> qc-board
-cd qc-board/deploy
+git clone <このリポジトリの URL> qc-board-repo
+cd qc-board-repo/qc-board/deploy   # リポジトリには他のプロジェクトも同居している
 cp .env.example .env
 nano .env        # QC_DOMAIN, QC_ALLOW_IPS, QC_EMBED_KEY などを埋める
 ```
@@ -117,7 +117,7 @@ nano .env        # QC_DOMAIN, QC_ALLOW_IPS, QC_EMBED_KEY などを埋める
 ## 3. 起動
 
 ```bash
-cd ~/qc-board/deploy
+cd ~/qc-board-repo/qc-board/deploy
 docker compose --env-file .env up -d --build
 docker compose ps                 # qc-board が healthy、caddy が Up になる
 docker compose logs -f qc-board   # 起動ログ。httpsProxy=on と出ていること
@@ -148,7 +148,7 @@ docker compose exec qc-board node scripts/add-user.mjs 佐藤 '<パスワード>
 sudo dnf install -y awscli
 crontab -e
 # 毎日 3:30 に同期(バケット名は自分のものに置き換える)
-30 3 * * * /usr/bin/aws s3 sync /home/ec2-user/qc-board/deploy/backups s3://<バケット名>/qc-board/ --delete >> /home/ec2-user/s3-sync.log 2>&1
+30 3 * * * /usr/bin/aws s3 sync /home/ec2-user/qc-board-repo/qc-board/deploy/backups s3://<バケット名>/qc-board/ --delete >> /home/ec2-user/s3-sync.log 2>&1
 ```
 
 - EBS スナップショット: AWS Backup か Data Lifecycle Manager で日次スナップショットを設定すると、OS ごと戻せる
@@ -158,8 +158,8 @@ crontab -e
 ## 5. 更新(新しい版を入れる)
 
 ```bash
-cd ~/qc-board && git pull
-cd deploy && docker compose --env-file .env up -d --build
+cd ~/qc-board-repo && git pull
+cd qc-board/deploy && docker compose --env-file .env up -d --build
 ```
 
 `./data` は触らないのでボードの内容は引き継がれる。ダウンタイムはコンテナの入れ替え数十秒。
