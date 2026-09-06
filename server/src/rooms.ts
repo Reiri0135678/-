@@ -588,6 +588,11 @@ export class RoomManager {
     return n
   }
 
+  /** 開いているルーム数(死活監視の表示用) */
+  openCount(): number {
+    return this.live.size
+  }
+
   async closeAll(): Promise<void> {
     for (const r of this.live.values()) {
       await r.persist()

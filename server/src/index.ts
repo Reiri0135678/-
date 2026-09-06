@@ -4,7 +4,7 @@ import { existsSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Auth } from './auth'
-import { AUTO_ARCHIVE_DAYS, BACKUP_DIR, BACKUP_INTERVAL_H, BACKUP_KEEP, CLIENT_DIR, DATA_DIR, KINTONE_CONFIG, NOTIFY_CONFIG, PORT, UPLOAD_DIR, USERS_FILE } from './config'
+import { AUTO_ARCHIVE_DAYS, BACKUP_DIR, BACKUP_INTERVAL_H, BACKUP_KEEP, BEHIND_HTTPS_PROXY, CLIENT_DIR, DATA_DIR, KINTONE_CONFIG, NOTIFY_CONFIG, PORT, UPLOAD_DIR, USERS_FILE, VERSION } from './config'
 import { Kintone } from './kintone'
 import { backup } from './maintenance'
 import { Notifier } from './notify'
@@ -22,7 +22,7 @@ await mkdir(UPLOAD_DIR, { recursive: true })
 
 const rooms = new RoomManager(join(DATA_DIR, 'rooms'))
 await rooms.init()
-const auth = new Auth(USERS_FILE, join(DATA_DIR, 'secret'), process.env['QC_EMBED_KEY'])
+const auth = new Auth(USERS_FILE, join(DATA_DIR, 'secret'), process.env['QC_EMBED_KEY'], BEHIND_HTTPS_PROXY)
 await auth.init()
 const kintone = new Kintone(KINTONE_CONFIG, process.env['KINTONE_MOCK'] === '1')
 await kintone.init()
@@ -61,6 +61,11 @@ if (AUTO_ARCHIVE_DAYS > 0) {
 
 const app = express()
 app.disable('x-powered-by')
+if (BEHIND_HTTPS_PROXY) app.set('trust proxy', 1)
+// 死活監視用(ロードバランサ・Docker の HEALTHCHECK が叩く。認証不要、内容は最小限)
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, version: VERSION, rooms: rooms.openCount() })
+})
 app.use(authRoutes(auth))
 app.use(roomRoutes(auth, rooms, kintone))
 app.use(templateRoutes(auth))
@@ -93,6 +98,6 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 
 server.listen(PORT, async () => {
   console.log(
-    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  embed=${auth.embedEnabled() ? 'on' : 'off'}  kintone=${kintone.status().mode}  notify=${notifier.status().enabled ? 'on' : 'off'}  backup=${BACKUP_DIR || 'off'}  autoArchive=${AUTO_ARCHIVE_DAYS || 'off'}`
+    `[qc-board] http://localhost:${PORT}  data=${DATA_DIR}  auth=${await auth.mode()}  embed=${auth.embedEnabled() ? 'on' : 'off'}  kintone=${kintone.status().mode}  notify=${notifier.status().enabled ? 'on' : 'off'}  backup=${BACKUP_DIR || 'off'}  autoArchive=${AUTO_ARCHIVE_DAYS || 'off'}  httpsProxy=${BEHIND_HTTPS_PROXY ? 'on' : 'off'}`
   )
 })

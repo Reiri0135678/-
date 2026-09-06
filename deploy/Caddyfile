@@ -1,0 +1,16 @@
+# {$QC_DOMAIN} に Let's Encrypt の証明書を自動取得し、qc-board へ中継する(WebSocket もそのまま通る)。
+# QC_ALLOW_IPS に社内の固定 IP(例: "203.0.113.10/32 198.51.100.0/24")を入れると、それ以外を 403 で拒否する。
+{$QC_DOMAIN} {
+    encode zstd gzip
+    @denied not remote_ip {$QC_ALLOW_IPS}
+    respond @denied "Forbidden" 403
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        -Server
+    }
+    reverse_proxy qc-board:3000 {
+        header_up X-Forwarded-Proto {scheme}
+    }
+}

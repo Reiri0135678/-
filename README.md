@@ -3,6 +3,11 @@
 品質管理室が各部門から紙で受け取っている検査依頼をデジタル化するための業務アプリ。
 **ブラウザから多人数で同時に書き込めるホワイトボード**を土台に、後段でスプレッドシート式リスト・画像一覧・kintone 連携を載せていく。
 
+## クラウド(AWS)で動かす
+
+`docs/aws.md` に EC2 1 台 + Docker Compose + Caddy(HTTPS 自動)の手順。`Dockerfile` と `deploy/` 一式を同梱。
+HTTPS の前段を置くときは `QC_BEHIND_HTTPS_PROXY=1`(Cookie に Secure を付け、X-Forwarded-* を信用する)。死活監視は `GET /api/health`。
+
 ## 単一ファイル版(standalone/qc-board.html)
 
 ここまでの機能をバニラ JS の HTML 1 ファイルで再現したもの。ダブルクリックで開くだけで動く(サーバー不要、外部ライブラリなし)。

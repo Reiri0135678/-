@@ -57,7 +57,9 @@ export class Auth {
     private readonly usersFile: string,
     private readonly secretFile: string,
     /** 外部アプリ(Mission Bridge 等)がユーザーを代理でログインさせるための共有鍵。未設定なら無効 */
-    private readonly embedKey: string | undefined
+    private readonly embedKey: string | undefined,
+    /** HTTPS で配信するとき true。Cookie に Secure を付け、平文 HTTP では送られなくする */
+    private readonly secureCookie = false
   ) {}
 
   async init(): Promise<void> {
@@ -130,11 +132,11 @@ export class Auth {
     const payload = Buffer.from(JSON.stringify({ ...user, exp })).toString('base64url')
     const sig = createHmac('sha256', this.secret).update(payload).digest('base64url')
     const maxAge = SESSION_DAYS * 86400
-    return `${COOKIE}=${payload}.${sig}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`
+    return `${COOKIE}=${payload}.${sig}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${this.secureCookie ? '; Secure' : ''}`
   }
 
   clearCookie(): string {
-    return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+    return `${COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${this.secureCookie ? '; Secure' : ''}`
   }
 
   userFromRequest(req: IncomingMessage): SessionUser | null {

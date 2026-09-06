@@ -1,5 +1,7 @@
 # 導入手順(社内 LAN のサーバー 1 台で運用する)
 
+クラウド(AWS)に置く場合は `docs/aws.md` を参照。
+
 対象: Windows Server / Windows 10・11 の常時起動 PC、または Linux。Node.js 22 以上が動けばよい。
 所要: 初回 30 分程度。副作用: サーバーに `data/`(ボード・画像・履歴)と `config/`(ユーザー・連携設定)が作られる。
 
@@ -45,6 +47,7 @@ node scripts\add-user.mjs 見学者 <パスワード> viewer
 | `QC_BACKUP_KEEP` | 30 | 保持世代 |
 | `QC_AUTO_ARCHIVE_DAYS` | 14 | 完了・取消から 14 日でボードから外す |
 | `QC_EMBED_KEY` | (秘密) | Mission Bridge 埋め込み |
+| `QC_BEHIND_HTTPS_PROXY` | HTTPS の前段がある時 1 | Cookie に Secure を付け、X-Forwarded-* を信用する |
 
 ## 3. 起動確認
 
