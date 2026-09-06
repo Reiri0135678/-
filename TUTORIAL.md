@@ -47,7 +47,18 @@ const box = document.querySelector('#s01-box');
 box.scrollTo = (opt) => Element.prototype.scrollTo.call(box, { ...opt, behavior: 'auto' });
 ```
 
-6. ページを再読み込みすると元に戻る
+6. **とどめ**：折りたたみに表示されている JS と、いま動いている `<script>` の中身が**同一の文字列**であることを確かめる
+
+```js
+// 「コードを見る」の中身と、実際に実行された <script> の中身を突き合わせる
+// （表示時にインデントだけ整えているので、空白を潰してから比べる）
+const norm  = s => s.replace(/\s+/g, ' ').trim();
+const shown = norm(document.querySelector('#n01 details.code').textContent);
+const live  = norm(document.querySelector('#n01 script[data-code]').textContent);
+shown.includes(live.slice(0, 120));   // → true（写しではなく、同じもの）
+```
+
+7. ページを再読み込みすると元に戻る
 
 > ✅ **確認できたこと**：表示されているコードは、いま動いているそのものである（`data-code` 属性の付いた `<style>` / `<script>` を `assets/guide.js` がその場で転記している）。
 > **だから資料が古くなると壊れ、テストが落ちる。** 静かに陳腐化しない。
@@ -59,7 +70,8 @@ box.scrollTo = (opt) => Element.prototype.scrollTo.call(box, { ...opt, behavior:
 **目的**：「読む」から「触る」へ移る。ここを飛ばすと定着しない。
 
 1. [`14-playground.html#n23`](docs/ui-guide/14-playground.html#n23) を開く（23 仮想スクロール）
-2. JS 欄の1行目にある **`const TOTAL = 100000`** を **`2000000`**（200万）に変える
+2. JS 欄の中から **`const TOTAL = 100000, H = 28, ...`** の行を探し（`(() => {` の次の行）、
+   **`100000` を `2000000`**（200万）に変える
 3. <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> で実行
 4. 枠内をスクロールする → 表示が **`全 2,000,000 行 / DOM行数 10 / 表示開始 715`** のようになる（実測値）
 5. 各デモの「コードを見る」からも「▶ プレイグラウンドで編集して試す」で飛べる。下書きは自動保存される（「下書きを破棄」で元に戻る）
@@ -74,8 +86,9 @@ box.scrollTo = (opt) => Element.prototype.scrollTo.call(box, { ...opt, behavior:
 
 **目的**：「この端末で何が使えるか」を、調べるのではなく**測って**答えさせる。
 
-1. **実際に現場で使う端末**（工場のタブレット、事務所の PC、iPad）で
-   [`18-crossplatform.html#n102`](docs/ui-guide/18-crossplatform.html#n102) を開く
+1. [`18-crossplatform.html#n102`](docs/ui-guide/18-crossplatform.html#n102) を開く。
+   **まず手元の PC で一周し**、そのあと**実際に現場で使う端末**（工場のタブレット、事務所の PC、iPad）で同じページを開いて値を比べる
+   （単一ファイル版を1枚渡せば、その端末にリポジトリを置かなくても開ける → ステップ8）
 2. 102 の実測パネルの値（ポインタ精度・ホバー可否・dpr・OS）を控える
 3. 同じページの **113 機能検出**まで下り、その端末で使える機能の表を見る
 4. **107（日本語入力）** の「対策なし」「対策あり」を両方触る ← ステップ6の前提になる
@@ -107,12 +120,18 @@ box.scrollTo = (opt) => Element.prototype.scrollTo.call(box, { ...opt, behavior:
 **目的**：日本語入力（IME）の誤処理が、**いま動いているコードに埋まっていないか**を機械的に確かめる。
 
 ```bash
-git clone https://github.com/Reiri0135678/-.git ui-guide && cd ui-guide
+# ⚠ このリポジトリの既定ブランチ（main）は別プロジェクトなので、ブランチを指定して取得する
+#    （この作業が main にマージされた後は -b の指定は不要になる）
+git clone -b claude/fable-ui-operations-guide-8ehgke \
+  https://github.com/Reiri0135678/-.git ui-guide
+cd ui-guide
 
 # 検査したいフォルダを指定する（読み取りのみ。ファイルは一切変更しない）
 node tools/check-ime.mjs /path/to/your/kintone-customize
 node tools/check-ime.mjs /path/to/mission-bridge/src
 ```
+
+**`npm install` は要らない**（依存ゼロ。Node 18 以降だけあればよい）。
 
 出力の読み方：
 
@@ -202,8 +221,11 @@ await Promise.all(rows.map(r => limit(() => post(r, { idempotencyKey: `order-${r
 ### ブラウザだけで作る（Node 不要）
 
 1. [`16-bundler.html`](docs/ui-guide/16-bundler.html) を開く
-2. **「🌐 このページから読み込む」**を押す（`http(s)://` で開いている場合）
-   `file://` で開いているときは、フォルダ選択で `docs/ui-guide` を選ぶ
+2. 読み込み方は開き方で変わる
+   - `http(s)://` で開いている → **「🌐 このページから読み込む」**
+   - `file://` で開いている → **「📁 フォルダを選択（リポジトリのルート）」**を押し、
+     **`docs/ui-guide` ではなくリポジトリのルート**（`README.md` や `ui-kit/` がある階層）を選ぶ
+     ※ `file://` で「🌐 このページから読み込む」を押すと「フォルダ選択を使う」旨が表示され、生成ボタンは有効にならない
 3. **「単一 HTML を生成」** → ダウンロード
 
 ### Node で作る
@@ -222,10 +244,15 @@ npm run build:docs     # デモ抽出・検索索引・収録一覧・単一フ�
 
 ```bash
 npm run build:docs     # デモを編集したら必ず実行（生成物が古いとテストが落ちる）
-npm run test:docs      # 教材の検証（126件）＋ 検査ツールの自己テスト（9件）
-npm test               # ui-kit のテスト（34件）
 npm run check:ime -- <フォルダ>   # IME 検査
+
+# ↓ この2つだけ Playwright と Chromium が要る（無いと Cannot find module 'playwright' で止まる）
+npm run test:docs      # 教材の検証（127件）＋ 検査ツールの自己テスト（9件）
+npm test               # ui-kit のテスト（34件）
 ```
+
+**`build:docs` と `check:ime` は依存ゼロで動く**（`npm install` 不要）。テストだけは
+`npm i -D playwright && npx playwright install chromium` が別途要る。
 
 デモを1つ追加するには、`section.demo` を1つ足し、その中に `<style data-code>` と `<script data-code>` を置く。**目次とコード表示は自動生成される**。
 

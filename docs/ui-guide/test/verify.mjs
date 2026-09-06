@@ -132,6 +132,27 @@ const drag = async (p, sel, dx, dy) => { const el = await p.$(sel); await el.scr
   ok('108 CloseWatcher: Esc で閉じる', await p.$eval('#s108-panel', e => e.hidden));
   ok('18 X層: JSエラーなし', errs.length === 0, errs.join(' | '));
   await p.close(); }
+{ // TUTORIAL.md の手順が実物と合っているか（チュートリアルが陳腐化しないように固定する）
+  const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
+  await p.goto(url('02-basic.html')); await p.waitForTimeout(500);
+  await p.$eval('#n01 details.code', d => d.open = true); await p.waitForTimeout(150);
+  const same = await p.evaluate(() => {
+    const norm = s2 => s2.replace(/\s+/g, ' ').trim();
+    const shown = norm(document.querySelector('#n01 details.code').textContent);
+    const live = norm(document.querySelector('#n01 script[data-code]').textContent);
+    return live.length > 100 && shown.includes(live.slice(0, 120));
+  });
+  ok('TUTORIAL ステップ2: 表示コードと実行コードが同一（手順6の確認が通る）', same);
+  await p.goto(url('14-playground.html') + '#n23'); await p.waitForTimeout(700);
+  const lines = (await p.inputValue('#ed-js')).split('\n');
+  ok('TUTORIAL ステップ3: 2行目に const TOTAL = 100000 がある', lines[1].includes('const TOTAL = 100000'), lines[1]);
+  await p.goto(url('16-bundler.html')); await p.waitForTimeout(400);
+  const labels = await p.$$eval('label,button', es => es.map(e => e.textContent.trim()));
+  ok('TUTORIAL ステップ8: ボタン文言が手順どおり',
+    labels.some(t => t.includes('フォルダを選択')) && labels.some(t => t.includes('このページから読み込む')) && labels.some(t => t.includes('単一 HTML を生成')),
+    labels.join(' | '));
+  await p.close(); }
+
 { // Y層（サードパーティ連携）
   const p = await browser.newPage({ viewport: { width: 1200, height: 900 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message));
