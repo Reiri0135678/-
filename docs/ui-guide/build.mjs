@@ -86,4 +86,4 @@ fs.writeFileSync(path.join(dir, 'dist', 'ui-guide-standalone.html'), html);
 
 if (skipped.length) { console.error('警告: デモを抽出できませんでした（div が閉じていない可能性）: ' + skipped.join(', ')); process.exitCode = 1; }
 console.log(`demo-data.js: ${demos.length} demos / search-index.js: ${index.length} entries`);
-console.log(`manifest.js: ${manifest.length} files / dist/ui-guide-standalone.html: ${(html.length / 1024 / 1024).toFixed(2)} MB`);
+console.log(`manifest.js: ${manifest.length} files / dist/ui-guide-standalone.html: ${(Buffer.byteLength(html, 'utf8') / 1024 / 1024).toFixed(2)} MB`);   // 文字数ではなく UTF-8 バイト数（日本語は1文字3バイト。16-bundler.html の Blob.size と一致する）

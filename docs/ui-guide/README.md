@@ -31,7 +31,7 @@
 | - | `../ui-kit/` | デモから切り出した再利用部品（16モジュール、テスト34件、単一ファイル版 `dist/ui-kit.js`、実例 `example/index.html`） | 完成 |
 | - | `build.mjs` | デモ抽出（`assets/demo-data.js`）・検索索引（`assets/search-index.js`）・収録一覧（`assets/manifest.js`）・単一ファイル版（`dist/ui-guide-standalone.html`）の生成。デモを編集したら `npm run build:docs` | - |
 | - | `assets/bundler.js` / `assets/standalone-shell.js` | 単一ファイル版の組み立て処理と、生成物の中で動くランタイム。ブラウザ（16）と Node（build.mjs）が同じものを使う | - |
-| - | `dist/ui-guide-standalone.html` | 生成済みの単一ファイル版（約 0.7 MB）。ダブルクリックで開き、そのまま配布できる | 生成物 |
+| - | `dist/ui-guide-standalone.html` | 生成済みの単一ファイル版（約 1.34 MB）。ダブルクリックで開き、そのまま配布できる | 生成物 |
 | - | `test/verify.mjs` | 教材ページの検証（JSエラー、リンク、デモ数、代表操作、タッチスワイプ、全デモのプレイグラウンド実行）。`npm run test:docs` | - |
 
 ## デモページの読み方
