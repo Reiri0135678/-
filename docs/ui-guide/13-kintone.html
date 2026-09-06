@@ -22,7 +22,7 @@
   <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="12-electron.html">Electron</a><a href="05-advanced.html">D</a></nav>
 </header>
 <main class="single">
-  <div class="lead">デモの中で「kintone ならこう」と書いた箇所を、API 側の制約とセットでまとめる。<b>UI の作りは API の上限で決まる</b>（1回で取れる件数、1回で更新できる件数、リビジョン）。数値は執筆時点の把握であり、<b>必ず公式 REST API リファレンスで確認</b>すること。このページは参照用で、コードは実行されない。</div>
+  <div class="lead">デモの中で「kintone ならこう」と書いた箇所を、API 側の制約とセットでまとめる。<b>UI の作りは API の上限で決まる</b>（1回で取れる件数、1回で更新できる件数、リビジョン）。数値は執筆時点の把握であり、<b>必ず公式 REST API リファレンスで確認</b>すること。このページは参照用で、コードは実行されない。 外部から呼ぶ側の作法（CORS・トークンの置き場所・レート制限・Webhook・ポータルへの部品配布）は <a href="20-integration.html">Y層 114〜127</a> にまとめてある。</div>
 
   <div class="ref"><h2>0. 呼び出しの置き場所（Electron の場合）</h2>
     <p>renderer から kintone へ直接 <code>fetch</code> すると、オリジン（<code>file://</code> や <code>app://</code>）からの CORS で拒否される。<b>main プロセスで通信し、IPC で結果を返す</b>（12 の構成）。トークンも main にだけ置ける。</p>
@@ -104,7 +104,7 @@ const run = debounce(async (text) => {
       <tr><td>GET records の offset</td><td>上限あり（大きい値は拒否）</td><td>id 基準取得かカーソル API</td></tr>
       <tr><td>POST / PUT / DELETE records</td><td>100 件/回</td><td>76 チャンク分割と進捗</td></tr>
       <tr><td>bulkRequest</td><td>複数リクエストを1回で原子的に（件数上限あり）</td><td>76 の「全部成功か全部失敗」が必要な時</td></tr>
-      <tr><td>同時リクエスト数</td><td>ドメインごとに上限あり</td><td>並列度を絞る（76 の Promise.all は数件まで）</td></tr>
+      <tr><td>同時リクエスト数</td><td>ドメインごとに上限あり</td><td>並列度を絞る（76 の Promise.all は数件まで）。上限に当たったときの再試行は <a href="20-integration.html#n122">122</a></td></tr>
       <tr><td>query の文字列長／like</td><td>上限あり。前方一致のみ等の制約</td><td>74 で手元検索と併用</td></tr>
     </table>
   </div>

@@ -9,7 +9,20 @@ window.logTo = (el, msg) => {
   el.scrollTop = el.scrollHeight;
 };
 
+// テーマ（枠のみ。デモ領域 .stage は配色固定）: localStorage 'ui-guide.theme' = 'light' | 'dark' | ''(OS設定)
+const THEME_KEY = 'ui-guide.theme';
+const applyTheme = () => { let t = ''; try { t = localStorage.getItem(THEME_KEY) || ''; } catch {} document.documentElement.dataset.theme = t; };
+applyTheme();
+
 document.addEventListener('DOMContentLoaded', function () {
+  // ヘッダーにテーマ切替を差し込む
+  const top = document.querySelector('header.top');
+  if (top) {
+    const b = document.createElement('button'); b.className = 'theme-toggle'; b.type = 'button'; b.title = 'テーマ: OS設定 → ダーク → ライト';
+    const label = () => { const t = document.documentElement.dataset.theme; b.textContent = t === 'dark' ? '🌙 ダーク' : t === 'light' ? '☀ ライト' : '🖥 OS設定'; };
+    b.onclick = () => { const cur = document.documentElement.dataset.theme; const next = cur === '' ? 'dark' : cur === 'dark' ? 'light' : ''; try { next ? localStorage.setItem(THEME_KEY, next) : localStorage.removeItem(THEME_KEY); } catch {} applyTheme(); label(); };
+    label(); top.appendChild(b);
+  }
   const sections = [...document.querySelectorAll('section.demo')];
 
   // 目次
@@ -43,6 +56,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const det = document.createElement('details');
     det.className = 'code';
     det.innerHTML = '<summary>コードを見る（このデモを動かしている実物）</summary>';
+    if (sec.querySelector('script[data-code]:not([type])')) {
+      const a = document.createElement('a'); a.className = 'pg-link'; a.href = '14-playground.html#' + sec.id; a.textContent = '▶ プレイグラウンドで編集して試す';
+      det.appendChild(a);
+    }
     codes.forEach(el => {
       const label = document.createElement('span');
       label.className = 'label';

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>学習カリキュラム</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierF { background: #475569; }
+  main.single { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .day { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 12px; }
+  .day h2 { margin: 0 0 4px; font-size: 16px; display: flex; align-items: baseline; gap: 10px; } .day h2 small { color: var(--muted); font-weight: 400; font-size: 12.5px; }
+  .day .goal { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  .day label { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; padding: 4px 0; cursor: pointer; }
+  .day label.done { color: var(--muted); text-decoration: line-through; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; margin: 8px 0 16px; } .bar i { display: block; height: 100%; background: var(--accent); transition: width .3s; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>学習カリキュラム <span class="tier tierF">7ステップ</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="11-quiz.html">クイズ</a><a href="09-exercises.html">課題</a></nav>
+</header>
+<main class="single">
+  <div class="lead">この資料を「名称が分かる」→「動きを説明できる」→「自分で組める」の順に進めるための道筋（数日〜数週間）。<b>成果物を先に使い始めたいなら <a href="../../TUTORIAL.md">TUTORIAL.md</a>（90分・8ステップ）が先</b>。1ステップ60〜120分。チェックはこの端末のブラウザに保存される。順番は守らなくてよいが、ステップ1と7は飛ばさない。</div>
+  <div class="row"><span class="readout" id="prog">-</span><button id="reset">チェックを全部消す</button></div>
+  <div class="bar"><i id="bar"></i></div>
+  <div id="days"></div>
+</main>
+<script>
+(() => {
+  const PLAN = [
+    { title: 'ステップ1：土台を作る', time: '60分', goal: '座標系・イベント・描画の順序を言葉で説明できる。混同しやすい用語を切り分けられる。', items: [
+      ['00-index.html', '入口を読み、資料の構成を把握する'], ['08-foundations.html#f1', 'F1 座標系：5種類の原点の違いを自分の言葉で言える'], ['08-foundations.html#f2', 'F2 伝播：preventDefault と stopPropagation の違いを言える'],
+      ['08-foundations.html#f3', 'F3 transform と left/top の違いと、なぜ transform を使うか'], ['08-foundations.html#f11', 'F11 描画タイミング：void offsetWidth と rAF 2回の理由'], ['08-foundations.html#f8', 'F8 用語対比表を一通り読む'] ] },
+    { title: 'ステップ2：一般的な操作（A層）', time: '90分', goal: '01〜22 の名称を見て動きが想像できる。', items: [
+      ['02-basic.html', 'A層 01〜22 のデモを全部触る（コードは開かなくてよい）'], ['11-quiz.html', 'クイズ：A層のみ・20問で 16 点以上'], ['02-basic.html#n02', '02 パン と 01 スクロール の違いを説明できる'], ['02-basic.html#n15', '15 モーダル の作法（Esc・フォーカス・暗幕）を3つ言える'] ] },
+    { title: 'ステップ3：標準挙動を制御する（B層）', time: '90分', goal: 'Pointer Events・Observer・rAF の3つの道具の使いどころが分かる。', items: [
+      ['03-custom.html', 'B層 23〜42 のデモを触り、23・28・30・37 はコードも読む'], ['09-exercises.html', '課題1〜3 を解く（プレイグラウンドで）'], ['11-quiz.html', 'クイズ：B層のみ・20問で 16 点以上'], ['03-custom.html#n28', '28 慣性 と 29 スプリング の違いを説明できる'] ] },
+    { title: 'ステップ4：ツール系の高度操作（C層）', time: '120分', goal: '座標変換と状態機械で、ドラッグ系の機能を自分で設計できる。', items: [
+      ['04-pro.html#n43', '43〜45 座標変換を読み、toWorld / toScreen の式を書ける'], ['04-pro.html#n52', '52 状態機械：idle / pressed / dragging の遷移を図にできる'], ['04-pro.html', 'C層の残りを触る（55・56・57・58 はコードも読む）'],
+      ['08-foundations.html#f9', 'F9・F10 で「重い」を数字にする方法を知る'], ['09-exercises.html', '課題4〜8 を解く'] ] },
+    { title: 'ステップ5：業務アプリの設計（D層）', time: '120分', goal: '一覧・編集・一括処理・競合・オフラインを、部品の組み合わせとして説明できる。', items: [
+      ['05-advanced.html', 'D層 71〜86 のデモを触る'], ['13-kintone.html', 'kintone リファレンス：取得方式・revision・100件上限とデモ番号の対応を読む'], ['05-advanced.html#n78', '78 競合解決：3方向マージの判定表を自分で書ける'],
+      ['09-exercises.html', '課題9〜12 を解く（12 は要点だけでよい）'], ['11-quiz.html', 'クイズ：D層のみ・16問'] ] },
+    { title: 'ステップ6：演出とアクセシビリティ', time: '60分', goal: '「入れる演出・入れない演出」の判断基準と、キーボード・読み上げ・色・動きのチェックができる。', items: [
+      ['06-effects.html', 'E層 63〜70 を触り、69 のフレーム時間を自分の端末で見る'], ['10-accessibility.html', 'A1〜A6：自分のアプリに当てはめてチェックリストを埋める'], ['03-custom.html#n42', '42 モーション低減を必ず実装すると決める'] ] },
+    { title: 'ステップ7：新しい書き方と環境差', time: '90分', goal: '自前実装を標準機能に置き換える判断ができ、対象端末での違いを吸収できる。', items: [
+      ['17-modern.html', 'M層 87〜101 を触り、各項目の「以前／今」を読む'], ['18-crossplatform.html#n113', '自分の対象環境で何が使えるかを 113 の表で確認する'],
+      ['18-crossplatform.html#n102', '現場で使う端末でこのページを開き、102 の実測値を控える'], ['18-crossplatform.html#n107', '107 IME：自分のコードの検索・Enter 処理に isComposing が入っているか確認する'],
+      ['18-crossplatform.html#n113b', '実行環境ごとの早見表で、自分のアプリが動く環境の制約を確認する'] ] },
+    { title: 'ステップ8：外部連携と3D（Y層・Z層）', time: '120分', goal: '外部サービス・機器とつなぐ方式を選べ、3Dモデルの操作の作りを説明できる。', items: [
+      ['20-integration.html#n114', '114 の4方式表で、自分の案件がどれになるか決める'], ['20-integration.html#n121', '121 を読み、いま画面側に置いている鍵が無いか確認する'],
+      ['20-integration.html#n122', '122 で 429 とバックオフの挙動を3方式で比べる'], ['20-integration.html#n124', '124 でポーリング／SSE／WebSocket の遅れと通信量を見比べる'],
+      ['20-integration.html#n126', '126 を現場端末で開き、キーボード型リーダーの判定を実機で試す'], ['21-3d.html#n129', '129・130 でカメラ操作と正投影／透視の違いを体感する'],
+      ['21-3d.html#n132', '132 レイキャストとカラーID の実測を比べ、どちらを使うか決める'], ['21-3d.html#n142', '142 で自分の端末の AR 対応を実測し、143 でライブラリ方針を決める'] ] },
+    { title: 'ステップ9：自分のアプリに組み込む', time: '半日', goal: 'ui-kit を1つ import して、既存画面を壊さずに動かす。', items: [
+      ['../../ui-kit/example/index.html', 'ui-kit 実例アプリを触り、どの部品がどこで使われているか対応づける'], ['12-electron.html', 'Electron リファレンス：構成の原則と IPC の形を自分のアプリに当てはめる'], ['07-implementation-plan.md', '実装計画の「確認事項」を埋める'],
+      ['14-playground.html#n23', 'プレイグラウンドで 23 仮想スクロール を自分のデータ形に書き換える'], ['../../ui-kit/README.md', 'hotkeys.js（Ctrl+S）を最初の1つとして組み込む'] ] },
+  ];
+  const KEY = 'ui-guide.curriculum'; let done = new Set(); try { done = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); } catch {}
+  const total = PLAN.reduce((a, d) => a + d.items.length, 0);
+  const render = () => {
+    document.getElementById('days').innerHTML = PLAN.map((d, di) => `<div class="day"><h2>${d.title} <small>${d.time}</small></h2><p class="goal">到達目標：${d.goal}</p>${d.items.map(([href, text], ii) => { const k = di + '-' + ii; return `<label class="${done.has(k) ? 'done' : ''}"><input type="checkbox" data-k="${k}" ${done.has(k) ? 'checked' : ''}><span>${text} <a href="${href}">→</a></span></label>`; }).join('')}</div>`).join('');
+    document.getElementById('prog').textContent = `${done.size} / ${total} 完了`; document.getElementById('bar').style.width = (done.size / total * 100) + '%';
+  };
+  document.getElementById('days').addEventListener('change', e => { const k = e.target.dataset.k; if (!k) return; e.target.checked ? done.add(k) : done.delete(k); try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch {} render(); });
+  document.getElementById('reset').onclick = () => { done = new Set(); try { localStorage.removeItem(KEY); } catch {} render(); };
+  render();
+})();
+</script>
+</body>
+</html>

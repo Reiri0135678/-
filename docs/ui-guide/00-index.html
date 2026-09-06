@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>UI操作レクチャー 入口</title>
 <link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<script src="assets/search-index.js"></script>
 <style>
   main.single { max-width: 900px; margin: 0 auto; padding: 24px; }
   .path { counter-reset: step; }
@@ -15,6 +17,8 @@
   table { border-collapse: collapse; width: 100%; font-size: 13.5px; background: var(--card); }
   th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
   th { background: #f1f5f9; }
+  .gres { display: grid; gap: 6px; margin-bottom: 8px; } .gres a { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; text-decoration: none; color: var(--text); font-size: 13px; }
+  .gres a b { color: var(--accent); } .gres a small { color: var(--muted); } .gres mark { background: #fde68a; padding: 0; }
   .tierD { background: #7c3aed; } .tierE { background: #db2777; } .tierF { background: #475569; }
 </style>
 </head>
@@ -23,7 +27,11 @@
 <main class="single">
   <div class="lead">フロントエンドUIの「操作の名称」と「実際の動き」を対応づける教材。依存ライブラリなし。すべてのページはこのフォルダをそのままブラウザで開けば動く（サーバ不要）。</div>
 
-  <h2 style="font-size:17px">おすすめの順路</h2>
+  <h2 style="font-size:17px">横断検索</h2>
+  <div class="row"><input id="gq" type="search" placeholder="全ページの見出し・説明を検索（例: 慣性, revision, stopPropagation, z-index）" style="flex:1;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:14px"><span class="readout" id="gcount"></span></div>
+  <div id="gres" class="gres"></div>
+
+  <h2 style="font-size:17px">おすすめの順路 <small style="font-weight:400;font-size:13px;color:var(--muted)">（時間配分つきの <a href="15-curriculum.html">学習カリキュラム</a> もある）</small></h2>
   <div class="path">
     <div class="step"><h3><a href="08-foundations.html">基礎知識</a> <span class="t tierF">土台</span></h3><p>座標系、イベントの発火順、transform と left/top の違い、passive/touch-action、そして「混同しやすい用語の対比表」。全デモの前提になる。</p></div>
     <div class="step"><h3><a href="01-ui-operations-catalog.html">カタログ</a> <span class="t tierF">索引</span></h3><p>86項目の名称・英語名・一言説明・実装手段。検索と層フィルタ。各項目から動くデモへ飛べる。</p></div>
@@ -32,9 +40,14 @@
     <div class="step"><h3><a href="04-pro.html">C：プロ志向のUI（43〜62）</a> <span class="t tierC">C</span></h3><p>無限キャンバス、ミニマップ、ノードエディタ、データグリッド、Electron連携…。ツール系アプリの高度操作。</p></div>
     <div class="step"><h3><a href="05-advanced.html">D：業務アプリの設計パターン（71〜86）</a> <span class="t tierD">D</span></h3><p>大規模グリッド、検索・フォームの型、バッチ操作、競合解決、オフライン、ドッキング、マルチウィンドウ…。A〜Cの部品の組み合わせ方。</p></div>
     <div class="step"><h3><a href="06-effects.html">E：演出・体感の上位効果（63〜70）</a> <span class="t tierE">E</span></h3><p>シェアードエレメント遷移、スタガー、マイクロインタラクション、ぼかしと性能…。最後に、控えめに。</p></div>
+    <div class="step"><h3><a href="17-modern.html">M：最近できるようになったこと（87〜101）</a> <span class="t" style="background:#0891b2">M</span></h3><p>A〜Cで自前実装した処理の多くは標準機能になった。<code>:has()</code>、popover、アンカー位置指定、<code>height:auto</code> のアニメーション、<code>moveBefore()</code> など。各項目でこの端末の対応可否をその場で判定する。</p></div>
+    <div class="step"><h3><a href="18-crossplatform.html">X：クロスプラットフォーム（102〜113）</a> <span class="t" style="background:#7c3aed">X</span></h3><p>デスクトップ・タブレット・スマホ・Electron・kintone モバイルでの違い。日本語入力（IME）、当たり判定、dvh、セーフエリア、戻る操作、印刷、機能検出。多くは実測値を表示するので、現場の端末で開くと答えが出る。</p></div>
+    <div class="step"><h3><a href="20-integration.html">Y：サードパーティ連携（114〜127）</a> <span class="t" style="background:#b45309">Y</span></h3><p>他社サービス・自社サーバ・現場機器とつなぐときの型。iframe と postMessage、埋め込みでログインが切れる理由、CORS、OAuth 2.1 と PKCE、鍵の置き場所、レート制限と再試行、Webhook の受け側、WebHID/WebSerial、配布ウィジェット。</p></div>
+    <div class="step"><h3><a href="21-3d.html">Z：3D と AR（128〜143）</a> <span class="t" style="background:#0f766e">Z</span></h3><p>3Dモデルを見せる・触る・測る・AR で現物と重ねる。カメラ操作、ピッキング、変形ギズモ、スナップ、断面、分解図、注釈、glTF、性能、WebXR。<b>依存ゼロの WebGL2 実装で実際に動き</b>、three.js / model-viewer の参考コードを併記する。</p></div>
     <div class="step"><h3><a href="10-accessibility.html">アクセシビリティ</a> <span class="t tierF">検査</span></h3><p>キーボード順路の可視化、名前のない操作要素の検出、コントラスト計算、aria-live、環境設定の検出、チェックリスト。</p></div>
     <div class="step"><h3><a href="11-quiz.html">名称当てクイズ</a> <span class="t tierF">確認</span></h3><p>説明文から名称を4択で当てる。間違えた項目はデモへのリンクが残る。層と問題数を選べる。</p></div>
-    <div class="step"><h3><a href="09-exercises.html">練習課題</a> <span class="t tierF">演習</span></h3><p>デモのコードを改変して仕様を満たす12問。ヒントと解答例つき。</p></div>
+    <div class="step"><h3><a href="14-playground.html">プレイグラウンド</a> <span class="t tierF">実験</span></h3><p>デモのHTML／CSS／JSをその場で書き換えて実行。各デモの「コードを見る」からも飛べる。練習課題の解答を試す場所。</p></div>
+    <div class="step"><h3><a href="09-exercises.html">練習課題</a> <span class="t tierF">演習</span></h3><p>デモのコードを改変して仕様を満たす16問（外部連携・3D・canvas のアクセシビリティを含む）。ヒントと解答例つき。</p></div>
   </div>
 
   <h2 style="font-size:17px">各デモページの読み方</h2>
@@ -51,12 +64,34 @@
     <tr><th style="width:200px">場所</th><th>内容</th></tr>
     <tr><td><a href="12-electron.html">12-electron.html</a></td><td>Electron 実装リファレンス（構成、ウィンドウ状態、フレームレス、メニュー、IPC、ファイル、認証情報の保存）</td></tr>
     <tr><td><a href="13-kintone.html">13-kintone.html</a></td><td>kintone 連携リファレンス（取得方式、リビジョン、一括更新、検索、フィールド型と UI の対応、上限早見表）</td></tr>
-    <tr><td><code>../ui-kit/</code></td><td>デモから切り出した再利用部品（15モジュール、依存なしESM、テスト26件）。<code>dist/ui-kit.js</code> は file:// でも使える単一ファイル版</td></tr>
+    <tr><td><code>../ui-kit/</code></td><td>デモから切り出した再利用部品（16モジュール、依存なしESM、テスト34件）。<code>dist/ui-kit.js</code> は file:// でも使える単一ファイル版</td></tr>
+    <tr><td><a href="17-modern.html">17</a> / <a href="18-crossplatform.html">18</a></td><td>最新機能とクロスプラットフォーム（第5弾）。カタログの M 層・X 層に対応</td></tr>
+    <tr><td><a href="../../TUTORIAL.md">TUTORIAL.md</a></td><td><b>この成果物を使い始めるまでの8ステップ（90分）</b>。資料の読み方、プレイグラウンド、端末の実測、外部連携の判断、既存コードの IME 検査、ui-kit の組み込み、配布用1枚の作り方</td></tr>
+    <tr><td><a href="20-integration.html">20</a> / <a href="21-3d.html">21</a></td><td>サードパーティ連携と 3D・AR（第6弾）。カタログの Y 層・Z 層に対応。<a href="19-plan-integration-3d.md">19</a> はその設計方針</td></tr>
+    <tr><td><a href="16-bundler.html">16-bundler.html</a></td><td>この資料一式を「外部ファイルを参照しない1枚のHTML」にまとめるバンドラ。Node もビルドツールも使わず、ブラウザだけで生成できる（生成済みのものは <code>dist/ui-guide-standalone.html</code>）</td></tr>
     <tr><td><a href="../../ui-kit/example/index.html">../ui-kit/example/index.html</a></td><td>部品を組み合わせた実例アプリ（受注一覧）。ブラウザで開くだけで動く</td></tr>
     <tr><td><code>07-implementation-plan.md</code></td><td>部品化と実アプリ適用の計画書（Markdown）</td></tr>
     <tr><td><code>README.md</code></td><td>索引・前提・デモの追加方法（Markdown）</td></tr>
   </table>
   <p class="note">動作確認は Chromium 系ブラウザ。View Transitions・<code>animation-timeline</code>・<code>popover</code> は対応ブラウザでのみ本来の動きになり、非対応では即時切替・静的表示にフォールバックする。</p>
 </main>
+<script>
+(() => {
+  const q = document.getElementById('gq'), res = document.getElementById('gres'), count = document.getElementById('gcount');
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const mark = (text, terms) => { let h = esc(text); terms.forEach(t => { h = h.replace(new RegExp(esc(t).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), m => `<mark>${m}</mark>`); }); return h; };
+  let timer;
+  const runSearch = () => { clearTimeout(timer); timer = setTimeout(() => {
+    const terms = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!terms.length) { res.innerHTML = ''; count.textContent = ''; return; }
+    const hits = SEARCH_INDEX.map(e => { const hay = (e.title + ' ' + e.text).toLowerCase(); const score = terms.reduce((a, t) => a + (e.title.toLowerCase().includes(t) ? 3 : 0) + (hay.includes(t) ? 1 : 0), 0); return { e, score }; })
+      .filter(h => terms.every(t => (h.e.title + ' ' + h.e.text).toLowerCase().includes(t))).sort((a, b) => b.score - a.score).slice(0, 30);
+    count.textContent = `${hits.length} 件`;
+    res.innerHTML = hits.map(({ e }) => `<a href="${e.page}${e.id ? '#' + e.id : ''}"><b>${mark(e.title, terms)}</b> <small>— ${e.pageTitle}</small><br>${mark(e.text.slice(0, 160), terms)}…</a>`).join('') || '<div class="note">該当なし</div>';
+  }, 200); };
+  q.addEventListener('input', e => { if (e.isComposing) return; runSearch(); });   // 変換中は検索しない
+  q.addEventListener('compositionend', runSearch);                                  // 確定で1回だけ
+})();
+</script>
 </body>
 </html>

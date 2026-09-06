@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>第5弾 X：クロスプラットフォーム（102〜113）</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierX { background: #7c3aed; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; color: #1d1f23; }
+  table.cmp th, table.cmp td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; white-space: nowrap; }
+  table.cmp td.k { font-weight: 600; white-space: nowrap; }
+  .yes { color: #166534; } .no { color: #991b1b; } .cau { color: #92400e; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>X：クロスプラットフォーム <span class="tier tierX">102〜113</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="17-modern.html">最新機能</a><a href="20-integration.html">外部連携</a><a href="21-3d.html">3D</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="10-accessibility.html">a11y</a><a href="12-electron.html">Electron</a><a href="13-kintone.html">kintone</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">同じコードでも、<b>デスクトップ・タブレット・スマートフォン・Electron・kintone のモバイル表示</b>では挙動が変わる。ここは「どこで何が違い、どう吸収するか」をまとめた層。多くの項目は<b>この端末の実測値をその場で表示</b>するので、現場のタブレットで開けばその端末の答えがわかる。</div>
+
+<!-- ===================== 102 ===================== -->
+<section class="demo" id="n102">
+  <h2><span class="no">102</span>この端末は何か <small>実測パネル</small></h2>
+  <p class="what">まずは自分が今いる環境を知る。以下はすべて<b>ブラウザが答えた実際の値</b>。現場で使う端末でこのページを開き、値を控えておくと、以降の判断（当たり判定の大きさ、ホバーの可否、使える API）が全部決まる。</p>
+  <p class="how"><b>操作：</b>ウィンドウの大きさを変える、タッチで触る、と値が変わる項目がある。</p>
+  <div class="stage">
+    <table class="cmp" id="s102-t"></table>
+  </div>
+  <script data-code>
+    (() => {
+      const q = s => matchMedia(s).matches;
+      const rows = () => [
+        ['ポインタの精度', q('(pointer: fine)') ? 'fine（マウス・ペン）' : q('(pointer: coarse)') ? 'coarse（指）' : 'none', '当たり判定の大きさを決める（103）'],
+        ['ホバーできるか', q('(hover: hover)') ? 'できる' : 'できない', 'ホバー専用の情報を置けるか（06）'],
+        ['他の入力装置', [q('(any-pointer: fine)') && 'fine', q('(any-pointer: coarse)') && 'coarse'].filter(Boolean).join(' + ') || 'なし', 'タッチ＋マウス両対応か'],
+        ['画面', `${innerWidth}×${innerHeight} CSS px / dpr ${devicePixelRatio}`, 'Canvas の内部解像度（55）'],
+        ['ビューポート単位', `100svh=${getComputedStyle(document.documentElement).getPropertyValue('--svh').trim() || '-'} / 100dvh=${CSS.supports('height','100dvh') ? '対応' : '非対応'}`, 'モバイルのアドレスバー（105）'],
+        ['プラットフォーム', (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '不明', '修飾キーの表記（104）'],
+        ['タッチ点数', navigator.maxTouchPoints + ' 点', 'マルチタッチ（50）'],
+        ['動きを減らす設定', q('(prefers-reduced-motion: reduce)') ? 'ON' : 'OFF', 'アニメーションの省略（42）'],
+        ['配色の希望', q('(prefers-color-scheme: dark)') ? 'ダーク' : 'ライト', 'テーマ（70・95）'],
+        ['強制配色', q('(forced-colors: active)') ? 'ON（色指定は無視される）' : 'OFF', '枠線や記号で状態を示す（10）'],
+        ['言語', navigator.language + ' / ' + navigator.languages.join(','), '書式（99）'],
+        ['オンライン', navigator.onLine ? 'オンライン' : 'オフライン', '再送キュー（79）'],
+      ];
+      const render = () => $('#s102-t').innerHTML = '<tr><th>項目</th><th>この端末</th><th>効いてくる場所</th></tr>' +
+        rows().map(([k, v, u]) => `<tr><td class="k">${k}</td><td><b>${v}</b></td><td>${u}</td></tr>`).join('');
+      addEventListener('resize', render); ['(pointer: fine)', '(hover: hover)', '(prefers-color-scheme: dark)'].forEach(m => matchMedia(m).addEventListener('change', render));
+      render();
+    })();
+  </script>
+  <style data-code>
+    :root { --svh: 1svh; }   /* 単位が使えるかを JS から確認するための置き場 */
+  </style>
+</section>
+
+<!-- ===================== 103 ===================== -->
+<section class="demo" id="n103">
+  <h2><span class="no">103</span>入力装置と当たり判定 <small>pointer / any-pointer / 44px</small></h2>
+  <p class="what">マウスは 1px を狙えるが、指は狙えない。<code>@media (pointer: coarse)</code> で<b>見た目を変えずに当たり判定だけ広げる</b>のが定石（<code>::before</code> を伸ばす）。指で使う画面は 44×44px 以上が目安。<b>タッチとマウスの両方が繋がる端末</b>（現場のタブレット＋マウス）もあるので、`any-pointer` で「どちらも来る」前提にする。</p>
+  <p class="how"><b>操作：</b>下の2つのボタンの周囲（薄い枠）が実際の当たり判定。coarse の端末では自動で広がる。</p>
+  <div class="stage">
+    <div class="row" style="gap:30px"><button class="s103 narrow">狭い</button><button class="s103 wide">広い（判定拡張）</button><span class="readout" id="s103-out"></span></div>
+  </div>
+  <style data-code>
+    .s103 { position: relative; font-size: 12px; padding: 4px 8px; }
+    .s103.wide::before { content: ''; position: absolute; inset: -10px; }         /* 見た目そのまま、判定だけ拡張 */
+    .s103.wide { outline: 1px dashed #cbd5e1; outline-offset: 10px; }
+    @media (pointer: coarse) {                                                     /* 指で使う端末では全体を大きく */
+      .s103 { min-width: 44px; min-height: 44px; font-size: 14px; }
+      .s103.wide::before { inset: -14px; }
+    }
+  </style>
+  <script data-code>
+    (() => {
+      const fine = matchMedia('(pointer: fine)').matches;
+      $('#s103-out').textContent = fine ? 'この端末は fine：狭くても押せる' : 'この端末は coarse：44px 以上が必要';
+      $$('.s103').forEach(b => b.onclick = () => $('#s103-out').textContent = b.textContent + ' を押した');
+    })();
+  </script>
+</section>
+
+<!-- ===================== 104 ===================== -->
+<section class="demo" id="n104">
+  <h2><span class="no">104</span>修飾キーの差 <small>Ctrl / ⌘ / Alt / Option</small></h2>
+  <p class="what">Windows の <kbd>Ctrl</kbd> は macOS の <kbd>⌘</kbd>（<code>metaKey</code>）。判定を間違えると Mac で全く効かない。<b>画面に出す表記も OS で変える</b>（Mac に「Ctrl+S」と出ていると迷う）。<code>navigator.userAgentData.platform</code> で判定し、無い環境では <code>navigator.platform</code> にフォールバックする。</p>
+  <p class="how"><b>操作：</b>キーを押す。押された修飾キーと、この OS での正しい表記が出る。</p>
+  <div class="stage">
+    <div class="row"><span class="readout" id="s104-os"></span><span class="readout" id="s104-keys">キーを押してみる</span></div>
+    <table class="cmp" id="s104-t"></table>
+  </div>
+  <script data-code>
+    (() => {
+      const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+      const isMac = /mac|iphone|ipad/i.test(plat);
+      const label = { mod: isMac ? '⌘' : 'Ctrl', alt: isMac ? 'Option' : 'Alt', del: isMac ? 'Delete' : 'Del' };
+      $('#s104-os').textContent = `この OS: ${plat || '不明'} → 修飾キーは「${label.mod}」`;
+      $('#s104-t').innerHTML = '<tr><th>機能</th><th>この端末での表記</th><th>判定するプロパティ</th></tr>' + [
+        ['保存', label.mod + '+S', 'e.ctrlKey || e.metaKey'],
+        ['複数選択', label.mod + '+クリック', '同上（11 の選択）'],
+        ['範囲選択', 'Shift+クリック', 'e.shiftKey'],
+        ['等比・軸固定', 'Shift+ドラッグ', 'e.shiftKey（51）'],
+        ['複製しながら移動', label.alt + '+ドラッグ', 'e.altKey'],
+      ].map(r => `<tr><td class="k">${r[0]}</td><td><b>${r[1]}</b></td><td><code>${r[2]}</code></td></tr>`).join('');
+      addEventListener('keydown', e => {
+        const on = [e.ctrlKey && 'Ctrl', e.metaKey && 'Meta(⌘)', e.altKey && 'Alt/Option', e.shiftKey && 'Shift'].filter(Boolean);
+        $('#s104-keys').textContent = `押されている: ${on.join(' + ') || 'なし'} / key = ${e.key}`;
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 105 ===================== -->
+<section class="demo" id="n105">
+  <h2><span class="no">105</span>画面の高さ <small>vh / svh / lvh / dvh</small></h2>
+  <p class="what">スマートフォンでは<b>スクロールに応じてアドレスバーが伸縮する</b>ため、<code>100vh</code> は「バーが隠れたときの高さ」＝画面より大きく、下がはみ出す。<code>svh</code>（最小＝バーが出ている状態）、<code>lvh</code>（最大）、<code>dvh</code>（今の実際の高さ、変化に追従）で正確に指定できる。<b>全画面のパネルやモーダルは <code>dvh</code> か <code>svh</code></b>。</p>
+  <p class="how"><b>操作：</b>スマートフォンで開いてスクロールすると差が出る。下の帯は同じ「10%」の高さを4種類の単位で描いたもの。</p>
+  <div class="stage">
+    <div class="s105"><div class="a">10vh</div><div class="b">10svh</div><div class="c">10lvh</div><div class="d">10dvh</div></div>
+    <div class="row"><span class="readout" id="s105-out"></span></div>
+  </div>
+  <style data-code>
+    .s105 { display: flex; gap: 6px; align-items: flex-end; height: 90px; }
+    .s105 > div { flex: 1; display: grid; place-items: end center; font-size: 11px; color: #fff; padding-bottom: 2px; border-radius: 4px 4px 0 0; }
+    .s105 .a { height: 10vh;  background: #94a3b8; }
+    .s105 .b { height: 10svh; background: #2563eb; }
+    .s105 .c { height: 10lvh; background: #7c3aed; }
+    .s105 .d { height: 10dvh; background: #16a34a; }
+  </style>
+  <script data-code>
+    (() => {
+      const px = u => { const d = document.createElement('div'); d.style.cssText = `position:absolute;height:100${u}`; document.body.appendChild(d); const h = d.getBoundingClientRect().height; d.remove(); return Math.round(h); };
+      const show = () => $('#s105-out').textContent = `この端末: 100vh=${px('vh')}px / 100svh=${px('svh')}px / 100lvh=${px('lvh')}px / 100dvh=${px('dvh')}px / innerHeight=${innerHeight}px`;
+      addEventListener('resize', show); show();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 106 ===================== -->
+<section class="demo" id="n106">
+  <h2><span class="no">106</span>セーフエリア <small>env(safe-area-inset-*) / viewport-fit=cover</small></h2>
+  <p class="what">ノッチ、ホームバー、丸い角のある端末では、画面の端に置いた操作部品が隠れる・押せない。<code>&lt;meta name="viewport" content="…, viewport-fit=cover"&gt;</code> を付けたうえで <code>env(safe-area-inset-bottom)</code> などを余白に足す。<b>固定ヘッダー・固定フッター・全画面モーダルの3か所</b>で必ず要る。</p>
+  <p class="how"><b>操作：</b>該当端末では下の帯に余白が入る。この端末の実測値は下に表示される。</p>
+  <div class="stage">
+    <div class="s106">画面下に固定する操作バー（セーフエリア分の余白を足している）</div>
+    <div class="row"><span class="readout" id="s106-out"></span></div>
+  </div>
+  <style data-code>
+    .s106 { background: #0f172a; color: #fff; font-size: 13px; text-align: center; border-radius: 8px;
+      padding: 10px 14px;
+      padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));    /* 第2引数が非対応時の既定値 */
+      padding-left:  calc(14px + env(safe-area-inset-left, 0px));
+      padding-right: calc(14px + env(safe-area-inset-right, 0px)); }
+  </style>
+  <script data-code>
+    (() => {
+      const v = s => getComputedStyle(document.documentElement).getPropertyValue(s) || '0px';
+      const probe = document.createElement('div');
+      probe.style.cssText = 'position:fixed;top:env(safe-area-inset-top,0px);left:env(safe-area-inset-left,0px);bottom:env(safe-area-inset-bottom,0px);right:env(safe-area-inset-right,0px);visibility:hidden';
+      document.body.appendChild(probe);
+      const r = probe.getBoundingClientRect(); probe.remove();
+      $('#s106-out').textContent = `この端末のセーフエリア: 上 ${Math.round(r.top)}px / 左 ${Math.round(r.left)}px / 下 ${Math.round(innerHeight - r.bottom)}px（0 ならノッチ等なし）`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== 107 ===================== -->
+<section class="demo" id="n107">
+  <h2><span class="no">107</span>日本語入力（IME）の途中を無視する <small>compositionstart / isComposing</small></h2>
+  <p class="what"><b>この資料で最も実害が出やすい項目。</b>日本語を打つと、変換確定前の「かな」の段階でも <code>input</code> と <code>keydown</code> が飛ぶ。対策しないと、①検索が「けん」「けんさ」…と無駄に走る ②<kbd>Enter</kbd> による変換確定を「決定」と誤認して、確定した瞬間にフォームが送信される、が起きる。<code>event.isComposing</code>（または <code>compositionstart/end</code>）で<b>変換中は無視する</b>のが正解。</p>
+  <p class="how"><b>操作：</b>日本語入力に切り替えて「けんさ」と打ち、変換して <kbd>Enter</kbd>。左（対策なし）は途中で何度も反応し、Enter を確定として扱ってしまう。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1"><b style="font-size:13px">対策なし</b><input id="s107-bad" placeholder="日本語で入力" style="width:100%"><div class="log" id="s107-bad-log" style="height:96px"></div></div>
+      <div style="flex:1"><b style="font-size:13px">isComposing で無視</b><input id="s107-good" placeholder="日本語で入力" style="width:100%"><div class="log" id="s107-good-log" style="height:96px"></div></div>
+    </div>
+  </div>
+  <script data-code>
+    (() => {
+      const bad = $('#s107-bad'), good = $('#s107-good');
+      bad.addEventListener('input', e => logTo($('#s107-bad-log'), `検索実行: 「${e.target.value}」`));
+      // check-ime-ignore : ここは「対策していない例」を見せるためのコード（意図的に isComposing を見ない）
+      bad.addEventListener('keydown', e => { if (e.key === 'Enter') logTo($('#s107-bad-log'), '★ 決定として処理（変換確定の Enter でも発火）'); });
+
+      // 対策：変換中（isComposing）は何もしない。compositionend で1回だけ処理する。
+      good.addEventListener('input', e => { if (e.isComposing) return; logTo($('#s107-good-log'), `検索実行: 「${e.target.value}」`); });
+      good.addEventListener('compositionend', e => logTo($('#s107-good-log'), `変換確定 → 検索実行: 「${e.target.value}」`));
+      good.addEventListener('keydown', e => {
+        if (e.isComposing || e.keyCode === 229) return;            // 229 は古い環境向けの保険
+        if (e.key === 'Enter') logTo($('#s107-good-log'), '★ 決定として処理（変換確定では発火しない）');
+      });
+    })();
+  </script>
+  <p class="note">この指摘を受けて、既存デモと部品にも対策を入れた：<a href="05-advanced.html#n74">74 検索</a>（変換中はデバウンスを走らせず、確定時に1回）、<a href="03-custom.html#n38">38 インライン編集</a>（変換確定の Enter で確定しない）、<a href="03-custom.html#n36">36 コマンドパレット</a>（変換中は矢印・Enter を無視）、<code>ui-kit/hotkeys.js</code>（変換中のキーを拾わない）。</p>
+</section>
+
+<!-- ===================== 108 ===================== -->
+<section class="demo" id="n108">
+  <h2><span class="no">108</span>「戻る」で閉じる <small>CloseWatcher / Android のバックキー</small></h2>
+  <p class="what">Android では<b>戻る操作でモーダルを閉じる</b>のが期待される挙動。従来は履歴に push して <code>popstate</code> で閉じる小細工が要った。<code>CloseWatcher</code> は「Esc・Android の戻る・ブラウザの戻るジェスチャー」をまとめて1つのイベントで受け取れる。<code>&lt;dialog&gt;</code> と popover は最初からこの挙動を持つ（自前のオーバーレイにだけ必要）。</p>
+  <p class="how"><b>操作：</b>開いて <kbd>Esc</kbd>（Android なら戻るキー）で閉じる。</p>
+  <div class="stage" style="min-height:150px">
+    <div class="row"><button id="s108-open">自前のパネルを開く</button><span class="readout" id="s108-out"></span></div>
+    <div id="s108-panel" class="s108-panel" hidden>自前のオーバーレイ（dialog ではない）<br>Esc / 戻る で閉じる</div>
+  </div>
+  <style data-code>
+    .s108-panel { position: absolute; inset: 40px 20px 20px; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 16px; font-size: 13px; box-shadow: 0 12px 30px rgba(0,0,0,.15); }
+  </style>
+  <script data-code>
+    (() => {
+      const panel = $('#s108-panel'), out = $('#s108-out');
+      out.textContent = 'CloseWatcher: ' + ('CloseWatcher' in window ? '対応' : '非対応 → keydown で代替');
+      let watcher = null;
+      $('#s108-open').onclick = () => {
+        panel.hidden = false;
+        if ('CloseWatcher' in window) {
+          watcher = new CloseWatcher();                            // Esc・Android の戻る・戻るジェスチャーを一括で受ける
+          watcher.onclose = () => { panel.hidden = true; out.textContent = 'CloseWatcher で閉じた'; };
+        } else {
+          const onKey = e => { if (e.key === 'Escape') { panel.hidden = true; out.textContent = 'keydown で閉じた'; removeEventListener('keydown', onKey); } };
+          addEventListener('keydown', onKey);
+        }
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 109 ===================== -->
+<section class="demo" id="n109">
+  <h2><span class="no">109</span>スクロールバーの差 <small>scrollbar-gutter / scrollbar-width / overscroll-behavior</small></h2>
+  <p class="what">Windows のスクロールバーは<b>場所を取る</b>（出た瞬間に中身が 15px ずれる）。macOS と iOS は<b>重なって表示され消える</b>。<code>scrollbar-gutter: stable</code> で最初から場所を空けておくとズレが起きない。<code>overscroll-behavior: contain</code> は「内側を末端まで送ったら親までスクロールが伝わる」現象（モーダル内スクロールの定番の不快さ）を止める。</p>
+  <p class="how"><b>操作：</b>3つの枠をスクロールする。中央は末端でも親に伝わらない。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1"><b style="font-size:12px">既定</b><div class="s109 plain"></div></div>
+      <div style="flex:1"><b style="font-size:12px">gutter: stable + contain</b><div class="s109 stable"></div></div>
+      <div style="flex:1"><b style="font-size:12px">細いバー</b><div class="s109 thin"></div></div>
+    </div>
+    <div class="row"><span class="readout" id="s109-out"></span></div>
+  </div>
+  <style data-code>
+    .s109 { height: 120px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; }
+    .s109 div { padding: 3px 8px; border-bottom: 1px solid #f1f5f9; }
+    .s109.stable { scrollbar-gutter: stable; overscroll-behavior: contain; }   /* 場所を確保 ＋ 親へ伝えない */
+    .s109.thin { scrollbar-width: thin; scrollbar-color: #94a3b8 transparent; }
+  </style>
+  <script data-code>
+    (() => {
+      $$('.s109').forEach(el => el.innerHTML = Array.from({ length: 30 }, (_, i) => `<div>行 ${i + 1}</div>`).join(''));
+      const el = $('.s109.plain');
+      const w = el.offsetWidth - el.clientWidth;
+      $('#s109-out').textContent = `この端末のスクロールバー幅: ${w}px（0 なら重ねて表示するタイプ＝ズレは起きない）`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== 110 ===================== -->
+<section class="demo" id="n110">
+  <h2><span class="no">110</span>タッチ端末の癖 <small>touch-action / tap highlight / 自動ズーム</small></h2>
+  <p class="what">タッチ特有の4つ。①<b>ダブルタップズーム</b>で連打が拾われない ②タップ時に<b>灰色の矩形</b>が光る ③iOS は <b>16px 未満の入力欄で自動的に拡大</b>する（現場で一番嫌われる） ④長押しで<b>選択・コンテキストメニュー</b>が出る。いずれも CSS で抑えられるが、<b>抑えすぎると選択やコピーができなくなる</b>ので、対象は操作部品に限る。</p>
+  <p class="how"><b>操作：</b>タッチ端末で2つの領域を触り比べる。</p>
+  <div class="stage">
+    <div class="row" style="align-items:stretch">
+      <div class="s110 plain">既定<br><small>連打・長押ししてみる</small><br><input type="text" placeholder="14px（iOSで拡大）"></div>
+      <div class="s110 tuned">対策済み<br><small>拡大しない・光らない</small><br><input type="text" placeholder="16px（拡大しない）"></div>
+    </div>
+    <div class="row"><span class="readout" id="s110-out"></span></div>
+  </div>
+  <style data-code>
+    .s110 { flex: 1; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; font-size: 13px; text-align: center; }
+    .s110 input { width: 90%; margin-top: 8px; padding: 6px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s110.plain input { font-size: 14px; }                       /* iOS はフォーカス時に自動で拡大する */
+    .s110.tuned { touch-action: manipulation;                    /* ダブルタップズームを無効化＝連打が拾える */
+      -webkit-tap-highlight-color: transparent;                  /* タップ時の灰色を消す */
+      -webkit-touch-callout: none; user-select: none; }          /* 長押しメニュー・選択を抑える（操作部品だけに） */
+    .s110.tuned input { font-size: 16px; user-select: text; }    /* 入力欄は 16px 以上、選択は許可 */
+  </style>
+  <script data-code>
+    (() => {
+      let n = 0, t0 = 0;
+      $$('.s110').forEach(el => el.addEventListener('pointerdown', () => {
+        const now = performance.now(); n = now - t0 < 400 ? n + 1 : 1; t0 = now;
+        $('#s110-out').textContent = `連続タップ ${n} 回（ダブルタップズームが効いていると 2 回目以降を取りこぼす）`;
+      }));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 111 ===================== -->
+<section class="demo" id="n111">
+  <h2><span class="no">111</span>日本語のテキスト処理 <small>text-wrap / word-break / Intl.Segmenter</small></h2>
+  <p class="what">日本語は単語の区切りが無いので、<b>意味の切れ目を無視して折り返される</b>。<code>text-wrap: balance</code>（見出しの行長を揃える）、<code>pretty</code>（最終行に1文字だけ残さない）、<code>word-break: auto-phrase</code>（文節で折る）で読みやすくなる。省略は <code>text-overflow: ellipsis</code>、<b>文字数の数え方</b>は絵文字や結合文字があるため <code>Intl.Segmenter</code> が正確（<code>.length</code> は誤る）。</p>
+  <p class="how"><b>操作：</b>幅を変えて折り返しの違いを見る。下は文字数の数え方の比較。</p>
+  <div class="stage">
+    <div class="row">幅 <input type="range" id="s111-w" min="180" max="520" value="300"></div>
+    <div id="s111-box" class="s111-box">
+      <p class="plain">六角ボルトの検査成績書を同梱してください</p>
+      <p class="pretty">六角ボルトの検査成績書を同梱してください</p>
+      <p class="phrase">六角ボルトの検査成績書を同梱してください</p>
+      <p class="ellip">株式会社サンプル製作所 第2工場 生産管理課 宛の長い宛名</p>
+    </div>
+    <div class="row"><span class="readout" id="s111-out"></span></div>
+  </div>
+  <style data-code>
+    .s111-box { width: 300px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; }
+    .s111-box p { margin: 0 0 8px; font-size: 14px; border-left: 3px solid #e5e7eb; padding-left: 8px; }
+    .s111-box .plain::before  { content: '既定 '; font-size: 10px; color: #6b7280; }
+    .s111-box .pretty { text-wrap: pretty; }
+    .s111-box .pretty::before { content: 'pretty '; font-size: 10px; color: #6b7280; }
+    .s111-box .phrase { word-break: auto-phrase; }               /* 文節で折り返す */
+    .s111-box .phrase::before { content: 'auto-phrase '; font-size: 10px; color: #6b7280; }
+    .s111-box .ellip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  </style>
+  <script data-code>
+    (() => {
+      $('#s111-w').oninput = e => $('#s111-box').style.width = e.target.value + 'px';
+      const s = '検査OK👨‍🏭👍';
+      const graphemes = [...new Intl.Segmenter('ja', { granularity: 'grapheme' }).segment(s)].length;
+      $('#s111-out').textContent = `「${s}」 .length=${s.length} / Array.from=${Array.from(s).length} / 人が数える字数（Segmenter）=${graphemes}`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== 112 ===================== -->
+<section class="demo" id="n112">
+  <h2><span class="no">112</span>印刷 <small>@page / break-inside / print-color-adjust</small></h2>
+  <p class="what">現場では画面より紙が正義のことがある。<code>@media print</code> で操作部品を消し、<code>@page</code> で余白と向きを決め、<code>break-inside: avoid</code> で表の行が分断されるのを防ぐ。<b>背景色は既定で印刷されない</b>ので、色で状態を示している表は <code>print-color-adjust: exact</code> を指定するか、記号を併記する（10 のチェックリストと同じ理由）。</p>
+  <p class="how"><b>操作：</b>「印刷プレビュー」で確認（このデモの領域だけが印刷対象になるよう指定してある）。</p>
+  <div class="stage">
+    <div class="row"><button id="s112-print">印刷プレビューを開く</button><span class="readout">ヘッダー・目次・ボタンは印刷されない</span></div>
+    <table class="cmp s112" style="margin-top:8px"><tr><th>品番</th><th>状態</th><th>数量</th></tr>
+      <tr><td>P-001</td><td class="ok">正常</td><td>120</td></tr>
+      <tr><td>P-002</td><td class="ng">要確認</td><td>80</td></tr>
+    </table>
+  </div>
+  <style data-code>
+    .s112 .ok { background: #dcfce7; } .s112 .ng { background: #fee2e2; }
+    .s112 .ok::after { content: ' ✓'; } .s112 .ng::after { content: ' ✖'; }   /* 色に頼らない */
+    @media print {
+      @page { size: A4 portrait; margin: 14mm; }
+      body > *:not(.layout), aside.toc, header.top, .row, details { display: none !important; }
+      .s112 { break-inside: avoid; print-color-adjust: exact; -webkit-print-color-adjust: exact; }  /* 背景色も印刷する */
+      .s112 tr { break-inside: avoid; }
+    }
+  </style>
+  <script data-code>
+    (() => { $('#s112-print').onclick = () => window.print(); })();
+  </script>
+</section>
+
+<!-- ===================== 113 ===================== -->
+<section class="demo" id="n113">
+  <h2><span class="no">113</span>機能検出と段階的強化 <small>@supports / CSS.supports / 'x' in y</small></h2>
+  <p class="what">17 章の新機能を業務アプリで使う判断は「<b>無くても仕事が終わるか</b>」で決める。<code>@supports</code> で<b>対応環境だけ上書きする</b>書き方にすれば、非対応環境には従来の実装が残る。JS は <code>'moveBefore' in Element.prototype</code> のように<b>使う直前に確かめる</b>。下の表はこの端末の実測。</p>
+  <div class="stage">
+    <div class="before-after" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12.5px">
+      <div style="background:#fff;border:1px solid #fca5a5;border-radius:6px;padding:8px 10px;color:#1d1f23"><b>× 危ない書き方</b><br>新機能を前提に書き、非対応だと崩れる</div>
+      <div style="background:#fff;border:1px solid #86efac;border-radius:6px;padding:8px 10px;color:#1d1f23"><b>○ 段階的強化</b><br>まず従来の書き方 → <code>@supports</code> で上書き</div>
+    </div>
+    <table class="cmp" id="s113-t"></table>
+  </div>
+  <style data-code>
+    /* 段階的強化の型：まず全環境で成立する指定を書き、対応環境だけ上書きする */
+    .s113-panel { display: none; opacity: 0; transition: opacity .2s; }
+    .s113-panel.open { display: block; opacity: 1; }
+    @supports (transition-behavior: allow-discrete) {
+      .s113-panel { transition: opacity .2s, display .2s allow-discrete; }
+      @starting-style { .s113-panel.open { opacity: 0; } }
+    }
+  </style>
+  <script data-code>
+    (() => {
+      const F = [
+        [':has()', () => CSS.supports('selector(:has(*))'), '87', 'JS でクラスを付け外し'],
+        ['@starting-style', () => CSS.supports('transition-behavior', 'allow-discrete'), '88', '12 の opacity 方式'],
+        ['popover', () => 'popover' in HTMLElement.prototype, '89', '20 の自前ドロップダウン'],
+        ['アンカー位置指定', () => CSS.supports('position-area', 'top'), '90', '17 の getBoundingClientRect'],
+        ['interpolate-size', () => CSS.supports('interpolate-size', 'allow-keywords'), '91', '18 の grid 0fr→1fr'],
+        ['details name', () => 'name' in document.createElement('details'), '92', 'JS で他を閉じる'],
+        ['field-sizing', () => CSS.supports('field-sizing', 'content'), '93', 'scrollHeight を読んで高さ指定'],
+        ['content-visibility', () => CSS.supports('content-visibility', 'auto'), '94', '23 の仮想スクロール'],
+        ['light-dark()', () => CSS.supports('color', 'light-dark(#000,#fff)'), '95', '変数を2セット書く'],
+        ['moveBefore()', () => 'moveBefore' in Element.prototype, '96', 'insertBefore（状態は失われる）'],
+        ['Custom Highlight', () => !!(window.CSS && CSS.highlights), '97', '74 の <mark> 差し替え'],
+        ['scheduler.yield()', () => !!(window.scheduler && window.scheduler.yield), '98', 'setTimeout(0) で分割'],
+        ['スクロールボタン', () => { try { document.querySelector('div::scroll-button(left)'); return true; } catch { return false; } }, '100', 'JS で scrollBy'],
+        ['sibling-index()', () => CSS.supports('width', 'calc(sibling-index() * 1px)'), '101', '--i を HTML に書く'],
+        ['CloseWatcher', () => 'CloseWatcher' in window, '108', 'keydown + history'],
+        ['dvh 単位', () => CSS.supports('height', '100dvh'), '105', 'JS で innerHeight を代入'],
+        ['word-break: auto-phrase', () => CSS.supports('word-break', 'auto-phrase'), '111', '既定の折り返し'],
+      ];
+      $('#s113-t').innerHTML = '<tr><th>機能</th><th>この端末</th><th>デモ</th><th>非対応時に使う従来の方法</th></tr>' +
+        F.map(([name, test, no, fallback]) => {
+          let ok = false; try { ok = !!test(); } catch {}
+          return `<tr><td class="k">${name}</td><td class="${ok ? 'yes' : 'no'}"><b>${ok ? '使える' : '使えない'}</b></td><td>${no}</td><td>${fallback}</td></tr>`;
+        }).join('');
+    })();
+  </script>
+</section>
+
+<!-- ===================== 早見表 ===================== -->
+<section class="demo" id="n113b">
+  <h2><span class="no">◎</span>実行環境ごとの早見表 <small>ブラウザ / Electron / kintone / 現場タブレット</small></h2>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <table class="cmp">
+    <tr><th style="width:150px">項目</th><th>デスクトップ<br>ブラウザ</th><th>Electron</th><th>kintone<br>（PC）</th><th>kintone<br>（モバイル）</th><th>現場タブレット</th></tr>
+    <tr><td class="k">ホバー</td><td class="yes">あり</td><td class="yes">あり</td><td class="yes">あり</td><td class="no">なし</td><td class="cau">機種次第（102 で判定）</td></tr>
+    <tr><td class="k">当たり判定</td><td>小さくてよい</td><td>小さくてよい</td><td>小さくてよい</td><td class="cau">44px 以上</td><td class="cau">44px 以上・手袋なら更に大きく</td></tr>
+    <tr><td class="k">修飾キー</td><td>Ctrl / ⌘</td><td>Ctrl / ⌘（メニューと衝突注意）</td><td>Ctrl / ⌘</td><td class="no">使えない</td><td class="cau">外付けキーボード次第</td></tr>
+    <tr><td class="k">右クリック</td><td class="yes">あり</td><td class="yes">あり（39）</td><td class="yes">あり</td><td class="cau">長押しで代替</td><td class="cau">長押しで代替</td></tr>
+    <tr><td class="k">戻る操作</td><td>ブラウザの戻る（82）</td><td class="cau">既定では無い。自前で用意</td><td>ブラウザの戻る</td><td class="cau">端末の戻る（108）</td><td class="cau">端末の戻る（108）</td></tr>
+    <tr><td class="k">ファイル保存</td><td class="cau">ダウンロード</td><td class="yes">保存ダイアログ（12）</td><td class="cau">ダウンロード</td><td class="cau">制限あり</td><td class="cau">制限あり</td></tr>
+    <tr><td class="k">オフライン</td><td class="cau">タブを閉じると消える</td><td class="yes">ファイルに保持できる（79）</td><td class="cau">localStorage 頼み</td><td class="cau">切れやすい前提で設計</td><td class="no">切れる前提（79 必須）</td></tr>
+    <tr><td class="k">複数ウィンドウ</td><td>タブ間は 85</td><td class="yes">85 ＋ IPC</td><td class="cau">タブ間のみ</td><td class="no">なし</td><td class="no">なし</td></tr>
+    <tr><td class="k">新しい CSS/JS</td><td class="cau">利用者のブラウザ次第</td><td class="yes">同梱 Chromium で固定＝新機能を使いやすい</td><td class="cau">利用者のブラウザ次第</td><td class="cau">端末の WebView 次第</td><td class="cau">古い WebView が残りやすい</td></tr>
+    <tr><td class="k">印刷</td><td class="yes">あり（112）</td><td class="yes">あり</td><td class="yes">あり</td><td class="cau">限定的</td><td class="cau">限定的</td></tr>
+  </table>
+  <p class="note">Electron は「Chromium のバージョンを自分で決められる」のが最大の利点で、17 章の新機能を<b>フォールバックなしで</b>使える唯一の環境になりやすい。逆に現場のタブレットは WebView が古いままのことがあるため、113 の機能検出を必ず通す。</p>
+  </div>
+</section>
+</main>
+</div>
+</body>
+</html>

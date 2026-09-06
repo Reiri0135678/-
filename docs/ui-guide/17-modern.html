@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第5弾 M：最近できるようになったこと（87〜101）</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierM { background: #0891b2; }
+  .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12.5px; margin-bottom: 8px; }
+  .before-after > div { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; color: #1d1f23; }
+  .before-after b { display: block; font-size: 11px; margin-bottom: 4px; }
+  .before-after .old { border-color: #fca5a5; } .before-after .new { border-color: #86efac; }
+  .sup { font-size: 12px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; }
+  .sup.yes { background: #dcfce7; color: #166534; } .sup.no { background: #fee2e2; color: #991b1b; }
+  @media (max-width: 700px) { .before-after { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>M：最近できるようになったこと <span class="tier tierM">87〜101</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="18-crossplatform.html">プラットフォーム</a><a href="20-integration.html">外部連携</a><a href="21-3d.html">3D</a><a href="09-exercises.html">課題</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">A〜E層で「自前で書いた」処理の多くは、ここ数年でブラウザ標準になった。各項目は<b>以前の書き方</b>と<b>今の書き方</b>を並べ、この端末での対応状況をその場で判定して表示する。<b>非対応の環境が残る間は、前半で学んだ自前実装がそのままフォールバックになる</b>——だから古いやり方も無駄にならない。</div>
+
+<!-- ===================== 87 ===================== -->
+<section class="demo" id="n87">
+  <h2><span class="no">87</span>親を選ぶ <small>:has()</small><span class="sup" data-sup="selector(:has(*))"></span></h2>
+  <p class="what">CSS は長く「子は選べるが親は選べない」制約があり、状態を親要素のクラスとして JS で付け外ししていた。<code>:has()</code> は「その中に◯◯を含む要素」を選べるので、<b>状態の管理を CSS に寄せられる</b>。行の選択、入力の有無、エラーの有無、画像付きカードの出し分けなど。</p>
+  <p class="how"><b>操作：</b>チェックを入れる／入力する。JS は一行も動いていない。</p>
+  <div class="before-after">
+    <div class="old"><b>以前</b>チェック時に <code>tr.classList.add('sel')</code> を JS で付け外し</div>
+    <div class="new"><b>今</b><code>tr:has(input:checked) { … }</code> だけ</div>
+  </div>
+  <div class="stage">
+    <table class="s87"><tr><th></th><th>品番</th><th>数量</th></tr>
+      <tr><td><input type="checkbox"></td><td>P-001</td><td>120</td></tr>
+      <tr><td><input type="checkbox" checked></td><td>P-002</td><td>80</td></tr>
+      <tr><td><input type="checkbox"></td><td>P-003</td><td>240</td></tr>
+    </table>
+    <div class="s87-form"><label>備考 <input type="text" placeholder="未入力なら枠がグレー"></label></div>
+  </div>
+  <style data-code>
+    .s87 { border-collapse: collapse; font-size: 13px; background: #fff; margin-bottom: 10px; }
+    .s87 th, .s87 td { border: 1px solid #e5e7eb; padding: 4px 12px; }
+    .s87 tr:has(input:checked) { background: #dbeafe; }              /* 選択行 */
+    .s87 tr:has(input:checked) td:nth-child(2) { font-weight: 700; }
+    .s87:has(input:checked) th:first-child::after { content: '✓'; }   /* 1つでも選ばれていたら見出しにも印 */
+    .s87-form label { font-size: 13px; }
+    .s87-form:has(input:placeholder-shown) input { border: 1px solid #cbd5e1; background: #f8fafc; }
+    .s87-form:has(input:not(:placeholder-shown)) input { border: 2px solid var(--accent); background: #fff; }
+  </style>
+</section>
+
+<!-- ===================== 88 ===================== -->
+<section class="demo" id="n88">
+  <h2><span class="no">88</span>出入りのアニメーション <small>@starting-style / transition-behavior: allow-discrete</small><span class="sup" data-sup="prop:transition-behavior:allow-discrete"></span></h2>
+  <p class="what"><code>display: none</code> の要素は「表示した瞬間の初期値」が無いためアニメーションできず、12 のように <code>opacity</code> だけで消す（要素は残る）か、JS で二段階に切り替えていた。<code>@starting-style</code> が<b>出現時の初期値</b>を与え、<code>transition-behavior: allow-discrete</code> が <code>display</code> の切り替えを遷移の最後まで遅らせるので、<b>出入り両方が CSS だけで書ける</b>。</p>
+  <p class="how"><b>操作：</b>トグル。閉じるときも最後まで見えている（display の切替が遅延される）。</p>
+  <div class="stage">
+    <div class="row"><button id="s88-btn">表示を切り替え</button><span class="readout">JS はクラスの付け外しだけ</span></div>
+    <div id="s88-panel" class="s88-panel">通知パネル：出るときも消えるときもアニメーションする</div>
+  </div>
+  <style data-code>
+    .s88-panel {
+      display: none; opacity: 0; transform: translateY(-8px);
+      background: var(--accent); color: #fff; padding: 12px 16px; border-radius: 8px; font-size: 13px;
+      transition: opacity .3s, transform .3s, display .3s allow-discrete;   /* display も遷移対象にする */
+    }
+    .s88-panel.open { display: block; opacity: 1; transform: none; }
+    @starting-style { .s88-panel.open { opacity: 0; transform: translateY(-8px); } }  /* 出現時の初期値 */
+  </style>
+  <script data-code>
+    (() => { $('#s88-btn').onclick = () => $('#s88-panel').classList.toggle('open'); })();
+  </script>
+</section>
+
+<!-- ===================== 89 ===================== -->
+<section class="demo" id="n89">
+  <h2><span class="no">89</span>ポップオーバー <small>popover 属性 / popovertarget</small><span class="sup" data-sup="api:popover"></span></h2>
+  <p class="what">20（ドロップダウン）と 17（ツールチップ）で自前実装した「外側クリックで閉じる」「Esc で閉じる」「最前面に出す」が、<code>popover</code> 属性だけで手に入る。トップレイヤーに出るので <a href="08-foundations.html#f7">F7</a> のスタッキングコンテキスト問題（親の transform で埋もれる）も起きない。</p>
+  <p class="how"><b>操作：</b>ボタンで開き、外側クリックか <kbd>Esc</kbd> で閉じる。JS なし。親に <code>transform</code> が掛かっていても最前面に出る。</p>
+  <div class="stage" style="min-height:170px">
+    <div class="s89-wrap">
+      <button popovertarget="s89-menu">操作 ▾</button>
+      <div id="s89-menu" popover class="s89-menu">
+        <button popovertarget="s89-menu" popovertargetaction="hide">複製</button>
+        <button popovertarget="s89-menu" popovertargetaction="hide">CSV出力</button>
+        <button popovertarget="s89-menu" popovertargetaction="hide" style="color:#dc2626">削除</button>
+      </div>
+      <span class="readout">この枠には transform が掛かっている</span>
+    </div>
+  </div>
+  <style data-code>
+    .s89-wrap { transform: translateZ(0); padding: 10px; }     /* 昔ならここで z-index が効かなくなる */
+    .s89-menu { border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; box-shadow: 0 10px 24px rgba(0,0,0,.15); }
+    .s89-menu button { display: block; width: 100%; text-align: left; border: none; background: none; padding: 6px 14px; font: inherit; border-radius: 4px; }
+    .s89-menu button:hover { background: #f1f5f9; }
+    .s89-menu { opacity: 0; transition: opacity .15s, display .15s allow-discrete; }   /* 88 と組み合わせる */
+    .s89-menu:popover-open { opacity: 1; }
+    @starting-style { .s89-menu:popover-open { opacity: 0; } }
+  </style>
+</section>
+
+<!-- ===================== 90 ===================== -->
+<section class="demo" id="n90">
+  <h2><span class="no">90</span>アンカー位置指定 <small>anchor-name / position-area / position-try-fallbacks</small><span class="sup" data-sup="prop:position-area:top"></span></h2>
+  <p class="what">17 では <code>getBoundingClientRect()</code> で座標を測り、画面端では反転させる処理を JS で書いた。<code>anchor-name</code> で「基準の要素」に名前を付け、<code>position-area</code> でどちら側に置くかを宣言し、<code>position-try-fallbacks</code> で「入らなければ反対側」を指定すれば、<b>位置決めのコードが全部消える</b>。スクロールしても追従する。</p>
+  <p class="how"><b>操作：</b>枠を横スクロールして端のボタンを押す。はみ出す側では自動で反対側に出る。</p>
+  <div class="stage" style="padding:0">
+    <div class="s90-scroll">
+      <div class="s90-inner">
+        <button popovertarget="p1" class="s90-btn" style="--a:--b1">左</button>
+        <button popovertarget="p2" class="s90-btn" style="--a:--b2">中央</button>
+        <button popovertarget="p3" class="s90-btn" style="--a:--b3">右端</button>
+        <div id="p1" popover class="s90-tip" style="--a:--b1">左のボタンの上に出る</div>
+        <div id="p2" popover class="s90-tip" style="--a:--b2">中央のボタンの上に出る</div>
+        <div id="p3" popover class="s90-tip" style="--a:--b3">右端。入らなければ左右が入れ替わる</div>
+      </div>
+    </div>
+  </div>
+  <style data-code>
+    .s90-scroll { overflow-x: auto; padding: 60px 10px; }
+    .s90-inner { display: flex; gap: 260px; width: max-content; }
+    .s90-btn { anchor-name: var(--a); }                       /* 基準に名前を付ける */
+    .s90-tip {
+      position-anchor: var(--a);                              /* どの基準に付くか */
+      position-area: block-start;                             /* 基準の上側に置く */
+      position-try-fallbacks: block-end, inline-start, inline-end;  /* 入らなければ順に試す */
+      margin: 6px; max-width: 200px; font-size: 12px; padding: 6px 10px;
+      background: #0f172a; color: #fff; border: none; border-radius: 6px;
+    }
+  </style>
+</section>
+
+<!-- ===================== 91 ===================== -->
+<section class="demo" id="n91">
+  <h2><span class="no">91</span>height: auto へのアニメーション <small>interpolate-size / calc-size()</small><span class="sup" data-sup="prop:interpolate-size:allow-keywords"></span></h2>
+  <p class="what">18（アコーディオン）で触れた「<code>height: auto</code> にはトランジションが効かない」という長年の壁。<code>interpolate-size: allow-keywords</code> を指定すると <code>auto</code> や <code>min-content</code> への遷移が補間できるようになり、grid の <code>0fr→1fr</code> という回避策も、JS で <code>scrollHeight</code> を測る処理も要らなくなる。</p>
+  <p class="how"><b>操作：</b>開閉する。中身の長さが違っても、高さを測らずに滑らかに開く。</p>
+  <div class="stage">
+    <div class="s91">
+      <button class="s91-head">出荷条件 ▾</button>
+      <div class="s91-body"><p>納期は受注後5営業日。分納可。梱包は標準仕様。</p></div>
+    </div>
+    <div class="s91">
+      <button class="s91-head">支払条件 ▾</button>
+      <div class="s91-body"><p>月末締め翌月末払い。手形不可。</p><p>与信枠を超える場合は前金。</p><p>請求書は電子送付。</p></div>
+    </div>
+  </div>
+  <style data-code>
+    .s91 { interpolate-size: allow-keywords; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+    .s91-head { width: 100%; text-align: left; border: none; border-radius: 0; }
+    .s91-body { height: 0; overflow: hidden; transition: height .3s ease; }
+    .s91-body p { margin: 0; padding: 4px 12px; font-size: 13px; }
+    .s91:has(.s91-head:focus) .s91-body, .s91.open .s91-body { height: auto; padding: 6px 0; }   /* auto へ遷移できる */
+  </style>
+  <script data-code>
+    (() => { $$('.s91-head').forEach(h => h.onclick = () => h.parentElement.classList.toggle('open')); })();
+  </script>
+</section>
+
+<!-- ===================== 92 ===================== -->
+<section class="demo" id="n92">
+  <h2><span class="no">92</span>排他アコーディオン <small>details name / ::details-content</small><span class="sup" data-sup="api:details-name"></span></h2>
+  <p class="what">「1つ開いたら他は閉じる」を JS で管理していたが、<code>&lt;details name="同じ名前"&gt;</code> にするだけでラジオボタンのように排他になる。<code>::details-content</code> で中身を直接スタイルでき、91 と組み合わせれば開閉アニメーションも CSS だけで済む。</p>
+  <p class="how"><b>操作：</b>見出しをクリック。他が自動で閉じる。JS なし。</p>
+  <div class="stage">
+    <details name="s92" class="s92" open><summary>受注情報</summary><div>顧客・納品先・数量</div></details>
+    <details name="s92" class="s92"><summary>製造指示</summary><div>工程・治具・担当者<br>着手予定日</div></details>
+    <details name="s92" class="s92"><summary>出荷</summary><div>梱包仕様・運送会社</div></details>
+  </div>
+  <style data-code>
+    .s92 { interpolate-size: allow-keywords; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 4px; }
+    .s92 summary { padding: 6px 12px; cursor: pointer; font-size: 13px; font-weight: 600; }
+    .s92 div { padding: 0 12px 8px; font-size: 13px; }
+    .s92::details-content { height: 0; overflow: hidden; transition: height .3s, content-visibility .3s allow-discrete; content-visibility: hidden; }
+    .s92[open]::details-content { height: auto; content-visibility: visible; }
+  </style>
+</section>
+
+<!-- ===================== 93 ===================== -->
+<section class="demo" id="n93">
+  <h2><span class="no">93</span>入力欄の自動伸長 <small>field-sizing: content</small><span class="sup" data-sup="prop:field-sizing:content"></span></h2>
+  <p class="what">テキストエリアを内容に合わせて伸ばすために、<code>scrollHeight</code> を読んで <code>style.height</code> を書く処理（<a href="08-foundations.html#f9">F9</a> のレイアウトスラッシングの温床）を書いていた。<code>field-sizing: content</code> で不要になる。備考欄が多い業務フォームで効く。</p>
+  <p class="how"><b>操作：</b>打ち込むと欄が伸びる。<code>min-height</code> / <code>max-height</code> で範囲を決められる。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <label style="flex:1;font-size:13px">自動伸長（field-sizing）<textarea class="s93-auto" placeholder="改行してみる"></textarea></label>
+      <label style="flex:1;font-size:13px">従来（固定）<textarea class="s93-fixed" placeholder="はみ出すとスクロール"></textarea></label>
+    </div>
+    <div class="row"><input class="s93-input" size="10" placeholder="入力欄も伸びる"></div>
+  </div>
+  <style data-code>
+    .s93-auto { field-sizing: content; min-height: 2.5em; max-height: 8em; width: 100%; }
+    .s93-fixed { height: 2.5em; width: 100%; }
+    .s93-auto, .s93-fixed, .s93-input { font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s93-input { field-sizing: content; min-width: 8em; }
+  </style>
+</section>
+
+<!-- ===================== 94 ===================== -->
+<section class="demo" id="n94">
+  <h2><span class="no">94</span>画面外の描画を省く <small>content-visibility: auto / contain-intrinsic-size</small><span class="sup" data-sup="prop:content-visibility:auto"></span></h2>
+  <p class="what">23 の仮想スクロールは「DOM を作らない」方式で最速だが、実装コストが高い。<code>content-visibility: auto</code> は<b>DOM は置いたまま、画面外の描画とレイアウトだけを省く</b>。<code>contain-intrinsic-size</code> で仮の大きさを教えるとスクロールバーも安定する。<b>数百〜数千行なら実装ゼロでこれで足りる</b>ことが多い。</p>
+  <p class="how"><b>操作：</b>切り替えて描画時間を比べる（1,000 行）。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s94-cv" checked> content-visibility: auto</label><button id="s94-measure">再描画して測る</button><span class="readout" id="s94-out">-</span></div>
+    <div id="s94-list" class="s94-list cv"></div>
+  </div>
+  <style data-code>
+    .s94-list { height: 200px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
+    .s94-list .card { border-bottom: 1px solid #f1f5f9; padding: 8px 12px; }
+    .s94-list.cv .card { content-visibility: auto; contain-intrinsic-size: auto 37px; }  /* 画面外は描画しない */
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s94-list'), out = $('#s94-out');
+      const fill = () => {
+        const t0 = performance.now();
+        list.innerHTML = Array.from({ length: 1000 }, (_, i) =>
+          `<div class="card"><b>受注 #${1000 + i}</b> 株式会社サンプル / 納期 2026-10-${String(i % 28 + 1).padStart(2, '0')} / 数量 ${(i % 9 + 1) * 10}</div>`).join('');
+        list.offsetHeight;                                    // レイアウトを確定させてから測る
+        out.textContent = `1,000 行の描画: ${(performance.now() - t0).toFixed(1)} ms`;
+      };
+      $('#s94-cv').onchange = e => { list.classList.toggle('cv', e.target.checked); fill(); };
+      $('#s94-measure').onclick = fill; fill();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 95 ===================== -->
+<section class="demo" id="n95">
+  <h2><span class="no">95</span>テーマと色の計算 <small>light-dark() / color-mix() / oklch()</small><span class="sup" data-sup="prop:color:light-dark(#000,#fff)"></span></h2>
+  <p class="what">70 のテーマ切替は「ライト用とダーク用の変数を2セット書く」形だった。<code>light-dark()</code> は1行で両方を書ける。<code>color-mix()</code> は<b>基準色1つから、ホバー・無効・枠線の色を自動で作れる</b>ので、配色の定義が減る。<code>oklch()</code> は明度が知覚とほぼ一致するため、混ぜても濁りにくい。</p>
+  <p class="how"><b>操作：</b>基準色とテーマを変える。派生色は全て計算で作られる。</p>
+  <div class="stage">
+    <div class="row">基準色 <input type="color" id="s95-c" value="#2563eb"><label><input type="checkbox" id="s95-dark"> ダーク</label><span class="readout" id="s95-out"></span></div>
+    <div id="s95-box" class="s95-box">
+      <button class="s95-btn">主ボタン</button>
+      <button class="s95-btn ghost">副ボタン</button>
+      <button class="s95-btn" disabled>無効</button>
+      <div class="s95-card">カード：背景は基準色を 92% 白に混ぜたもの</div>
+    </div>
+  </div>
+  <style data-code>
+    .s95-box { --brand: #2563eb; color-scheme: light; padding: 14px; border-radius: 8px;
+      background: light-dark(#ffffff, #0f172a); color: light-dark(#1d1f23, #e6e9ee); }  /* 1行で両テーマ */
+    .s95-box.dark { color-scheme: dark; }
+    .s95-btn { background: var(--brand); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font: inherit; font-size: 13px; }
+    .s95-btn:hover { background: color-mix(in oklch, var(--brand), black 15%); }          /* 濃く */
+    .s95-btn:disabled { background: color-mix(in oklch, var(--brand), gray 60%); }        /* くすませる */
+    .s95-btn.ghost { background: color-mix(in oklch, var(--brand), transparent 88%); color: var(--brand); }
+    .s95-card { margin-top: 10px; padding: 10px; border-radius: 6px; font-size: 13px;
+      background: color-mix(in oklch, var(--brand), light-dark(white, black) 92%);
+      border: 1px solid color-mix(in oklch, var(--brand), transparent 70%); }
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s95-box');
+      $('#s95-c').oninput = e => { box.style.setProperty('--brand', e.target.value); $('#s95-out').textContent = '派生色はすべて color-mix() で計算'; };
+      $('#s95-dark').onchange = e => box.classList.toggle('dark', e.target.checked);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 96 ===================== -->
+<section class="demo" id="n96">
+  <h2><span class="no">96</span>状態を保ったまま移動する <small>Element.moveBefore()</small><span class="sup" data-sup="api:moveBefore"></span></h2>
+  <p class="what">32 の並べ替えは <code>insertBefore</code> で DOM を動かす。これは「一度取り外して付け直す」動作なので、<b>iframe は再読み込みされ、フォーカスや再生中の動画・アニメーション・popover の開閉状態が失われる</b>。<code>moveBefore()</code> は接続を保ったまま移動するため、状態が壊れない。グリッド内の埋め込み表示や入力途中の行を動かす場面で効く。</p>
+  <p class="how"><b>操作：</b>それぞれの「先頭へ」を押す。左（従来）はカウンタが 0 に戻り、右（moveBefore）は数え続ける。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div style="flex:1"><div class="row"><b style="font-size:13px">insertBefore（従来）</b><button id="s96-a-btn">2番目を先頭へ</button></div><div id="s96-a" class="s96-list"></div></div>
+      <div style="flex:1"><div class="row"><b style="font-size:13px">moveBefore（状態を保つ）</b><button id="s96-b-btn">2番目を先頭へ</button></div><div id="s96-b" class="s96-list"></div></div>
+    </div>
+  </div>
+  <style data-code>
+    .s96-list { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s96-list > div { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .s96-list iframe { width: 92px; height: 26px; border: 1px solid #e5e7eb; border-radius: 4px; }
+  </style>
+  <script data-code>
+    (() => {
+      // 中で経過秒を数え続ける iframe を並べる（再読み込みされると 0 に戻る）
+      const row = n => `<div>行 ${n} <iframe srcdoc='&lt;body style="margin:0;font:12px/26px system-ui;text-align:center"&gt;&lt;span id=t&gt;0&lt;/span&gt; 秒&lt;script&gt;let s=0;setInterval(()=>t.textContent=++s,1000)&lt;\/script&gt;'></iframe></div>`;
+      ['#s96-a', '#s96-b'].forEach(sel => $(sel).innerHTML = [1, 2, 3].map(row).join(''));
+      $('#s96-a-btn').onclick = () => { const l = $('#s96-a'); l.insertBefore(l.children[1], l.firstElementChild); };
+      $('#s96-b-btn').onclick = () => {
+        const l = $('#s96-b'), second = l.children[1];
+        if (l.moveBefore) l.moveBefore(second, l.firstElementChild);   // 非対応環境では従来の方法へ
+        else l.insertBefore(second, l.firstElementChild);
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 97 ===================== -->
+<section class="demo" id="n97">
+  <h2><span class="no">97</span>DOM を変えずに強調する <small>CSS Custom Highlight API</small><span class="sup" data-sup="api:highlights"></span></h2>
+  <p class="what">74 の検索ハイライトは一致部分を <code>&lt;mark&gt;</code> で囲むため、<b>DOM を作り直す＝選択・フォーカス・イベントの結び付きが切れる</b>。Custom Highlight API は文字範囲（Range）に名前を付けて色を塗るだけなので、DOM は一切変わらない。大量の一致でも軽い。</p>
+  <p class="how"><b>操作：</b>検索語を入れる。文章の DOM は変わらないまま色が付く（開発者ツールで確認できる）。</p>
+  <div class="stage">
+    <div class="row"><input id="s97-q" type="search" placeholder="例: 梱包 / 分納 / 検査" style="width:220px"><span class="readout" id="s97-out">-</span></div>
+    <div id="s97-text" class="s97-text">受注 #1001 の備考：梱包は強化仕様で依頼。分納可、初回は 60 個。検査成績書を同梱すること。次回以降の梱包は標準で構わない。検査は全数。</div>
+  </div>
+  <style data-code>
+    .s97-text { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; font-size: 14px; line-height: 1.9; }
+    ::highlight(s97-hit) { background: #fde68a; color: #7c2d12; }      /* 名前を付けた範囲の見た目 */
+  </style>
+  <script data-code>
+    (() => {
+      const node = $('#s97-text').firstChild, out = $('#s97-out');
+      $('#s97-q').addEventListener('input', e => {
+        if (!window.CSS || !CSS.highlights) { out.textContent = '非対応：74 の <mark> 方式にフォールバック'; return; }
+        CSS.highlights.delete('s97-hit');
+        const q = e.target.value.trim(); if (!q) { out.textContent = '-'; return; }
+        const text = node.textContent, ranges = [];
+        for (let i = text.indexOf(q); i >= 0; i = text.indexOf(q, i + q.length)) {
+          const r = new Range(); r.setStart(node, i); r.setEnd(node, i + q.length); ranges.push(r);
+        }
+        if (ranges.length) CSS.highlights.set('s97-hit', new Highlight(...ranges));
+        out.textContent = `${ranges.length} 件（DOM の子要素数: ${$('#s97-text').children.length}）`;
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 98 ===================== -->
+<section class="demo" id="n98">
+  <h2><span class="no">98</span>長い処理で UI を止めない <small>scheduler.yield() / long-animation-frame</small><span class="sup" data-sup="api:scheduler.yield"></span></h2>
+  <p class="what">54 は「描画をまとめる」話だったが、逆に<b>重い計算そのものが長すぎると、その間クリックもスクロールも効かなくなる</b>（<a href="08-foundations.html#f10">F10</a> の longtask）。<code>await scheduler.yield()</code> を挟むと、その場でブラウザに順番を譲り、<b>続きは優先的に再開される</b>（<code>setTimeout(0)</code> より順番待ちが短い）。CSV 変換や一括計算はこれで分割する。</p>
+  <p class="how"><b>操作：</b>3方式を試す。左の丸が回り続けるかを見る。<b>総時間はどれもほぼ同じ</b>で、違うのは「途中で画面が動くか」だけ。</p>
+  <div class="stage">
+    <div class="row">
+      <div class="s98-spin"></div>
+      <button id="s98-sync">① 一気に処理（固まる）</button>
+      <button id="s98-timeout">② setTimeout で分割</button>
+      <button id="s98-yield">③ scheduler.yield で分割</button>
+      <span class="readout" id="s98-out">-</span>
+    </div>
+    <div class="log" id="s98-log" style="height:90px"></div>
+    <p class="note">① と ②③ の差は決定的（画面が 1.6 秒止まるか、止まらないか）。② と ③ の差は、ページが暇なときは小さい。混んでいるとき（他のタスクや入力があるとき）に、③ は待ち行列の後ろに回されず優先的に再開される点で有利になる。</p>
+  </div>
+  <style data-code>
+    .s98-spin { width: 22px; height: 22px; border: 3px solid #e5e7eb; border-top-color: var(--accent); border-radius: 50%; animation: s98 .8s linear infinite; }
+    @keyframes s98 { to { transform: rotate(360deg); } }
+  </style>
+  <script data-code>
+    (() => {
+      const log = $('#s98-log'), out = $('#s98-out');
+      const CHUNK = 40, TOTAL = 400;                               // 400 回 × 約 4ms の作業
+      const work = () => { const t = performance.now(); while (performance.now() - t < 4); };
+      // 「処理中に何フレーム描けたか」と「最も長く描画が止まった時間」を測る
+      let frames = 0, worst = 0, last = 0, running = false;
+      const loop = now => { frames++; worst = Math.max(worst, now - last); last = now; if (running) requestAnimationFrame(loop); };
+      const start = () => { frames = 0; worst = 0; last = performance.now(); running = true; requestAnimationFrame(loop); };
+      const finish = async (name, t0) => {
+        const took = performance.now() - t0;
+        await new Promise(r => setTimeout(r, 300));                // 直後のフレームまで拾ってから止める
+        running = false;
+        logTo(log, `${name}: 所要 ${took.toFixed(0)}ms ／ 処理中に描けたフレーム ${frames} ／ 最長の停止 ${worst.toFixed(0)}ms`);
+        out.textContent = `最長の停止 ${worst.toFixed(0)}ms`;
+      };
+      $('#s98-sync').onclick = async () => { start(); const t0 = performance.now(); for (let i = 0; i < TOTAL; i++) work(); await finish('① 一気に', t0); };
+      $('#s98-timeout').onclick = async () => { start(); const t0 = performance.now();
+        for (let i = 0; i < TOTAL; i++) { work(); if (i % CHUNK === CHUNK - 1) await new Promise(r => setTimeout(r, 0)); }
+        await finish('② setTimeout で分割', t0); };
+      $('#s98-yield').onclick = async () => { start(); const t0 = performance.now();
+        const yieldTo = window.scheduler?.yield ? () => scheduler.yield() : () => new Promise(r => setTimeout(r, 0));
+        for (let i = 0; i < TOTAL; i++) { work(); if (i % CHUNK === CHUNK - 1) await yieldTo(); }
+        await finish('③ scheduler.yield で分割', t0); };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 99 ===================== -->
+<section class="demo" id="n99">
+  <h2><span class="no">99</span>業務コードが短くなる標準API <small>Object.groupBy / toSorted / Promise.withResolvers / AbortSignal.any / Intl</small><span class="sup" data-sup="api:groupBy"></span></h2>
+  <p class="what">集計・並べ替え・非同期・書式で、自前のユーティリティを書かずに済むようになったもの。<b>元の配列を壊さない</b>（<code>toSorted</code>）、<b>グループ化が1行</b>（<code>Object.groupBy</code>）、<b>外から解決できる Promise</b>（<code>withResolvers</code>：ダイアログの戻り値待ちに最適）、<b>複数の中断条件を束ねる</b>（<code>AbortSignal.any</code>：タイムアウト＋ユーザー中断）。</p>
+  <p class="how"><b>操作：</b>実行して結果を見る。コードを開いて書き方を確認する。</p>
+  <div class="stage">
+    <div class="row"><button id="s99-run" class="primary">実行</button></div>
+    <div class="log" id="s99-log" style="height:170px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = $('#s99-log');
+      const recs = [
+        { id: 1, site: '本社', qty: 120, at: '2026-09-01' }, { id: 2, site: '第2工場', qty: 80, at: '2026-09-03' },
+        { id: 3, site: '本社', qty: 240, at: '2026-09-02' }, { id: 4, site: '倉庫', qty: 60, at: '2026-09-04' },
+      ];
+      $('#s99-run').onclick = async () => {
+        log.textContent = '';
+        // 1. 拠点ごとにまとめる（従来は reduce で 4〜5 行）
+        const byRecs = Object.groupBy(recs, r => r.site);
+        logTo(log, 'groupBy: ' + Object.entries(byRecs).map(([k, v]) => `${k}=${v.length}件`).join(' '));
+        // 2. 元を壊さずに並べ替え / 1件だけ差し替え
+        logTo(log, 'toSorted: ' + recs.toSorted((a, b) => b.qty - a.qty).map(r => r.qty).join(',') + '（元は ' + recs.map(r => r.qty).join(',') + '）');
+        logTo(log, 'with: ' + recs.with(0, { ...recs[0], qty: 999 })[0].qty + '（元は ' + recs[0].qty + '）');
+        // 3. 外から解決できる Promise（ダイアログの戻り値待ちがそのまま書ける）
+        const { promise, resolve } = Promise.withResolvers();
+        setTimeout(() => resolve('削除'), 300);
+        logTo(log, 'withResolvers: ユーザーの選択 = ' + await promise);
+        // 4. タイムアウトとユーザー中断を束ねる
+        const user = new AbortController();
+        const signal = AbortSignal.any([user.signal, AbortSignal.timeout(200)]);
+        await new Promise(r => signal.addEventListener('abort', r, { once: true }));
+        logTo(log, 'AbortSignal.any: 中断理由 = ' + signal.reason.name);
+        // 5. 書式（通貨・相対時刻・日本語の語区切り）
+        logTo(log, 'NumberFormat: ' + new Intl.NumberFormat('ja-JP', { style: 'currency', currency: 'JPY' }).format(1234567));
+        logTo(log, 'RelativeTimeFormat: ' + new Intl.RelativeTimeFormat('ja', { numeric: 'auto' }).format(-2, 'day'));
+        const seg = [...new Intl.Segmenter('ja', { granularity: 'word' }).segment('六角ボルトを検査する')].filter(s => s.isWordLike).map(s => s.segment);
+        logTo(log, 'Segmenter（語の区切り）: ' + seg.join(' / '));
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 100 ===================== -->
+<section class="demo" id="n100">
+  <h2><span class="no">100</span>カルーセルの操作部品 <small>::scroll-button() / ::scroll-marker</small><span class="sup" data-sup="sel:div::scroll-marker"></span></h2>
+  <p class="what">25 のスクロールスナップに「前後ボタン」と「現在位置のドット」を付けるには JS が必要だった。<code>::scroll-button()</code> と <code>::scroll-marker</code> は<b>スクロール領域そのものから疑似要素として生やせる</b>。押せない端では自動で <code>:disabled</code> になり、現在位置のマーカーには <code>:target-current</code> が付く。キーボード操作も付いてくる。</p>
+  <p class="how"><b>操作：</b>◀▶ とドットで移動する。JS なし。</p>
+  <div class="stage">
+    <div class="s100" id="s100"></div>
+  </div>
+  <style data-code>
+    .s100 { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px; scroll-behavior: smooth;
+      anchor-name: --s100; scroll-marker-group: after; }
+    .s100 > div { flex: 0 0 200px; height: 110px; scroll-snap-align: center; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; display: grid; place-items: center; font-size: 15px; }
+    /* 前後ボタン：スクロール領域から生やす。端では自動で無効になる */
+    .s100::scroll-button(left), .s100::scroll-button(right) {
+      position: absolute; position-anchor: --s100; top: anchor(center); translate: 0 -50%;
+      border: 1px solid #cbd5e1; background: #fff; border-radius: 50%; width: 32px; height: 32px; font-size: 14px; cursor: pointer; }
+    .s100::scroll-button(left) { content: '◀'; position-area: left; }
+    .s100::scroll-button(right) { content: '▶'; position-area: right; }
+    .s100::scroll-button(*):disabled { opacity: .3; }
+    /* 現在位置のドット */
+    .s100::scroll-marker-group { display: flex; gap: 6px; justify-content: center; padding: 8px 0 0; }
+    .s100 > div::scroll-marker { content: ''; width: 9px; height: 9px; border-radius: 50%; background: #cbd5e1; cursor: pointer; }
+    .s100 > div::scroll-marker:target-current { background: var(--accent); }
+  </style>
+  <script data-code>
+    (() => { $('#s100').innerHTML = Array.from({ length: 6 }, (_, i) => `<div>工程 ${i + 1}</div>`).join(''); })();
+  </script>
+</section>
+
+<!-- ===================== 101 ===================== -->
+<section class="demo" id="n101">
+  <h2><span class="no">101</span>並び順を CSS から使う <small>sibling-index() / sibling-count()</small><span class="sup" data-sup="prop:width:calc(sibling-index() * 10px)"></span></h2>
+  <p class="what">64 のスタガーは「何番目か」を <code>style="--i:3"</code> と HTML に書くか JS で付けていた。<code>sibling-index()</code> は<b>CSS が自分で順番を知る</b>ので、要素を増減しても何も直さなくてよい。遅延だけでなく、色や大きさの段階付けにも使える。</p>
+  <p class="how"><b>操作：</b>「行を足す」→「再生」。足した行にも自動で正しい遅延が付く。</p>
+  <div class="stage">
+    <div class="row"><button id="s101-run">再生</button><button id="s101-add">行を足す</button><span class="readout" id="s101-out"></span></div>
+    <div id="s101-list" class="s101"></div>
+  </div>
+  <style data-code>
+    .s101 > div { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; margin-bottom: 4px; font-size: 13px;
+      opacity: 0; transform: translateX(-12px);
+      border-left: 4px solid color-mix(in oklch, var(--accent), #fff calc(sibling-index() * 8%));  /* 順番で色も段階的に */
+    }
+    .s101.go > div { animation: s101-in .35s ease-out forwards; animation-delay: calc(sibling-index() * 60ms); }  /* 何番目かを CSS が知っている */
+    @keyframes s101-in { to { opacity: 1; transform: none; } }
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s101-list'); let n = 0;
+      const add = () => list.insertAdjacentHTML('beforeend', `<div>工程 ${++n}</div>`);
+      for (let i = 0; i < 4; i++) add();
+      $('#s101-add').onclick = () => { add(); $('#s101-out').textContent = `${n} 行（HTML に番号は書いていない）`; };
+      $('#s101-run').onclick = () => { list.classList.remove('go'); void list.offsetWidth; list.classList.add('go'); };
+    })();
+  </script>
+</section>
+
+<script>
+// 各見出しの対応バッジ：この端末で実際に使えるかをその場で判定する
+(() => {
+  const test = spec => {
+    if (spec.startsWith('prop:')) { const [, p, v] = spec.split(':', 3); return CSS.supports(p, spec.slice(spec.indexOf(v))); }
+    if (spec.startsWith('sel:')) { try { document.querySelector(spec.slice(4)); return true; } catch { return false; } }
+    if (spec.startsWith('api:')) {
+      const k = spec.slice(4);
+      return ({ popover: 'popover' in HTMLElement.prototype, moveBefore: 'moveBefore' in Element.prototype,
+        highlights: !!(window.CSS && CSS.highlights), 'scheduler.yield': !!(window.scheduler && scheduler.yield),
+        groupBy: !!Object.groupBy, 'details-name': 'name' in document.createElement('details') })[k];
+    }
+    return CSS.supports(spec);
+  };
+  document.querySelectorAll('[data-sup]').forEach(el => {
+    const ok = (() => { try { return !!test(el.dataset.sup); } catch { return false; } })();
+    el.className = 'sup ' + (ok ? 'yes' : 'no');
+    el.textContent = ok ? 'この端末: 対応' : 'この端末: 非対応（従来の方法へ）';
+  });
+})();
+</script>
+</main>
+</div>
+</body>
+</html>

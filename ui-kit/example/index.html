@@ -105,7 +105,9 @@
     vl.setCount(view.length); $('#count').textContent = `${view.length.toLocaleString()} / ${history.state.records.length.toLocaleString()} 件`;
   };
   const renderList = () => { runSearch(); vl.refresh(); };
-  $('#q').addEventListener('input', K.debounce(() => { ws.set({ filter: $('#q').value, scroll: 0 }); list.scrollTop = 0; renderList(); }, 250));
+  const applyQuery = K.debounce(() => { ws.set({ filter: $('#q').value, scroll: 0 }); list.scrollTop = 0; renderList(); }, 250);
+  $('#q').addEventListener('input', e => { if (e.isComposing) return; applyQuery(); });   // 変換中は検索しない
+  $('#q').addEventListener('compositionend', applyQuery);                                  // 確定で1回だけ
   $('#fuzzy').onchange = () => { ws.set({ fuzzy: $('#fuzzy').checked }); renderList(); };
   list.addEventListener('click', e => { const row = e.target.closest('[data-id]'); if (row) { ws.set({ selected: +row.dataset.id }); vl.refresh(); renderDetail(); } });
   list.addEventListener('scroll', () => ws.set({ scroll: list.scrollTop }));

@@ -141,7 +141,10 @@
         list.innerHTML = hits.slice(0, 100).map(h => `<div><span>${h.html}</span><small>${h.score.toFixed(1)}</small></div>`).join('') || '<div style="color:#6b7280">該当なし</div>';
         out.textContent = `${hits.length} 件 / ${(performance.now() - t0).toFixed(1)}ms（上位100表示）`;
       };
-      q.addEventListener('input', debounce(run, 250));  // ← 打鍵が止まってから実行
+      const runDebounced = debounce(run, 250);
+      // 日本語入力の変換中（isComposing）は走らせない。確定した瞬間に1回だけ実行する（108 章の 107 参照）
+      q.addEventListener('input', e => { if (!e.isComposing) runDebounced(); });
+      q.addEventListener('compositionend', () => runDebounced());
       $$('input[name=s74]').forEach(r => r.addEventListener('change', run));
       run();
     })();
@@ -188,6 +191,7 @@
         $('#s75-prev').disabled = form.step === 0; $('#s75-next').hidden = form.step === 2;
         $('#s75-submit')?.addEventListener('click', () => { localStorage.removeItem(KEY); dirty = false; form = { step: 0, customer: '', qty: '', split: 'no', splitCount: '', note: '' }; out.textContent = '送信完了（下書き削除）'; render(); });
       };
+      // check-ime-ignore : 下書き保存のみ。未確定の文字が一時的に保存されても確定時に上書きされる
       body.addEventListener('input', e => { const k = e.target.dataset.k; if (!k) return; form[k] = e.target.value; dirty = true; save(); if (k === 'split') render(); });
       $('#s75-next').onclick = () => { const err = validate(); if (err) { $('#s75-err').textContent = err; return; } form.step++; save(); render(); };
       $('#s75-prev').onclick = () => { form.step--; save(); render(); };
@@ -392,7 +396,9 @@
         out.textContent = 'state: ' + JSON.stringify(ws);
       };
       $$('[data-tab]').forEach(b => b.onclick = () => { ws.tab = b.dataset.tab; ws.scroll = 0; ws.selected = null; render(); persist(); });
-      filter.addEventListener('input', () => { ws.filter = filter.value; ws.scroll = 0; render(); persist(); });
+      const applyFilter = () => { ws.filter = filter.value; ws.scroll = 0; render(); persist(); };
+      filter.addEventListener('input', e => { if (e.isComposing) return; applyFilter(); });   // 変換中は絞り込まない
+      filter.addEventListener('compositionend', applyFilter);                                  // 確定で1回だけ
       list.addEventListener('click', e => { if (e.target.tagName === 'DIV') { ws.selected = e.target.textContent; render(); persist(); } });
       list.addEventListener('scroll', () => { ws.scroll = list.scrollTop; persist(); });
       $('#s81-clear').onclick = () => { localStorage.removeItem(KEY); ws = { tab: 'orders', filter: '', selected: null, scroll: 0 }; render(); };
@@ -631,7 +637,9 @@
           const l = $('#s82-l'), f = $('#s82-f');
           const fill = () => l.innerHTML = Array.from({ length: 80 }, (_, i) => `受注 #${1001 + i}`).filter(r => r.includes(ui.filter)).map(r => `<div data-id="${r}">${r}</div>`).join('');
           fill(); l.scrollTop = ui.scroll;
-          f.oninput = () => { ui.filter = f.value; fill(); };
+          const apply = () => { ui.filter = f.value; fill(); };
+          f.oninput = e => { if (e.isComposing) return; apply(); };   // 変換中は絞り込まない
+          f.addEventListener('compositionend', apply);
           l.onscroll = () => ui.scroll = l.scrollTop;
           l.onclick = e => { if (e.target.dataset.id) { history.replaceState({ route: 'list', ui }, '');                 // 離れる前に一覧の状態を保存
             history.pushState({ route: 'detail', id: e.target.dataset.id }, '', '#n82'); render(history.state); } };

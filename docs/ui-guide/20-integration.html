@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第6弾 Y：サードパーティ連携（114〜127）</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierY { background: #b45309; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; color: #1d1f23; }
+  table.cmp th, table.cmp td { border: 1px solid #e5e7eb; padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; white-space: nowrap; }
+  table.cmp td.k { font-weight: 600; white-space: nowrap; }
+  .yes { color: #166534; } .no { color: #991b1b; } .cau { color: #92400e; }
+  .sim { display: inline-block; font-size: 11px; background: #fef3c7; color: #92400e; padding: 1px 7px; border-radius: 4px; margin-left: 8px; }
+  .real { display: inline-block; font-size: 11px; background: #dcfce7; color: #166534; padding: 1px 7px; border-radius: 4px; margin-left: 8px; }
+  iframe.embed { width: 100%; height: 150px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Y：サードパーティ連携 <span class="tier tierY">114〜127</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="21-3d.html">Z：3D</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="12-electron.html">Electron</a><a href="13-kintone.html">kintone</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">
+  外部サービス・外部システム・外部機器とつなぐときの型。<b><span class="real">実動</span> が付く項目はこのページの中で実際に動く</b>。
+  <b><span class="sim">模擬</span> は本物のサーバや端末が必要なため、動きを再現したうえで実コードを提示する</b>（12・13 と同じ方式）。
+</div>
+
+<!-- ===================== 114 ===================== -->
+<section class="demo" id="n114">
+  <h2><span class="no">114</span>連携方式の選び方 <small>4つの型</small></h2>
+  <p class="what">最初の分岐がその後の難易度をほぼ決める。<b>①埋め込み（iframe）</b>＝相手の画面をそのまま出す。作るものが最も少ないが、認証とストレージ分断（117）で詰まる。<b>②直接呼ぶ（ブラウザから API）</b>＝速いが CORS（118）と鍵の秘匿（121）が問題。<b>③サーバ経由</b>＝一番自由で安全だが、置き場所が要る。<b>④ネイティブ橋渡し（Electron）</b>＝CORS も鍵も解決するが、配布物が要る。</p>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <table class="cmp">
+    <tr><th>方式</th><th>作る量</th><th>認証</th><th>CORS</th><th>鍵の秘匿</th><th>向いている場面</th></tr>
+    <tr><td class="k">① iframe 埋め込み</td><td class="yes">最小</td><td class="cau">相手側に依存（117）</td><td class="yes">不要</td><td class="yes">不要</td><td>相手の画面をそのまま見せたい。kintone の一覧など</td></tr>
+    <tr><td class="k">② ブラウザから直接</td><td class="yes">少ない</td><td class="cau">PKCE が要る（119）</td><td class="no">相手の設定次第</td><td class="no"><b>置けない</b></td><td>公開 API・相手が CORS を許可している場合</td></tr>
+    <tr><td class="k">③ サーバ経由</td><td class="no">多い</td><td class="yes">自由</td><td class="yes">問題なし</td><td class="yes">安全</td><td>鍵が要る／集計や整形が必要／監査ログを残す</td></tr>
+    <tr><td class="k">④ Electron の main 経由</td><td class="cau">中</td><td class="yes">自由</td><td class="yes">問題なし</td><td class="yes"><code>safeStorage</code></td><td>現場端末に配るアプリ。機器連携（126）もここ</td></tr>
+  </table>
+  <p class="note">迷ったら③か④。②は「鍵が不要な相手」に限る。①は速いが、相手のログイン状態がブラウザによって切れる（117）ことを最初に確かめる。</p>
+  </div>
+</section>
+
+<!-- ===================== 115 ===================== -->
+<section class="demo" id="n115">
+  <h2><span class="no">115</span>iframe と postMessage <small>相互通信</small><span class="real">実動</span></h2>
+  <p class="what">埋め込んだ画面とやりとりする唯一の手段。要点は3つ。①送信時に <code>targetOrigin</code> を<b>必ず具体的に書く</b>（<code>'*'</code> は誰にでも届く）②受信時に <code>event.origin</code> を<b>必ず検証する</b>（誰でも送れる）③相手の準備完了を待つ<b>握手</b>をする（読み込み前に送ると消える）。高さの自動調整も postMessage で送るのが定番。</p>
+  <p class="how"><b>操作：</b>下の枠は別文書。ボタンで双方向に送る。ログに origin 検証の結果が出る。</p>
+  <div class="stage">
+    <div class="row"><button id="b115">親 → 子（受注番号を送る）</button><span class="readout" id="o115">-</span></div>
+    <iframe class="embed" id="f115"></iframe>
+    <div class="log" id="l115" style="height:90px;margin-top:8px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = m => logTo($('#l115'), m);
+      // 子側（実際は別オリジンのサービス）。ここでは srcdoc で同じ内容を再現する
+      $('#f115').srcdoc = `<!DOCTYPE html><meta charset="utf-8">
+        <style>body{font:13px system-ui;margin:0;padding:12px;background:#f8fafc}button{font:inherit}</style>
+        <b>埋め込まれた側</b><p id="msg">親からの受信待ち…</p>
+        <button id="send">子 → 親（高さを通知）</button>
+        <script>
+          parent.postMessage({ type: 'ready' }, '*');            // ③ 準備できたと知らせる
+          addEventListener('message', e => {
+            // ② 実際は e.origin を許可リストと突き合わせる
+            if (e.data && e.data.type === 'order') document.getElementById('msg').textContent = '受信: ' + e.data.id;
+          });
+          document.getElementById('send').onclick = () =>
+            parent.postMessage({ type: 'height', value: document.body.scrollHeight }, '*');
+        <\/script>`;
+      let ready = false;
+      addEventListener('message', e => {
+        if (e.source !== $('#f115').contentWindow) return;        // ② 送信元を確かめる（最低限）
+        const d = e.data || {};
+        if (d.type === 'ready') { ready = true; log('子: 準備完了（握手）'); }
+        if (d.type === 'height') { log(`子 → 親: 高さ ${d.value}px`); $('#f115').style.height = (d.value + 24) + 'px'; $('#o115').textContent = `高さを ${d.value}px に合わせた`; }
+      });
+      $('#b115').onclick = () => {
+        if (!ready) return log('まだ準備できていない（握手前に送ると消える）');
+        // ① 本番では targetOrigin に相手のオリジンを具体的に書く
+        $('#f115').contentWindow.postMessage({ type: 'order', id: '#1001' }, '*');
+        log('親 → 子: 受注 #1001');
+      };
+    })();
+  </script>
+  <div class="lib" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1d1f23;margin-top:8px">
+    <b style="display:block;font-size:11px;color:var(--muted)">本番の書き方</b>
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">const ALLOWED = 'https://sub.cybozu.com';
+frame.contentWindow.postMessage(msg, ALLOWED);      // ① 宛先を限定
+addEventListener('message', e => {
+  if (e.origin !== ALLOWED) return;                  // ② 送信元を検証（必須）
+  handle(e.data);
+});</pre>
+  </div>
+</section>
+
+<!-- ===================== 116 ===================== -->
+<section class="demo" id="n116">
+  <h2><span class="no">116</span>埋め込まれる側の作法 <small>sandbox / frame-ancestors</small><span class="real">実動</span></h2>
+  <p class="what">自分の画面が<b>他人のページに埋め込まれる</b>場合の防御と、<b>他人の画面を埋め込む</b>場合の制限。埋め込む側は <code>sandbox</code> 属性で権限を絞る（スクリプト・フォーム送信・別窓・トップレベル遷移などを個別に許可）。埋め込まれる側は <code>Content-Security-Policy: frame-ancestors</code> で<b>誰に埋め込ませるか</b>を決める（クリックジャッキング対策）。</p>
+  <p class="how"><b>操作：</b>sandbox の指定を変えて、中のスクリプトが動くかどうかを見る。</p>
+  <div class="stage">
+    <div class="row">
+      <select id="s116">
+        <option value="">sandbox なし（何でもできる）</option>
+        <option value="allow-scripts" selected>sandbox="allow-scripts"</option>
+        <option value="__none__">sandbox=""（スクリプト禁止）</option>
+      </select>
+      <span class="readout" id="o116"></span>
+    </div>
+    <iframe class="embed" id="f116" style="height:110px"></iframe>
+  </div>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>指定</th><th>意味</th><th>業務での使い所</th></tr>
+    <tr><td><code>sandbox=""</code></td><td>すべて禁止（スクリプトも別オリジン扱いも）</td><td>外部から受け取った HTML のプレビュー</td></tr>
+    <tr><td><code>allow-scripts</code></td><td>スクリプトのみ許可</td><td>相手の画面を表示するが、こちらへは干渉させない</td></tr>
+    <tr><td><code>allow-same-origin</code></td><td>同一オリジン扱いを許可</td><td><b>allow-scripts と併用すると sandbox が実質無効</b>になる。安易に付けない</td></tr>
+    <tr><td><code>frame-ancestors 'self' https://…</code></td><td>埋め込みを許す相手を指定（応答ヘッダ）</td><td>自社アプリを外部に埋め込ませない</td></tr>
+  </table>
+  <script data-code>
+    (() => {
+      const body = `<!DOCTYPE html><meta charset="utf-8"><style>body{font:13px system-ui;margin:0;padding:12px;background:#f8fafc}</style>
+        <b>埋め込まれた側</b><p id="p">スクリプトは動いていない</p>
+        <script>document.getElementById('p').textContent = 'スクリプトが動いた（時刻 ' + new Date().toLocaleTimeString() + '）';<\/script>`;
+      const apply = () => {
+        const v = $('#s116').value, f = $('#f116');
+        const next = f.cloneNode(false);                          // sandbox は再読み込みしないと効かない
+        if (v === '__none__') next.setAttribute('sandbox', '');
+        else if (v) next.setAttribute('sandbox', v);
+        else next.removeAttribute('sandbox');
+        f.replaceWith(next); next.id = 'f116'; next.srcdoc = body;
+        $('#o116').textContent = v === '__none__' ? 'スクリプトは実行されない' : v ? 'スクリプトのみ許可' : '制限なし';
+      };
+      $('#s116').onchange = apply; apply();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 117 ===================== -->
+<section class="demo" id="n117">
+  <h2><span class="no">117</span>埋め込みでログインが切れる <small>3rd party Cookie / CHIPS / Storage Access API</small><span class="sim">模擬</span></h2>
+  <p class="what"><b>「PC では見えるのに、iPhone だと iframe の中がログイン画面になる」</b>の原因。ブラウザは<b>埋め込まれた別サイトの Cookie を、トップレベルのサイトごとに分離する</b>。2026年時点の状況：Chrome は 3rd party Cookie の廃止を撤回して継続、<b>Safari・Firefox はブロックを継続</b>。つまり<b>環境によって挙動が違う状態が続く</b>。対処は3つ：<b>CHIPS</b>（Cookie に <code>Partitioned</code> を付け、トップレベルごとに別の入れ物として持つ）、<b>Storage Access API</b>（ユーザー操作を起点に許可を求める）、そして<b>そもそも iframe をやめる</b>（114 の③④）。</p>
+  <p class="how"><b>操作：</b>この端末の判定と、3方式の比較を表示する。</p>
+  <div class="stage"><table class="cmp" id="t117"></table></div>
+  <div class="lib" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1d1f23;margin-top:8px">
+    <b style="display:block;font-size:11px;color:var(--muted)">CHIPS：埋め込み用の Cookie はこう出す（サーバ側）</b>
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">Set-Cookie: session=…; Secure; SameSite=None; Partitioned; Path=/</pre>
+    <b style="display:block;font-size:11px;color:var(--muted);margin-top:8px">Storage Access API：埋め込まれた側から、ユーザー操作を起点に頼む</b>
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">button.onclick = async () =&gt; {
+  if (await document.hasStorageAccess()) return use();
+  await document.requestStorageAccess();     // クリックの中でしか呼べない
+  use();
+};</pre>
+  </div>
+  <script data-code>
+    (() => {
+      const has = (o, k) => o && k in o;
+      const rows = [
+        ['この文書は iframe の中か', window.top !== window.self ? 'はい' : 'いいえ（トップレベル）', '中にいると 3rd party 扱いになる'],
+        ['Cookie が使えるか', navigator.cookieEnabled ? '有効' : '無効', 'ブロックされていると読み書きできない'],
+        ['CHIPS（Partitioned）', (() => { try { document.cookie = '_p=1; Secure; SameSite=None; Partitioned; Path=/'; return document.cookie.includes('_p=1') ? '書けた' : '書けない（file:// では Secure 属性が通らない場合がある）'; } catch { return '判定不可'; } })(), 'トップレベルごとに分離した入れ物'],
+        ['Storage Access API', has(document, 'requestStorageAccess') ? '対応' : '非対応', 'ユーザー操作を起点に許可を求める'],
+        ['hasStorageAccess()', has(document, 'hasStorageAccess') ? '対応' : '非対応', '許可済みかを確認'],
+        ['FedCM', has(navigator, 'credentials') && 'IdentityCredential' in window ? '対応' : '非対応', 'ログイン連携の新しい枠組み'],
+      ];
+      $('#t117').innerHTML = '<tr><th>項目</th><th>この端末</th><th>意味</th></tr>' +
+        rows.map(r => `<tr><td class="k">${r[0]}</td><td><b>${r[1]}</b></td><td>${r[2]}</td></tr>`).join('') +
+        `<tr><td class="k">Chrome</td><td class="cau">3rd party Cookie は継続</td><td>2025年に廃止方針を撤回</td></tr>
+         <tr><td class="k">Safari / Firefox</td><td class="no">ブロック継続</td><td><b>ここで切れる</b>。CHIPS か SAA、または iframe をやめる</td></tr>`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== 118 ===================== -->
+<section class="demo" id="n118">
+  <h2><span class="no">118</span>CORS とプリフライト <small>なぜ「サーバ経由」が要るのか</small><span class="sim">模擬</span></h2>
+  <p class="what">ブラウザは<b>別オリジンへの読み取りを既定で禁じる</b>。許可を出すのは<b>相手のサーバ</b>であって、こちら側では変えられない。<code>Content-Type: application/json</code> や独自ヘッダを付けると<b>事前確認（プリフライト）</b>の <code>OPTIONS</code> が先に飛び、相手がそれに答えないと本体は送られない。認証情報を送るなら <code>credentials</code> と <code>Access-Control-Allow-Credentials</code> の両方が必要で、<b>ワイルドカードは使えない</b>。相手が対応していなければ 114 の③（サーバ経由）しか手がない。</p>
+  <p class="how"><b>操作：</b>要求の条件を変えて、通るか・プリフライトが要るかを判定する（相手のサーバ設定は下で切り替える）。</p>
+  <div class="stage">
+    <div class="row">
+      <label><input type="checkbox" id="j118" checked> JSON で送る</label>
+      <label><input type="checkbox" id="h118"> 独自ヘッダを付ける</label>
+      <label><input type="checkbox" id="c118"> Cookie を送る</label>
+      <span style="margin-left:10px">相手の設定:</span>
+      <select id="s118">
+        <option value="none">許可なし</option>
+        <option value="star" selected>Allow-Origin: *</option>
+        <option value="origin">Allow-Origin: 自分 + Credentials</option>
+      </select>
+    </div>
+    <div class="log" id="l118" style="height:130px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = m => logTo($('#l118'), m);
+      const judge = () => {
+        $('#l118').textContent = '';
+        const json = $('#j118').checked, custom = $('#h118').checked, cred = $('#c118').checked, server = $('#s118').value;
+        const preflight = json || custom;                       // 単純要求の条件を外れるとプリフライトになる
+        log(`要求: ${json ? 'Content-Type: application/json ' : ''}${custom ? 'X-App-Id ' : ''}${cred ? '+ Cookie' : ''}`);
+        log(preflight ? '→ 先に OPTIONS（プリフライト）が飛ぶ' : '→ 単純要求（プリフライトなし）');
+        if (server === 'none') return log('✖ 相手が Access-Control-Allow-Origin を返さない → ブラウザが結果を渡さない（サーバ経由にするしかない）');
+        if (cred && server === 'star') return log('✖ Cookie を送るときは Allow-Origin: * が使えない → 具体的なオリジンと Allow-Credentials: true が必要');
+        if (preflight && server === 'star' && custom) log('△ プリフライトの応答に Allow-Headers: X-App-Id が必要');
+        if (preflight) log('→ OPTIONS に Allow-Methods / Allow-Headers が返れば本体を送る');
+        log('✔ 通る（応答が JS から読める）');
+      };
+      ['#j118', '#h118', '#c118', '#s118'].forEach(s => $(s).addEventListener('change', judge));
+      judge();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 119 ===================== -->
+<section class="demo" id="n119">
+  <h2><span class="no">119</span>OAuth 2.1 と PKCE <small>認可コード + PKCE（S256）</small><span class="real">実動</span></h2>
+  <p class="what">2026年の標準形。<b>OAuth 2.1 では PKCE が必須</b>で、implicit フロー（トークンを URL で受け取る）は廃止。仕組み：①ランダムな <code>code_verifier</code> を作り ②その SHA-256（<code>code_challenge</code>）だけを認可画面へ渡す ③戻ってきた認可コードと <b>verifier</b> を一緒に送る。途中でコードを盗まれても、verifier を知らなければトークンに交換できない。<b>アクセストークンはメモリに置く</b>（<code>localStorage</code> は XSS で読まれる）。リフレッシュトークンは自前サーバからの HttpOnly Cookie にする。</p>
+  <p class="how"><b>操作：</b>実際に WebCrypto で verifier / challenge を生成し、模擬の認可サーバとやりとりする。攻撃者がコードだけ盗んだ場合も試せる。</p>
+  <div class="stage">
+    <div class="row"><button id="b119" class="primary">認可フローを実行</button><button id="b119x">盗まれたコードで交換を試す</button></div>
+    <div class="log" id="l119" style="height:160px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = m => logTo($('#l119'), m);
+      const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      const server = { issued: null };                            // 模擬の認可サーバ
+      let stolenCode = null;
+      $('#b119').onclick = async () => {
+        $('#l119').textContent = '';
+        const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)));
+        const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
+        log('① code_verifier（手元にだけ置く）: ' + verifier.slice(0, 24) + '…');
+        log('② code_challenge = SHA-256(verifier): ' + challenge.slice(0, 24) + '…');
+        log('③ 認可画面へ: /authorize?code_challenge=' + challenge.slice(0, 12) + '…&code_challenge_method=S256&state=…');
+        const code = b64url(crypto.getRandomValues(new Uint8Array(12)));
+        server.issued = { code, challenge };
+        stolenCode = code;
+        log('④ 戻り: /callback?code=' + code.slice(0, 12) + '…（この時点ではまだトークンではない）');
+        const ok = await exchange(code, verifier);
+        log(ok ? '⑤ トークン取得成功 → メモリ上の変数に置く（localStorage には置かない）' : '⑤ 失敗');
+      };
+      const exchange = async (code, verifier) => {                 // サーバ側の検証
+        if (!server.issued || server.issued.code !== code) { log('  サーバ: 未知のコード'); return false; }
+        const c = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier || '')));
+        if (c !== server.issued.challenge) { log('  サーバ: verifier が challenge と一致しない → 拒否'); return false; }
+        log('  サーバ: verifier を検証 → 一致'); return true;
+      };
+      $('#b119x').onclick = async () => {
+        if (!stolenCode) return log('先に認可フローを実行する');
+        log('攻撃者: 盗んだ code で交換を試みる（verifier は知らない）');
+        const ok = await exchange(stolenCode, b64url(crypto.getRandomValues(new Uint8Array(32))));
+        log(ok ? '✖ 交換できてしまった' : '✔ 交換できない（PKCE が効いている）');
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 120 ===================== -->
+<section class="demo" id="n120">
+  <h2><span class="no">120</span>Electron での認証 <small>システムブラウザ + safeStorage</small><span class="sim">模擬</span></h2>
+  <p class="what">デスクトップアプリでは<b>アプリ内に認証画面を埋め込まない</b>のが原則（利用者が本物のドメインを確認できないため、相手のサービスに拒否されることも多い）。<b>システムブラウザを開き</b>、ループバック（<code>http://127.0.0.1:port</code>）かディープリンク（<code>myapp://</code>）で戻す。トークンは <code>safeStorage</code> で OS の鍵に紐づけて暗号化し、<b>renderer には渡さない</b>（12 の構成）。</p>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <div class="lib" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1d1f23">
+    <b style="display:block;font-size:11px;color:var(--muted)">main.js（要点だけ）</b>
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">const { shell, safeStorage } = require('electron');
+const server = http.createServer(...).listen(0);                 // ① 空きポートで受け口を用意
+const redirect = `http://127.0.0.1:${server.address().port}/cb`;
+shell.openExternal(authUrl(redirect, codeChallenge));            // ② システムブラウザで開く
+// ③ /cb に来た code と verifier をトークンに交換（119）
+const enc = safeStorage.encryptString(refreshToken);             // ④ OS の鍵で暗号化して保存
+// renderer には「ログイン済みか」だけ返し、トークン自体は渡さない</pre>
+  </div>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>やること</th><th>理由</th></tr>
+    <tr><td class="k">システムブラウザで開く</td><td>利用者がドメインと鍵マークを確認できる。相手サービスの規約でも要求されることが多い</td></tr>
+    <tr><td class="k">ループバック or ディープリンク</td><td>アプリに確実に戻すため。ループバックはポート固定にしない</td></tr>
+    <tr><td class="k"><code>safeStorage</code></td><td>平文の JSON に置くと、端末を触れる人が全員読める</td></tr>
+    <tr><td class="k">renderer に渡さない</td><td>renderer は Web と同じ危険（XSS）を持つ。トークンは main に閉じる（121）</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ===================== 121 ===================== -->
+<section class="demo" id="n121">
+  <h2><span class="no">121</span>鍵を画面に置かない <small>クライアントに秘密は無い</small><span class="real">実動</span></h2>
+  <p class="what"><b>ブラウザや renderer に置いた値は、すべて利用者に読める。</b>難読化しても変わらない。「API キーを JS に埋める」「kintone のカスタマイズに管理者トークンを書く」は、<b>その画面を開ける全員にキーを配る</b>のと同じ。鍵が要る呼び出しは 114 の③④（サーバ／main 経由）に寄せる。</p>
+  <p class="how"><b>操作：</b>下のボタンで、このページの JS に「隠した」つもりの値を取り出す。実際には数行で読める。</p>
+  <div class="stage">
+    <div class="row"><button id="b121">画面の中の「秘密」を取り出す</button><span class="readout" id="o121">-</span></div>
+    <table class="cmp" style="margin-top:8px">
+      <tr><th>置き場所</th><th>安全か</th><th>代わりにどうするか</th></tr>
+      <tr><td class="k">JS の変数・定数</td><td class="no">読める</td><td>サーバ／main 経由にする</td></tr>
+      <tr><td class="k">ビルド時の環境変数</td><td class="no">埋め込まれるので読める</td><td>同上（サーバ側の環境変数は安全）</td></tr>
+      <tr><td class="k">localStorage</td><td class="no">読める・XSS でも盗まれる</td><td>アクセストークンはメモリ、更新用は HttpOnly Cookie</td></tr>
+      <tr><td class="k">Electron の renderer</td><td class="no">読める</td><td>main に置き、IPC で「結果」だけ返す</td></tr>
+      <tr><td class="k">Electron の main + safeStorage</td><td class="yes">実用上は安全</td><td>これが基本形（120）</td></tr>
+    </table>
+  </div>
+  <script data-code>
+    (() => {
+      const CONFIG = { apiKey: 'sk-live-EXAMPLE-1234567890', endpoint: '/api' };   // ← これがそのまま読める
+      $('#b121').onclick = () => {
+        // 開発者ツールのコンソールからも、拡張機能からも、同じことができる
+        $('#o121').textContent = `見えている: ${CONFIG.apiKey}（難読化しても実行時には復元される）`;
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 122 ===================== -->
+<section class="demo" id="n122">
+  <h2><span class="no">122</span>レート制限と再試行 <small>429・バックオフ・冪等キー</small><span class="real">実動</span></h2>
+  <p class="what">外部 API は<b>必ず絞られる</b>（kintone も 1 アプリあたりの同時実行数・秒間リクエスト数に上限がある。具体的な数値は相手の仕様書で確認すること＝ここでは断定しない）。上限に当たると <code>429 Too Many Requests</code> が返り、多くは <code>Retry-After</code> ヘッダで「何秒待て」と教えてくる。やることは3つ。①<b>すぐ再試行しない</b>（待ち時間を倍々にする＝指数バックオフ）②<b>ジッター（ゆらぎ）を足す</b>（全端末が同時に再開すると再び詰まる＝雪崩）③<b>冪等キー</b>を付ける（送信は成功したが応答が届かなかったとき、二重登録を防ぐ）。</p>
+  <p class="how"><b>操作：</b>同じ模擬 API（先頭2件しか通らない）に 6 件送る。3つの方式で結果と所要時間を比べる。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="b122a">① 再試行しない</button>
+      <button id="b122b">② すぐ再試行（間隔一定）</button>
+      <button id="b122c">③ 指数バックオフ＋ジッター</button>
+      <span class="readout" id="o122">-</span>
+    </div>
+    <div class="log" id="l122" style="height:150px;margin-top:8px"></div>
+  </div>
+  <style data-code>
+    #n122 .log { font-variant-numeric: tabular-nums; }
+  </style>
+  <script data-code>
+    (() => {
+      const log = m => logTo($('#l122'), m);
+      const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+      // ---- 模擬 API：2秒の窓で 2 件までしか受け付けず、超えたら 429 + Retry-After ----
+      let win = { start: 0, n: 0 };
+      const store = new Map();                       // 冪等キー → 保存済みの応答
+      async function fakeApi(body, idemKey) {
+        await sleep(30);                             // 通信の往復ぶん
+        if (store.has(idemKey)) return { status: 200, replay: true };   // ③ 同じキーなら再登録しない
+        const now = performance.now();
+        if (now - win.start > 2000) win = { start: now, n: 0 };
+        if (win.n >= 2) return { status: 429, retryAfter: Math.ceil((2000 - (now - win.start)) / 1000) };
+        win.n++; store.set(idemKey, true);
+        return { status: 200 };
+      }
+
+      // ---- 再試行つきの呼び出し ----
+      async function call(body, mode) {
+        const idemKey = `order-${body.id}`;          // ① 業務上のキーから作る（毎回ランダムにしない）
+        const max = 5;
+        for (let attempt = 0; attempt <= max; attempt++) {
+          const res = await fakeApi(body, idemKey);
+          if (res.status !== 429) return { ok: true, attempt, replay: res.replay };
+          if (mode === 'none' || attempt === max) return { ok: false, attempt };
+          let wait;
+          if (mode === 'flat') wait = 200;                                   // ② 一定間隔＝みんな同時に再開する
+          else {
+            const base = res.retryAfter != null ? res.retryAfter * 1000      // ③ サーバの指示が最優先
+                                                : Math.min(2 ** attempt * 200, 8000);
+            wait = base * (0.5 + Math.random() * 0.5);                       //    ジッター（半分〜満額でばらす）
+          }
+          log(`  #${body.id} 429 → ${Math.round(wait)}ms 待って再試行（${attempt + 1}回目）`);
+          await sleep(wait);
+        }
+      }
+
+      async function run(mode, label) {
+        win = { start: 0, n: 0 }; store.clear();
+        $('#l122').textContent = ''; log(`${label}：6件を同時に送る`);
+        const t0 = performance.now();
+        const rs = await Promise.all([1,2,3,4,5,6].map(id => call({ id }, mode)));
+        const ok = rs.filter(r => r.ok).length;
+        const ms = Math.round(performance.now() - t0);
+        log(`成功 ${ok}/6 ・ 所要 ${ms}ms`);
+        $('#o122').textContent = `${label}: 成功 ${ok}/6 / ${ms}ms`;
+      }
+      $('#b122a').onclick = () => run('none', '① 再試行しない');
+      $('#b122b').onclick = () => run('flat', '② 間隔一定');
+      $('#b122c').onclick = () => run('backoff', '③ バックオフ＋ジッター');
+    })();
+  </script>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>やること</th><th>理由</th><th>やりがちな失敗</th></tr>
+    <tr><td class="k"><code>Retry-After</code> を読む</td><td>サーバが正解の待ち時間を知っている</td><td>無視して独自の待ち時間で押し続ける</td></tr>
+    <tr><td class="k">指数バックオフ</td><td>混雑が続くほど間隔を空ける</td><td>固定間隔で叩き続けて上限を延長させる</td></tr>
+    <tr><td class="k">ジッター</td><td>全端末の再開時刻をばらす</td><td>秒ちょうどに全員が再送＝雪崩</td></tr>
+    <tr><td class="k">冪等キー</td><td>応答が届かなかった再送で二重登録しない</td><td>再試行のたびに新しい ID を作る</td></tr>
+    <tr><td class="k">上限を決める</td><td>永久に再試行すると詰まりが伝播する</td><td>無限リトライ＋画面が固まる</td></tr>
+    <tr><td class="k">同時実行数を絞る</td><td>そもそも 429 を出さないのが最善</td><td>1000 件を <code>Promise.all</code> で一気に投げる</td></tr>
+  </table>
+  <p class="note">画面側の見せ方：再試行中は「送信中（再試行 2 回目）」と<b>状態を出す</b>。黙って待つと利用者が二重に押す。最終的に失敗したら 79 の再送キュー（オフライン待ち行列）に積み、後で自動再開する。アクセシビリティ上も、この状態は <code>aria-live="polite"</code> で伝える（<a href="10-accessibility.html#a6">A6</a>）。</p>
+  <p class="note">この処理は部品として切り出してある：<b><a href="../../ui-kit/retry.js">ui-kit/retry.js</a></b>。<code>retry(fn, {retries, baseMs, shouldRetry, onRetry})</code> ／ <code>withRetry(fn, opts)</code>（冪等キーを固定して渡す）／ <code>httpError(res)</code>（<code>Retry-After</code> を読んだ Error を作る）／ <code>createLimiter(n)</code>（同時実行数を絞る＝そもそも 429 を出さない）。<code>fetch</code> の例：</p>
+  <div class="lib" style="background:#fff;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1d1f23">
+    <pre style="margin:0;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap">import { withRetry, httpError, createLimiter } from '../../ui-kit/index.js';
+
+const post = withRetry(async (body, { signal, idempotencyKey }) =&gt; {
+  const res = await fetch('/api/orders', { method: 'POST', signal,
+    headers: { 'content-type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify(body) });
+  if (!res.ok) throw httpError(res);              // 429/5xx は再試行、4xx はそのまま失敗
+  return res.json();
+}, { retries: 4, onRetry: i =&gt; setStatus(`再試行 ${i.attempt} 回目（あと ${Math.round(i.delay / 100) / 10} 秒）`) });
+
+const limit = createLimiter(3);                   // 一気に投げない
+await Promise.all(rows.map(r =&gt; limit(() =&gt; post(r, { idempotencyKey: `order-${r.id}` }))));</pre>
+  </div>
+</section>
+
+<!-- ===================== 123 ===================== -->
+<section class="demo" id="n123">
+  <h2><span class="no">123</span>Webhook の受け側 <small>署名検証・リプレイ・冪等</small><span class="real">実動</span></h2>
+  <p class="what">相手のサービスから「起きたこと」を押し込んでもらう仕組み。<b>受け口は誰でも叩ける URL</b> なので、次の3つが必須。①<b>署名検証</b>（本文と共有鍵の HMAC が一致するか。ここは WebCrypto で実際に計算する）②<b>時刻の確認</b>（古い正しい署名の使い回し＝リプレイを弾く）③<b>冪等処理</b>（相手は「届いたか不明」なら再送する。同じイベント ID を二度処理しない）。さらに<b>順序は保証されない</b>前提で、イベント内の版番号や更新時刻で新旧を判断する。</p>
+  <p class="how"><b>操作：</b>正しい配送・改ざん・古い時刻・再送を送り分け、受け口の判定を見る。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="b123a">正しい配送</button>
+      <button id="b123b">本文を改ざん</button>
+      <button id="b123c">6分前の署名（リプレイ）</button>
+      <button id="b123d">同じイベントを再送</button>
+      <span class="readout" id="o123">-</span>
+    </div>
+    <div class="log" id="l123" style="height:130px;margin-top:8px"></div>
+  </div>
+  <script data-code>
+    (() => {
+      const log = m => logTo($('#l123'), m);
+      const SECRET = 'whsec_EXAMPLE_SHARED_SECRET';     // 実際は環境変数。画面には絶対に置かない（121）
+      const enc = new TextEncoder();
+      const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+
+      async function sign(ts, body) {                    // 署名対象は「時刻 + 本文」（時刻だけを差し替えられないように）
+        const key = await crypto.subtle.importKey('raw', enc.encode(SECRET),
+          { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+        return hex(await crypto.subtle.sign('HMAC', key, enc.encode(`${ts}.${body}`)));
+      }
+
+      const seen = new Map();                            // 実際は DB。イベントID → 処理済み
+      let version = 0;
+
+      async function receive(headers, rawBody) {         // ← サーバ側の処理（Node でもほぼ同じ）
+        const ts = Number(headers['x-timestamp']);
+        // ② 時刻ズレが大きいものは弾く（5分が目安。相手の仕様に合わせる）
+        if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > 5 * 60 * 1000)
+          return { code: 400, msg: '✖ 時刻が古い／不正 → リプレイとして拒否' };
+        // ① 署名検証。必ず「受け取った生の本文」で計算する（JSON.parse して再文字列化しない）
+        const expect = await sign(ts, rawBody);
+        const got = headers['x-signature'] || '';
+        // 定数時間で比較する（== は先頭が違った時点で返るため、応答時間から1桁ずつ当てられる）
+        // Node なら crypto.timingSafeEqual。ブラウザには専用APIが無いので XOR で全桁見る
+        let diff = got.length ^ expect.length;
+        for (let i = 0; i < Math.max(got.length, expect.length); i++)
+          diff |= (got.charCodeAt(i) | 0) ^ (expect.charCodeAt(i) | 0);
+        if (diff !== 0) return { code: 401, msg: '✖ 署名が一致しない → 改ざん or 別送信者として拒否' };
+        const ev = JSON.parse(rawBody);
+        // ③ 冪等：同じイベントIDは二度処理しない。返すのは 200（そうしないと相手が再送し続ける）
+        if (seen.has(ev.id)) return { code: 200, msg: `✔ 受理（処理済みなので何もしない）: ${ev.id}` };
+        // 順序保証が無い前提：古い版が後から来たら捨てる
+        if (ev.version <= version) return { code: 200, msg: `✔ 受理（古い版なので無視）v${ev.version} ≦ v${version}` };
+        seen.set(ev.id, true); version = ev.version;
+        return { code: 200, msg: `✔ 受理して反映: ${ev.id} / v${ev.version}` };
+      }
+
+      // ---- 送信側（相手のサービス）を模擬 ----
+      let n = 0, lastId = null, lastBody = null;
+      async function deliver(kind) {
+        let id, body, ts = Date.now();
+        if (kind === 'dup' && lastId) { id = lastId; body = lastBody; }
+        else { id = `evt_${++n}`; body = JSON.stringify({ id, type: 'record.updated', version: n, recordId: 1001 }); }
+        if (kind === 'old') ts = Date.now() - 6 * 60 * 1000;
+        const sig = await sign(ts, body);
+        if (kind === 'tamper') body = body.replace('1001', '9999');     // 署名を作った後に本文だけ書き換える
+        lastId = id; lastBody = body;
+        const res = await receive({ 'x-timestamp': String(ts), 'x-signature': sig }, body);
+        log(`${res.code} ${res.msg}`);
+        $('#o123').textContent = `${res.code} ${res.msg}`;
+      }
+      $('#b123a').onclick = () => deliver('ok');
+      $('#b123b').onclick = () => deliver('tamper');
+      $('#b123c').onclick = () => deliver('old');
+      $('#b123d').onclick = () => deliver('dup');
+    })();
+  </script>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>前提</th><th>受け側の作り</th></tr>
+    <tr><td class="k">誰でも叩ける</td><td>署名検証を通るまで<b>本文を信用しない</b>。URL を秘密にすることは対策にならない</td></tr>
+    <tr><td class="k">再送される</td><td>イベント ID で冪等化。処理済みでも <b>200 を返す</b>（4xx/5xx を返すと再送が続く）</td></tr>
+    <tr><td class="k">順序は保証されない</td><td>版番号・更新時刻で新旧を判断。「後から来た＝新しい」と考えない</td></tr>
+    <tr><td class="k">相手はタイムアウトする</td><td>受け取ったら<b>即 200</b>。重い処理はキューに積んで非同期で回す</td></tr>
+    <tr><td class="k">取りこぼす</td><td>Webhook だけに頼らず、定期的な差分取り込み（照合）を併走させる</td></tr>
+  </table>
+  <p class="note">ブラウザは Webhook を受けられない（外から到達できる URL が要る）。受け口は<b>サーバか、社内に置いた常駐プロセス</b>になる。Electron アプリに直接届けたい場合は、いったんサーバで受けて 124 の SSE/WebSocket で流すか、アプリ側から定期取得する。</p>
+</section>
+
+<!-- ===================== 124 ===================== -->
+<section class="demo" id="n124">
+  <h2><span class="no">124</span>反映方式の選び方 <small>ポーリング／SSE／WebSocket</small><span class="real">実動</span></h2>
+  <p class="what">「他の人の更新をどう画面に出すか」の3択。<b>ポーリング</b>＝一定間隔で問い合わせる。最も簡単で、どんな相手にも使える（kintone のように Webhook しか無い相手でも成立）。<b>SSE</b>（<code>EventSource</code>）＝サーバから一方向に流し続ける。実装が軽く自動再接続つき。<b>WebSocket</b>＝双方向。カーソル共有や共同編集はこれが要る。<b>迷ったらポーリング</b>から始め、遅延と無駄が問題になってから上げる。</p>
+  <p class="how"><b>操作：</b>同じ「サーバの値」を3方式で追う。無駄な通信回数と、変化を検知するまでの遅れを比べる。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="b124go">サーバ側で 3 秒後に値を変える</button>
+      <button id="b124r">リセット</button>
+    </div>
+    <table class="cmp" style="margin-top:8px">
+      <tr><th>方式</th><th>受け取った値</th><th>通信回数</th><th>検知までの遅れ</th></tr>
+      <tr><td class="k">ポーリング（2秒毎）</td><td id="v124p">-</td><td id="c124p">0</td><td id="d124p">-</td></tr>
+      <tr><td class="k">SSE（一方向）</td><td id="v124s">-</td><td id="c124s">1</td><td id="d124s">-</td></tr>
+      <tr><td class="k">WebSocket（双方向）</td><td id="v124w">-</td><td id="c124w">1</td><td id="d124w">-</td></tr>
+    </table>
+  </div>
+  <script data-code>
+    (() => {
+      // ---- サーバの状態を模擬（本物は 1 台のサーバ上の値）----
+      const server = { value: '在庫 120', changedAt: 0, subs: new Set() };
+      function serverUpdate(v) {                       // 変更が起きた瞬間に push 系へ配る
+        server.value = v; server.changedAt = performance.now();
+        server.subs.forEach(fn => setTimeout(() => fn(v), 20));   // 20ms＝ネットワーク往復
+      }
+      const ms = t => t ? `${Math.round(performance.now() - t)}ms` : '-';
+
+      // ---- ① ポーリング：一定間隔で取りに行く（変化が無くても通信する）----
+      let polls = 0, timer = null, lastSeen = null;
+      function startPolling() {
+        timer = setInterval(() => {                    // 実際は fetch('/api/stock')
+          polls++; $('#c124p').textContent = polls;
+          if (server.value !== lastSeen) {
+            lastSeen = server.value;
+            $('#v124p').textContent = server.value;
+            if (server.changedAt) $('#d124p').textContent = ms(server.changedAt);
+          }
+        }, 2000);
+      }
+      // ---- ② SSE：接続 1 本。サーバ → 画面の一方向 ----
+      //   const es = new EventSource('/events');
+      //   es.onmessage = e => apply(JSON.parse(e.data));      // 切断時は自動で再接続してくれる
+      const sse = v => { $('#v124s').textContent = v; $('#d124s').textContent = ms(server.changedAt); };
+      // ---- ③ WebSocket：接続 1 本。双方向（画面 → サーバ も送れる）----
+      //   const ws = new WebSocket('wss://example.invalid/ws');
+      //   ws.onmessage = e => apply(JSON.parse(e.data));      // 再接続は自前で書く必要がある
+      const wsock = v => { $('#v124w').textContent = v; $('#d124w').textContent = ms(server.changedAt); };
+
+      function reset() {
+        clearInterval(timer); server.subs.clear();
+        polls = 0; lastSeen = server.value = '在庫 120'; server.changedAt = 0;
+        for (const k of ['p','s','w']) { $('#v124' + k).textContent = server.value; $('#d124' + k).textContent = '-'; }
+        $('#c124p').textContent = '0'; $('#c124s').textContent = '1'; $('#c124w').textContent = '1';
+        server.subs.add(sse); server.subs.add(wsock); startPolling();
+      }
+      $('#b124r').onclick = reset;
+      $('#b124go').onclick = () => setTimeout(() => serverUpdate('在庫 96'), 3000);
+      reset();
+    })();
+  </script>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th></th><th>ポーリング</th><th>SSE</th><th>WebSocket</th></tr>
+    <tr><td class="k">向き</td><td>画面 → サーバ（都度）</td><td>サーバ → 画面</td><td>双方向</td></tr>
+    <tr><td class="k">実装量</td><td class="yes">最小（<code>setInterval</code> + fetch）</td><td class="yes">小（自動再接続つき）</td><td class="cau">中（再接続・心拍を自作）</td></tr>
+    <tr><td class="k">相手の要件</td><td class="yes">普通の API があればよい</td><td class="cau">専用の配信口が要る</td><td class="cau">専用サーバが要る</td></tr>
+    <tr><td class="k">遅れ</td><td class="cau">最大で間隔ぶん</td><td class="yes">ほぼ即時</td><td class="yes">ほぼ即時</td></tr>
+    <tr><td class="k">無駄な通信</td><td class="no">変化が無くても発生</td><td class="yes">無し</td><td class="yes">無し</td></tr>
+    <tr><td class="k">プロキシ・社内網</td><td class="yes">まず通る</td><td class="yes">HTTP なので通りやすい</td><td class="cau">遮断されることがある</td></tr>
+    <tr><td class="k">向く用途</td><td>在庫・進捗の表示、kintone 連携</td><td>通知・ログ・進捗バー</td><td>共同編集・カーソル共有・機器の制御</td></tr>
+  </table>
+  <p class="note">ポーリングの現実的な作り：①画面が<b>見えているときだけ</b>回す（<code>document.visibilityState</code>／<code>IntersectionObserver</code>）②<code>ETag</code> / <code>If-None-Match</code> で <code>304</code> を返してもらい転送量を落とす③更新時刻での差分取得にする（全件取得を繰り返さない）。これだけで「重い」の大半は消える。</p>
+</section>
+
+<!-- ===================== 125 ===================== -->
+<section class="demo" id="n125">
+  <h2><span class="no">125</span>ファイルの授受 <small>保存・読込・貼り付け・共有</small><span class="real">実動</span></h2>
+  <p class="what">現場の連携は「ファイルを渡す・受け取る」で足りることが多い。<b>ダウンロード／<code>&lt;input type=file&gt;</code></b> はどこでも動く最終手段。<b>File System Access API</b>（<code>showSaveFilePicker</code> / <code>showOpenFilePicker</code>）は<b>同じファイルに上書き保存</b>できる＝「編集して保存」が成立する（Chromium 系のみ）。<b>クリップボード</b>は写真や図の受け取りに効く。<b>Web Share</b> は主にモバイルで、他アプリへ渡す。</p>
+  <p class="how"><b>操作：</b>この環境の対応状況を実測。保存 → 読込 → 貼り付けを試す。<code>file://</code> では一部が使えないことがある。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="b125s">保存（ハンドル保持）</button>
+      <button id="b125w" disabled>同じファイルに上書き</button>
+      <button id="b125o">開く</button>
+      <button id="b125d">ダウンロード（どこでも動く）</button>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <textarea id="t125" rows="3" style="flex:1;min-width:220px;font:13px ui-monospace,Menlo,Consolas,monospace">部品番号,数量
+A-1001,12</textarea>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <div id="p125" tabindex="0" style="flex:1;min-width:200px;border:2px dashed var(--line);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-size:13px">ここをクリックして Ctrl/⌘+V で貼り付け（画像・テキスト）／ファイルをドロップ</div>
+    </div>
+    <span class="readout" id="o125">-</span>
+    <table class="cmp" style="margin-top:8px">
+      <tr><th>機能</th><th>この環境</th><th>できること</th></tr>
+      <tr><td class="k">File System Access</td><td id="s125a">-</td><td>同じファイルに上書き保存・フォルダ単位の読み書き</td></tr>
+      <tr><td class="k">ドラッグ&amp;ドロップ</td><td id="s125b">-</td><td>受け取りはどこでも可能（59）</td></tr>
+      <tr><td class="k">クリップボード読取</td><td id="s125c">-</td><td>貼り付けで画像・テキストを受け取る</td></tr>
+      <tr><td class="k">Web Share（ファイル）</td><td id="s125d">-</td><td>他アプリへ渡す（主にモバイル）</td></tr>
+    </table>
+  </div>
+  <script data-code>
+    (() => {
+      const set = (id, ok, note) => { const el = $(id); el.textContent = (ok ? '✔ 使える' : '✖ 使えない') + (note ? `（${note}）` : ''); el.className = ok ? 'yes' : 'no'; };
+      const hasFSA = typeof window.showSaveFilePicker === 'function';
+      set('#s125a', hasFSA, hasFSA ? '' : 'Chromium 系のみ。Electron なら Node の fs で代替');
+      set('#s125b', true);
+      set('#s125c', !!(navigator.clipboard && navigator.clipboard.read), '許可を求められる');
+      set('#s125d', !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.txt')] })), 'モバイル中心');
+
+      let handle = null;                                     // 保存先を覚えておく＝上書きできる
+      $('#b125s').onclick = async () => {
+        if (!hasFSA) return ($('#o125').textContent = 'この環境では使えない → ダウンロードを使う');
+        try {
+          handle = await showSaveFilePicker({ suggestedName: 'parts.csv',
+            types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }] });
+          const w = await handle.createWritable(); await w.write($('#t125').value); await w.close();
+          $('#b125w').disabled = false;
+          $('#o125').textContent = `保存した: ${handle.name}（以後は同じファイルに上書きできる）`;
+        } catch (e) { $('#o125').textContent = e.name === 'AbortError' ? 'キャンセルした' : `失敗: ${e.message}`; }
+      };
+      $('#b125w').onclick = async () => {                    // ダイアログを出さずに上書き
+        const w = await handle.createWritable(); await w.write($('#t125').value); await w.close();
+        $('#o125').textContent = `上書きした: ${handle.name}（ダイアログ無し）`;
+      };
+      $('#b125o').onclick = async () => {
+        if (hasFSA) {
+          try {
+            [handle] = await showOpenFilePicker(); const f = await handle.getFile();
+            $('#t125').value = await f.text(); $('#b125w').disabled = false;
+            $('#o125').textContent = `読み込んだ: ${f.name} / ${f.size} バイト`;
+          } catch (e) { $('#o125').textContent = e.name === 'AbortError' ? 'キャンセルした' : `失敗: ${e.message}`; }
+        } else {                                             // どこでも動く方法
+          const i = Object.assign(document.createElement('input'), { type: 'file' });
+          i.onchange = async () => { const f = i.files[0]; if (!f) return;
+            $('#t125').value = await f.text(); $('#o125').textContent = `読み込んだ: ${f.name}`; };
+          i.click();
+        }
+      };
+      $('#b125d').onclick = () => {                          // 最終手段。どのブラウザでも動く
+        const url = URL.createObjectURL(new Blob([$('#t125').value], { type: 'text/csv' }));
+        Object.assign(document.createElement('a'), { href: url, download: 'parts.csv' }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);    // 忘れるとメモリを掴んだままになる
+        $('#o125').textContent = 'ダウンロードした（保存先は覚えられない）';
+      };
+
+      const pad = $('#p125');
+      pad.addEventListener('paste', e => {                   // 貼り付けで受け取る
+        for (const item of e.clipboardData.items) {
+          if (item.type.startsWith('image/')) {
+            const f = item.getAsFile();
+            pad.innerHTML = ''; const img = new Image(); img.style.maxHeight = '90px';
+            img.src = URL.createObjectURL(f); pad.append(img);
+            return ($('#o125').textContent = `画像を受け取った: ${f.type} / ${f.size} バイト`);
+          }
+        }
+        $('#o125').textContent = `テキストを受け取った: ${e.clipboardData.getData('text').slice(0, 40)}`;
+      });
+      pad.addEventListener('dragover', e => { e.preventDefault(); pad.style.borderColor = '#2563eb'; });
+      pad.addEventListener('dragleave', () => pad.style.borderColor = '');
+      pad.addEventListener('drop', async e => {
+        e.preventDefault(); pad.style.borderColor = '';
+        const f = e.dataTransfer.files[0]; if (!f) return;
+        $('#o125').textContent = `ドロップ: ${f.name} / ${f.size} バイト`;
+        if (/text|csv|json/.test(f.type) || /\.(csv|txt|json)$/i.test(f.name)) $('#t125').value = await f.text();
+      });
+    })();
+  </script>
+  <p class="note">副作用と前提：<code>showSaveFilePicker</code> は<b>利用者の操作から直接呼ぶ</b>必要がある（クリック以外から呼ぶと拒否される）。ハンドルは <code>IndexedDB</code> に保存すれば次回起動時も再利用できるが、<b>再許可</b>（<code>queryPermission</code>／<code>requestPermission</code>）が要る。Electron なら main 側の Node <code>fs</code> と <code>dialog</code> で全 OS 同じ挙動になる＝現場配布ではそちらが確実。</p>
+</section>
+
+<!-- ===================== 126 ===================== -->
+<section class="demo" id="n126">
+  <h2><span class="no">126</span>現場機器との連携 <small>WebHID・WebSerial・WebUSB</small><span class="real">実動</span></h2>
+  <p class="what">バーコードリーダー・電子秤・ノギス・ラベルプリンタをブラウザから直接扱う API 群。<b>すべて Chromium 系のみ</b>（Safari・Firefox は方針として非対応。2026 年時点の利用可能な利用者はおよそ 4 分の 1 前後にとどまる＝正確な比率は caniuse 等で都度確認）。したがって<b>現場配布では Electron が本命</b>：Chromium を同梱するので API がそのまま使え、さらに Node の <code>serialport</code> 等も使える。バーコードリーダーの多くは<b>キーボードとして振る舞う</b>ので、まず「フォーカスした入力欄に高速入力される」前提で作れば API は不要（下で実測できる）。</p>
+  <p class="how"><b>操作：</b>対応状況を実測。接続ボタンは<b>実機がある環境でのみ</b>完走する（無い場合はデバイス選択が空になる）。下の欄はリーダーを繋がなくても「速い連続入力」で判定を確かめられる。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="b126h">HID を接続</button>
+      <button id="b126s">シリアルを接続</button>
+      <button id="b126u">USB を接続</button>
+      <span class="readout" id="o126">-</span>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <input id="i126" placeholder="ここにバーコードを読ませる（または高速でタイプ）" style="flex:1;min-width:240px">
+      <span class="readout" id="r126">-</span>
+    </div>
+    <table class="cmp" style="margin-top:8px">
+      <tr><th>API</th><th>この環境</th><th>用途</th><th>備考</th></tr>
+      <tr><td class="k">WebHID</td><td id="s126h">-</td><td>バーコード・カードリーダー・フットスイッチ</td><td>生のレポートを読む</td></tr>
+      <tr><td class="k">WebSerial</td><td id="s126s">-</td><td>秤・ノギス・PLC・計測器</td><td>RS-232C / USB シリアル</td></tr>
+      <tr><td class="k">WebUSB</td><td id="s126u">-</td><td>ラベルプリンタ等</td><td>OS がドライバを掴んでいると開けない</td></tr>
+      <tr><td class="k">キーボード入力として</td><td class="yes">✔ どこでも</td><td>バーコードの大半</td><td><b>まずこれを検討する</b></td></tr>
+    </table>
+  </div>
+  <script data-code>
+    (() => {
+      const mark = (id, ok) => { const el = $(id); el.textContent = ok ? '✔ 使える' : '✖ 使えない'; el.className = ok ? 'yes' : 'no'; };
+      mark('#s126h', !!navigator.hid); mark('#s126s', !!navigator.serial); mark('#s126u', !!navigator.usb);
+      const say = m => $('#o126').textContent = m;
+
+      $('#b126h').onclick = async () => {                       // WebHID：レポートを直接読む
+        if (!navigator.hid) return say('この環境では WebHID が無い → Electron か、キーボード入力方式にする');
+        try {
+          const [dev] = await navigator.hid.requestDevice({ filters: [] });   // filters で vendorId 等を絞る
+          if (!dev) return say('デバイスが選ばれなかった（実機が無い環境では空になる）');
+          await dev.open();
+          dev.addEventListener('inputreport', e => {
+            const bytes = [...new Uint8Array(e.data.buffer)].map(b => b.toString(16).padStart(2, '0')).join(' ');
+            say(`HID 受信 reportId=${e.reportId} : ${bytes}`);
+          });
+          say(`接続: ${dev.productName}（読み取り待ち）`);
+        } catch (e) { say(`失敗: ${e.message}`); }
+      };
+      $('#b126s').onclick = async () => {                       // WebSerial：秤・計測器の定番
+        if (!navigator.serial) return say('この環境では WebSerial が無い');
+        try {
+          const port = await navigator.serial.requestPort();
+          await port.open({ baudRate: 9600 });                  // 通信条件は機器の仕様書どおりに（推測しない）
+          const reader = port.readable.pipeThrough(new TextDecoderStream()).getReader();
+          say('接続した（受信待ち）');
+          let buf = '';
+          for (;;) {
+            const { value, done } = await reader.read(); if (done) break;
+            buf += value;
+            let i;                                              // 機器は行単位で送ってくることが多い
+            while ((i = buf.indexOf('\n')) >= 0) { say(`受信: ${buf.slice(0, i).trim()}`); buf = buf.slice(i + 1); }
+          }
+        } catch (e) { say(`失敗: ${e.message}`); }
+      };
+      $('#b126u').onclick = async () => {                       // WebUSB：プリンタ等
+        if (!navigator.usb) return say('この環境では WebUSB が無い');
+        try {
+          const dev = await navigator.usb.requestDevice({ filters: [] });
+          await dev.open(); await dev.selectConfiguration(1); await dev.claimInterface(0);
+          say(`接続: ${dev.productName || 'USB device'}（transferOut で印字コマンドを送る）`);
+        } catch (e) { say(`失敗: ${e.message}`); }
+      };
+
+      // ---- キーボード型リーダーの判定：人の手より速く、最後に Enter が来る ----
+      const inp = $('#i126'); let t0 = 0, keys = 0;
+      inp.addEventListener('keydown', e => {
+        if (e.isComposing || e.keyCode === 229) return;         // 日本語入力の変換中は数えない
+        if (e.key === 'Enter') {
+          const ms = performance.now() - t0, per = keys ? ms / keys : 0;
+          const scanner = keys >= 4 && per < 30;                // 1文字あたり 30ms 未満＝機械入力とみなす
+          $('#r126').textContent = `${inp.value} → ${scanner ? 'リーダー' : '手入力'}（${keys}文字 / 1文字 ${per.toFixed(1)}ms）`;
+          inp.value = ''; keys = 0; t0 = 0; e.preventDefault();
+          return;
+        }
+        if (!t0) { t0 = performance.now(); keys = 0; }
+        keys++;
+      });
+    })();
+  </script>
+  <p class="note">現場での判断：<b>①まずキーボード入力方式で足りないか確かめる</b>（機器側の設定で接尾に Enter を付けられる。導入が最も速い）②足りなければ Electron ＋ WebSerial/WebHID③OS のドライバが必要な機器（多くのラベルプリンタ）は WebUSB では開けないので、main 側から OS の印刷機構に渡す。ブラウザからの接続は<b>毎回セッションごとに許可が要る</b>（<code>navigator.serial.getPorts()</code> で以前許可した機器は再取得できる）点も、配布形態を決める材料になる。</p>
+</section>
+
+<!-- ===================== 127 ===================== -->
+<section class="demo" id="n127">
+  <h2><span class="no">127</span>埋め込みウィジェットを作る側 <small>Shadow DOM で壊れない部品</small><span class="real">実動</span></h2>
+  <p class="what">自分が作った部品を<b>他人のページに貼ってもらう</b>とき、相手の CSS がこちらを壊し、こちらの CSS が相手を壊す。<code>attachShadow</code> で影の木を作れば、<b>スタイルが両方向に漏れない</b>。ページ側の <code>* { box-sizing }</code> も <code>button { }</code> も届かない。<b>kintone のカスタマイズやポータルへの部品配布はこの形が正解</b>。</p>
+  <p class="how"><b>操作：</b>「乱暴な CSS」を有効にすると、通常の部品は崩れ、Shadow DOM の部品は無傷なことが分かる。</p>
+  <div class="stage">
+    <div class="row"><button id="b127">相手ページの乱暴な CSS を有効にする</button><span class="readout" id="o127">-</span></div>
+    <div id="host127" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px">
+      <div class="widget-normal" style="flex:1;min-width:200px">
+        <div class="wtitle">通常の DOM</div>
+        <button class="wbtn">出荷を登録</button>
+      </div>
+      <div id="shadow127" style="flex:1;min-width:200px"></div>
+    </div>
+  </div>
+  <style data-code>
+    /* 部品側のスタイル（通常版は相手ページと同じ土俵に置かれる） */
+    #host127 .widget-normal, #host127 .widget-shadow {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;
+    }
+    #host127 .wtitle { font: 600 13px system-ui; color: #1d1f23; margin-bottom: 8px; }
+    #host127 .wbtn { font: 13px system-ui; padding: 6px 12px; border: 1px solid #2563eb;
+      background: #2563eb; color: #fff; border-radius: 6px; cursor: pointer; }
+    /* 相手ページが後から入れてくる「乱暴な CSS」 */
+    #host127.hostile button { all: unset; color: #b91c1c !important; font-size: 22px !important;
+      font-family: cursive !important; text-decoration: underline; }
+    #host127.hostile div { border-radius: 0 !important; background: #fef08a !important; }
+  </style>
+  <script data-code>
+    (() => {
+      // ---- 配布する部品：Shadow DOM に閉じ込める ----
+      const root = $('#shadow127').attachShadow({ mode: 'open' });   // open でも外の CSS は届かない
+      root.innerHTML = `
+        <style>
+          /* :host = 貼られた場所そのもの。ここだけで完結する */
+          :host { display: block; }
+          .box { background:#fff; border:1px solid #e5e7eb; border-radius:8px; padding:12px; }
+          .t { font:600 13px system-ui; color:#1d1f23; margin-bottom:8px; }
+          button { font:13px system-ui; padding:6px 12px; border:1px solid #16a34a;
+                   background:#16a34a; color:#fff; border-radius:6px; cursor:pointer; }
+        </style>
+        <div class="box"><div class="t">Shadow DOM</div><button>出荷を登録</button></div>`;
+      // 影の中のイベントも普通に取れる（外へ出るときは composed に注意）
+      root.querySelector('button').onclick = () => $('#o127').textContent = '影の中のボタンが押された';
+
+      let on = false;
+      $('#b127').onclick = () => {
+        on = !on; $('#host127').classList.toggle('hostile', on);
+        $('#b127').textContent = on ? '乱暴な CSS を止める' : '相手ページの乱暴な CSS を有効にする';
+        $('#o127').textContent = on ? '通常 DOM は崩れた／Shadow DOM は無傷' : '両方とも正常';
+      };
+    })();
+  </script>
+  <table class="cmp" style="margin-top:8px">
+    <tr><th>配布時に決めること</th><th>推奨</th><th>理由</th></tr>
+    <tr><td class="k">読み込み方</td><td>1 本の <code>&lt;script defer src="…/v1/widget.js"&gt;</code></td><td>相手に手順を増やさない。<code>document.currentScript</code> で設定を読む</td></tr>
+    <tr><td class="k">バージョン</td><td>URL にバージョンを固定（<code>/v1/</code>）</td><td>黙って壊さない。修正は <code>/v1.2/</code> を足す</td></tr>
+    <tr><td class="k">スタイル</td><td>Shadow DOM</td><td>双方向に漏れない。<code>!important</code> 合戦を避けられる</td></tr>
+    <tr><td class="k">グローバル汚染</td><td>IIFE ＋ 二重読み込みガード</td><td>同じページに 2 回貼られても壊れない</td></tr>
+    <tr><td class="k">通信</td><td>自分のオリジンへ。CORS を明示</td><td>相手のドメインは無数にある（118）</td></tr>
+    <tr><td class="k">相手の CSP</td><td><code>script-src</code> に自分のドメインを足してもらう</td><td>インライン <code>eval</code> に依存しない作りにする</td></tr>
+    <tr><td class="k">iframe にするか</td><td>秘密を扱うなら iframe</td><td>Shadow DOM は<b>スタイルの隔離だけ</b>。JS は相手から触れる（121）</td></tr>
+  </table>
+  <p class="note">重要な線引き：<b>Shadow DOM は「見た目の隔離」であり「安全の隔離」ではない</b>。相手ページの JS は <code>mode:'open'</code> なら影の中を読み書きでき、<code>'closed'</code> でも実行環境は共有されるので完全には守れない。トークンや個人情報を扱う部品は 115・116 の <b>別オリジン iframe ＋ sandbox ＋ postMessage</b> にする。</p>
+</section>
+
+</main>
+</div>
+</body>
+</html>

@@ -89,7 +89,7 @@ contextBridge.exposeInMainWorld('api', { pathOf: (file) => webUtils.getPathForFi
 ipcMain.handle('file:saveAs', async (e, name, data) => { const { filePath } = await dialog.showSaveDialog({ defaultPath: name }); if (filePath) await fs.promises.writeFile(filePath, data); return filePath; });</pre></div>
 
   <div class="ref"><h2>7. 認証情報の保存 <small>← 13 kintone</small></h2>
-    <p>API トークンやパスワードを平文の JSON に置かない。<code>safeStorage</code> で OS のキーチェーンに紐づけて暗号化する。renderer には渡さず、main が通信時にだけ復号して使う。</p>
+    <p>API トークンやパスワードを平文の JSON に置かない。<code>safeStorage</code> で OS のキーチェーンに紐づけて暗号化する。renderer には渡さず、main が通信時にだけ復号して使う。外部サービスへのログイン手順（システムブラウザ＋PKCE）は <a href="20-integration.html#n120">120</a>、置いてはいけない場所の一覧は <a href="20-integration.html#n121">121</a>。現場機器（バーコード・秤・プリンタ）を扱うなら <a href="20-integration.html#n126">126</a>：ブラウザ単体では Chromium 系に限られるため、Electron が本命になる。</p>
 <pre>const { safeStorage } = require('electron');
 const enc = safeStorage.encryptString(token).toString('base64');     // 保存はこれ
 const token = safeStorage.decryptString(Buffer.from(enc, 'base64'));   // 使うときだけ復号（main 内）</pre></div>
