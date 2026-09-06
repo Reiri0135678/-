@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="utf-8"><title>ui-kit tests</title>
+<style>body{font:13px system-ui;padding:12px} .ok{color:#16a34a} .ng{color:#dc2626} #view{height:120px;overflow:auto;border:1px solid #ccc} #pad{width:200px;height:120px;background:#eee;touch-action:none} #cam{width:200px;height:120px;background:#dde;position:relative;overflow:hidden}</style></head>
+<body>
+<h3>ui-kit tests</h3><div id="out"></div>
+<div id="view"></div><div id="pad">drag pad</div><div id="cam"><div id="world" style="position:absolute;left:0;top:0;transform-origin:0 0;width:50px;height:50px;background:#36c"></div></div>
+<input id="inp" placeholder="input">
+<div id="main2"><button id="outside">outside</button></div>
+<div id="modal" hidden><input id="m1"><button id="m2">ok</button></div>
+<ul id="sortable"><li>a</li><li>b</li><li>c</li></ul>
+<div id="split" style="width:400px;height:60px"><div>L</div><div>R</div></div>
+<script type="module">
+import * as K from '../index.js';
+const results = []; const out = document.getElementById('out');
+const test = async (name, fn) => { try { await fn(); results.push({ name, ok: true }); } catch (e) { results.push({ name, ok: false, err: String(e.message || e) }); } };
+const eq = (a, b, msg = '') => { const sa = JSON.stringify(a), sb = JSON.stringify(b); if (sa !== sb) throw new Error(`${msg} expected ${sb} got ${sa}`); };
+const ok = (v, msg = '') => { if (!v) throw new Error(msg || 'assertion failed'); };
+
+await test('camera: toWorld/toScreen 往復', () => { const c = K.createCamera({ x: 40, y: 20, scale: 2 }); const w = c.toWorld(140, 120); eq(w, { x: 50, y: 50 }); eq(c.toScreen(50, 50), { x: 140, y: 120 }); });
+await test('camera: zoomAt はカーソル下のワールド座標を保つ', () => { const c = K.createCamera({ x: 10, y: 10, scale: 1 }); const before = c.toWorld(100, 80); c.zoomAt(100, 80, 1.7); const after = c.toWorld(100, 80); ok(Math.abs(before.x - after.x) < 1e-9 && Math.abs(before.y - after.y) < 1e-9); ok(Math.abs(c.scale - 1.7) < 1e-9); });
+await test('camera: min/max scale', () => { const c = K.createCamera({ minScale: 0.5, maxScale: 2 }); c.zoomAt(0, 0, 100); eq(c.scale, 2); c.zoomAt(0, 0, 0.0001); eq(c.scale, 0.5); });
+await test('undo: commit/undo/redo と limit', () => { const h = K.createHistory(0, { limit: 2 }); h.commit(1); h.commit(2); h.commit(3); eq(h.state, 3); h.undo(); eq(h.state, 2); h.undo(); eq(h.state, 1); h.undo(); eq(h.state, 1, 'limit=2 なので 0 には戻れない'); h.redo(); eq(h.state, 2); h.commit(9); ok(!h.canRedo, '新規 commit で redo 履歴は消える'); });
+await test('search: fuzzy と substring と highlight', () => { ok(K.substringMatch('P-0012 部品12', 'p12') === null); const m = K.fuzzyMatch('P-0012 部品12 鈴木', 'p12鈴'); ok(m && m.ranges.length >= 2); eq(K.highlight('abc', [[1, 2]]), 'a<mark>b</mark>c'); eq(K.highlight('<a>', [[0, 1]]), '<mark>&lt;</mark>a&gt;'); const r = K.search(['P-0122 部品122 鈴木', 'P-0012 部品12 鈴木'], 'p12鈴', { fuzzy: true }); eq(r.map(x => x.item), ['P-0012 部品12 鈴木', 'P-0122 部品122 鈴木'], '短い方が上'); });
+await test('search: debounce は最後の1回だけ', async () => { let n = 0; const d = K.debounce(() => n++, 30); d(); d(); d(); await new Promise(r => setTimeout(r, 80)); eq(n, 1); });
+await test('merge: 3方向マージ', () => { const r = K.threeWayMerge({ a: 1, b: 1, c: 1, d: 1 }, { a: 2, b: 1, c: 3, d: 1 }, { a: 1, b: 5, c: 4, d: 1 }); eq(r.merged, { a: 2, b: 5, c: 3, d: 1 }); eq(r.conflicts.map(c => c.key), ['c']); eq(r.changes, { a: 'mine', b: 'theirs', c: 'both', d: 'none' }); eq(K.threeWayMerge({ c: 1 }, { c: 3 }, { c: 4 }, { prefer: 'theirs' }).merged, { c: 4 }); });
+await test('merge: wordDiff', () => { const d = K.wordDiff('a b c', 'a x c'); eq(d.map(p => p.type + ':' + p.text), ['same:a ', 'del:b', 'ins:x', 'same: c']); ok(K.diffToHtml(d).includes('<del>b</del><ins>x</ins>')); });
+await test('store: 復元・デバウンス保存・reset', async () => { const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) }; const s = K.createPersistentStore('k', { a: 1, b: 2 }, { debounceMs: 10, storage }); s.set({ a: 5 }); ok(!mem.has('k'), 'まだ書かれていない'); await new Promise(r => setTimeout(r, 30)); eq(JSON.parse(mem.get('k')), { a: 5, b: 2 }); const s2 = K.createPersistentStore('k', { a: 1, b: 2, c: 3 }, { storage }); eq(s2.get(), { a: 5, b: 2, c: 3 }, '保存値で上書き、新しい既定値は残る'); s2.reset(); ok(!mem.has('k')); });
+await test('offline-queue: オフラインで溜め、復帰で順送、失敗で停止', async () => { const mem = new Map(), storage = { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v) }; let online = false, sent = [], failOnce = true; const q = K.createOfflineQueue({ storageKey: 'q', storage, isOnline: () => online, send: async j => { if (j.n === 2 && failOnce) { failOnce = false; throw new Error('boom'); } sent.push(j.n); } }); await q.push({ n: 1 }); await q.push({ n: 2 }); await q.push({ n: 3 }); eq(q.size, 3); eq(JSON.parse(mem.get('q')).length, 3, '永続化'); online = true; let r = await q.flush(); eq(sent, [1]); eq(r.failed.job.n, 2); eq(q.size, 2); r = await q.flush(); eq(sent, [1, 2, 3]); eq(q.size, 0); });
+await test('virtual-list: DOM は表示分だけ、scrollToIndex', async () => { const view = document.getElementById('view'); const vl = K.createVirtualList(view, { rowHeight: 20, count: 10000, overscan: 1, renderRow: i => `<div data-row style="height:20px">row ${i}</div>` }); await new Promise(r => requestAnimationFrame(r)); const n0 = view.querySelectorAll('[data-row]').length; ok(n0 > 0 && n0 < 20, `DOM rows=${n0}`); vl.scrollToIndex(5000); await new Promise(r => setTimeout(r, 50)); const first = view.querySelector('[data-row]').textContent; ok(/row 499\d|row 5000/.test(first), first); vl.setCount(3); await new Promise(r => setTimeout(r, 20)); eq(view.querySelectorAll('[data-row]').length, 3); vl.dispose(); });
+await test('virtual-list: flattenTree', () => { const t = [{ id: 1, open: true, children: [{ id: 2, children: [{ id: 3 }] }, { id: 4, open: true, children: [{ id: 5 }] }] }, { id: 6 }]; eq(K.flattenTree(t).map(x => x.node.id + '@' + x.depth), ['1@0', '2@1', '4@1', '5@2', '6@0']); });
+await test('hotkeys: mod+s / 入力中の単独キー無視', async () => { let saved = 0, created = 0; const dispose = K.registerHotkeys({ 'mod+s': () => saved++, 'n': () => created++ }); const isMac = /Mac/.test(navigator.platform); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 's', ctrlKey: !isMac, metaKey: isMac, bubbles: true })); eq(saved, 1); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1); const inp = document.getElementById('inp'); inp.focus(); inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1, '入力中は無視'); inp.blur(); dispose(); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'n', bubbles: true })); eq(created, 1, 'dispose 後は発火しない'); });
+await test('drag: constrain', () => { eq(K.constrain({ dx: 30, dy: 10, shift: true }), { dx: 30, dy: 0 }); eq(K.constrain({ dx: 33, dy: -27, alt: true }, { grid: 20 }), { dx: 40, dy: -20 }); });
+await test('sync: hello で状態を受け取る（同一ページ内2チャンネル）', async () => { let got = null; const a = K.createSyncChannel('t1', {}); a.hello(() => ({ v: 42 })); const b = K.createSyncChannel('t1', { onState: s => got = s }); b.hello(() => null); await new Promise(r => setTimeout(r, 50)); eq(got, { v: 42 }); a.publish({ v: 7 }); await new Promise(r => setTimeout(r, 50)); eq(got, { v: 7 }); a.dispose(); b.dispose(); });
+
+await test('position: 上に余白なし → 下へ反転、枠内に押し込む', () => {
+  const b = { left: 0, top: 0, right: 400, bottom: 300 };
+  let r = K.computePosition({ left: 10, top: 5, right: 60, bottom: 25, width: 50, height: 20 }, { width: 100, height: 40 }, { placement: 'top', bounds: b });
+  eq(r.placement, 'bottom'); eq(r.top, 25 + 6); eq(r.left, 0, '左端で押し込み');
+  r = K.computePosition({ left: 300, top: 100, right: 350, bottom: 120, width: 50, height: 20 }, { width: 100, height: 40 }, { placement: 'top', bounds: b });
+  eq(r.placement, 'top'); eq(r.top, 100 - 6 - 40); eq(r.left, 300 - 25, '中央揃え');
+  r = K.computePosition({ left: 380, top: 100, right: 400, bottom: 120, width: 20, height: 20 }, { width: 100, height: 40 }, { placement: 'right', bounds: b });
+  eq(r.placement, 'left');
+  eq(K.positionAtPoint({ x: 390, y: 290 }, { width: 50, height: 30 }, b), { left: 340, top: 260 });
+});
+await test('toast: 上限で古いものから消える、aria-live', () => {
+  const t = K.createToaster({ host: document.body, max: 2, duration: 0 });
+  t.show('1'); t.show('2'); t.show('3');
+  const host = document.querySelector('.uk-toast-host');
+  eq(host.getAttribute('aria-live'), 'polite');
+  const live = [...host.children].filter(c => !c.classList.contains('leaving')).map(c => c.textContent);
+  eq(live, ['2', '3']); t.dispose(); ok(!document.querySelector('.uk-toast-host'));
+});
+await test('focus-trap: 初期フォーカス・inert・Tab 循環・release で復帰', () => {
+  const outside = document.getElementById('outside'), modal = document.getElementById('modal'), main2 = document.getElementById('main2');
+  outside.focus(); modal.hidden = false;
+  const trap = K.activateFocusTrap(modal, { inertTargets: [main2] });
+  eq(document.activeElement.id, 'm1'); ok(main2.inert);
+  document.getElementById('m2').focus();
+  modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+  eq(document.activeElement.id, 'm1', '末尾で Tab → 先頭');
+  modal.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true }));
+  eq(document.activeElement.id, 'm2', '先頭で Shift+Tab → 末尾');
+  trap.release(); modal.hidden = true;
+  ok(!main2.inert); eq(document.activeElement.id, 'outside', '開く前の要素へ復帰');
+});
+await test('split: grid 化・setSizes・最小幅', () => {
+  const el = document.getElementById('split'); const sizes = [];
+  const sp = K.createSplit(el, { sizes: [150, null], min: 50, gutter: 6, onChange: s => sizes.push(s) });
+  ok(el.style.gridTemplateColumns.startsWith('150px 6px'), el.style.gridTemplateColumns);
+  eq(el.querySelectorAll('.uk-gutter').length, 1);
+  sp.setSizes([200, null]); eq(sp.getSizes(), [200, null]); ok(sizes.length >= 2);
+  window.__split = sp;
+});
+window.__sortableOrder = null;
+K.createSortable(document.getElementById('sortable'), { onChange: items => window.__sortableOrder = items.map(i => i.textContent) });
+
+// ブラウザ操作が必要なもの（drag / attachPanZoom）は runner 側から実行し、結果をここに書き戻す
+window.__kit = K; window.__results = results;
+const pad = document.getElementById('pad'); window.__dragLog = [];
+K.createDrag(pad, { threshold: 4, onStart: c => window.__dragLog.push('start'), onMove: c => window.__dragLog.push(`move:${c.dx},${c.dy}`), onEnd: c => window.__dragLog.push(`end:${c.dx},${c.dy}`), onClick: () => window.__dragLog.push('click') });
+const cam = K.createCamera(); window.__cam = cam; const world = document.getElementById('world'); cam.subscribe(c => world.style.transform = c.transform); K.attachPanZoom(document.getElementById('cam'), cam);
+out.innerHTML = results.map(r => `<div class="${r.ok ? 'ok' : 'ng'}">${r.ok ? '✔' : '✖'} ${r.name}${r.err ? ' — ' + r.err : ''}</div>`).join('');
+window.__done = true;
+</script>
+</body></html>

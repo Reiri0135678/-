@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第2弾 C：プロ志向のUI（43〜62）動くデモ</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+</head>
+<body>
+<header class="top">
+  <h1>C：プロ志向のUI <span class="tier tierC">43〜62</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="02-basic.html">A：一般 →</a><a href="03-custom.html">B：カスタマイズ →</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">C層は「座標変換」「状態機械」「描画ループ」「アクセシビリティ」の4本柱。43〜46 は同じ座標変換の考え方を段階的に積み上げる。61・62 は Electron 専用のため、このページでは動作の模擬とコードの提示になる。</div>
+
+<!-- ===================== 43 ===================== -->
+<section class="demo" id="n43">
+  <h2><span class="no">43</span>無限キャンバス <small>Infinite canvas（パン＋ズーム＋座標変換）</small></h2>
+  <p class="what">画面座標（ピクセル）とワールド座標（図面上の位置）を分けて持つ。表示は <code>screen = world × scale + offset</code>、入力は逆算 <code>world = (screen − offset) ÷ scale</code>。この2つの式だけで、パン・ズーム・クリック位置の特定が全部つながる。</p>
+  <p class="how"><b>操作：</b>ドラッグでパン、ホイールでズーム（カーソル基準）、ダブルクリックでその位置に点を置く。右上にカーソルのワールド座標が出る。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s43-view" class="s43-view">
+      <div id="s43-world" class="s43-world"></div>
+      <span class="readout" id="s43-out" style="position:absolute;right:8px;top:8px">-</span>
+    </div>
+  </div>
+  <style data-code>
+    .s43-view { position: relative; height: 300px; overflow: hidden; background: #fff; touch-action: none; user-select: none; cursor: grab;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px); background-size: 24px 24px; }
+    .s43-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+    .s43-node { position: absolute; width: 80px; height: 40px; margin: -20px 0 0 -40px; background: var(--accent); color: #fff; border-radius: 6px; display: grid; place-items: center; font-size: 12px; }
+    .s43-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: #dc2626; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s43-view'), world = $('#s43-world'), out = $('#s43-out');
+      const cam = { x: 40, y: 40, s: 1 };                               // offset と scale ＝「カメラ」
+      const toWorld = (sx, sy) => ({ x: (sx - cam.x) / cam.s, y: (sy - cam.y) / cam.s });
+      const apply = () => world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.s})`;
+      const local = e => { const r = view.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+
+      [[100, 80, '受注'], [320, 160, '製造'], [540, 90, '出荷']].forEach(([x, y, t]) =>
+        world.insertAdjacentHTML('beforeend', `<div class="s43-node" style="left:${x}px;top:${y}px">${t}<br>(${x},${y})</div>`));
+
+      let drag = null;
+      view.addEventListener('pointerdown', e => { const p = local(e); drag = { x: p.x - cam.x, y: p.y - cam.y }; view.setPointerCapture(e.pointerId); });
+      view.addEventListener('pointermove', e => {
+        const p = local(e), w = toWorld(p.x, p.y);
+        out.textContent = `screen(${Math.round(p.x)},${Math.round(p.y)}) → world(${Math.round(w.x)},${Math.round(w.y)}) scale=${cam.s.toFixed(2)}`;
+        if (drag) { cam.x = p.x - drag.x; cam.y = p.y - drag.y; apply(); }
+      });
+      view.addEventListener('pointerup', () => drag = null);
+      view.addEventListener('wheel', e => {                                // ズーム：カーソル位置を不動点にする（44参照）
+        e.preventDefault();
+        const p = local(e), before = toWorld(p.x, p.y);
+        cam.s = Math.min(4, Math.max(0.25, cam.s * Math.exp(-e.deltaY * 0.002)));
+        cam.x = p.x - before.x * cam.s; cam.y = p.y - before.y * cam.s;  // 同じワールド点がカーソル下に来るよう offset を補正
+        apply(); out.textContent = `scale=${cam.s.toFixed(2)}（カーソル下の world は不変）`;
+      }, { passive: false });
+      view.addEventListener('dblclick', e => { const w = toWorld(local(e).x, local(e).y); world.insertAdjacentHTML('beforeend', `<div class="s43-dot" style="left:${w.x}px;top:${w.y}px"></div>`); });
+      apply();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 44 ===================== -->
+<section class="demo" id="n44">
+  <h2><span class="no">44</span>ズーム中心の維持 <small>Zoom-to-cursor</small></h2>
+  <p class="what">「ズームすると見ていた場所がズレる」の正体は、原点基準で scale しているから。カーソル下のワールド座標を先に求め、scale 変更後も同じ点がカーソル下に来るよう offset を計算し直す。式：<code>offset = cursor − world × newScale</code>。</p>
+  <p class="how"><b>操作：</b>方式を切り替えて、同じ位置でホイールしてみる。「原点基準」だと図がカーソルから逃げる。</p>
+  <div class="stage" style="padding:0">
+    <div class="row" style="padding:8px"><label><input type="radio" name="s44" value="cursor" checked> カーソル基準（正）</label><label><input type="radio" name="s44" value="origin"> 原点基準（ズレる）</label><button id="s44-reset">リセット</button></div>
+    <div id="s44-view" class="s44-view"><div id="s44-world" class="s44-world grid-bg"><div class="box" style="position:absolute;left:150px;top:60px">ここで<br>ホイール</div></div></div>
+  </div>
+  <style data-code>
+    .s44-view { position: relative; height: 220px; overflow: hidden; background: #fff; }
+    .s44-world { position: absolute; left: 0; top: 0; width: 600px; height: 400px; transform-origin: 0 0; border: 2px solid #94a3b8; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s44-view'), world = $('#s44-world');
+      const cam = { x: 0, y: 0, s: 1 };
+      const apply = () => world.style.transform = `translate(${cam.x}px, ${cam.y}px) scale(${cam.s})`;
+      view.addEventListener('wheel', e => {
+        e.preventDefault();
+        const r = view.getBoundingClientRect(), cx = e.clientX - r.left, cy = e.clientY - r.top;
+        const newS = Math.min(4, Math.max(0.3, cam.s * Math.exp(-e.deltaY * 0.002)));
+        if ($('input[name=s44]:checked').value === 'cursor') {
+          const wx = (cx - cam.x) / cam.s, wy = (cy - cam.y) / cam.s;  // カーソル下のワールド座標
+          cam.x = cx - wx * newS; cam.y = cy - wy * newS;               // その点が同じ画面位置に来る offset
+        }
+        cam.s = newS; apply();
+      }, { passive: false });
+      $('#s44-reset').onclick = () => { cam.x = cam.y = 0; cam.s = 1; apply(); };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 45 ===================== -->
+<section class="demo" id="n45">
+  <h2><span class="no">45</span>ミニマップ <small>Minimap</small></h2>
+  <p class="what">全体を縮小して描き、現在の表示範囲を枠で示す。枠のドラッグでも移動できる。同じワールド座標を「別の縮尺」で描いているだけなので、43 の式がそのまま使える。</p>
+  <p class="how"><b>操作：</b>大きい方をドラッグでパン、または右下のミニマップの枠をドラッグ。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s45-view" class="s45-view">
+      <div id="s45-world" class="s45-world grid-bg"></div>
+      <div id="s45-mini" class="s45-mini"><div id="s45-rect" class="s45-rect"></div></div>
+    </div>
+  </div>
+  <style data-code>
+    .s45-view { position: relative; height: 280px; overflow: hidden; background: #fff; touch-action: none; user-select: none; cursor: grab; }
+    .s45-world { position: absolute; left: 0; top: 0; width: 1600px; height: 1000px; }
+    .s45-world i { position: absolute; width: 60px; height: 40px; background: var(--accent); border-radius: 6px; opacity: .8; }
+    .s45-mini { position: absolute; right: 10px; bottom: 10px; width: 160px; height: 100px; background: rgba(255,255,255,.9); border: 1px solid #94a3b8; border-radius: 4px; overflow: hidden; cursor: move; }
+    .s45-mini i { position: absolute; width: 6px; height: 4px; background: var(--accent); }
+    .s45-rect { position: absolute; border: 2px solid #dc2626; background: rgba(220,38,38,.1); box-sizing: border-box; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s45-view'), world = $('#s45-world'), mini = $('#s45-mini'), rect = $('#s45-rect');
+      const W = 1600, H = 1000, K = 160 / W;                             // ミニマップの縮尺
+      const items = Array.from({ length: 25 }, () => [Math.random() * (W - 60), Math.random() * (H - 40)]);
+      world.innerHTML = items.map(([x, y]) => `<i style="left:${x}px;top:${y}px"></i>`).join('');
+      mini.insertAdjacentHTML('afterbegin', items.map(([x, y]) => `<i style="left:${x * K}px;top:${y * K}px"></i>`).join(''));
+      const cam = { x: -300, y: -200 };
+      const clamp = () => { cam.x = Math.min(0, Math.max(view.clientWidth - W, cam.x)); cam.y = Math.min(0, Math.max(view.clientHeight - H, cam.y)); };
+      const apply = () => {
+        clamp(); world.style.transform = `translate(${cam.x}px, ${cam.y}px)`;
+        rect.style.left = -cam.x * K + 'px'; rect.style.top = -cam.y * K + 'px';   // 表示範囲 ＝ (-offset, viewサイズ) を縮尺で
+        rect.style.width = view.clientWidth * K + 'px'; rect.style.height = view.clientHeight * K + 'px';
+      };
+      let drag = null;
+      view.addEventListener('pointerdown', e => { if (mini.contains(e.target)) return; drag = { x: e.clientX - cam.x, y: e.clientY - cam.y }; view.setPointerCapture(e.pointerId); });
+      view.addEventListener('pointermove', e => { if (drag) { cam.x = e.clientX - drag.x; cam.y = e.clientY - drag.y; apply(); } });
+      view.addEventListener('pointerup', () => drag = null);
+      let mdrag = null;                                                   // ミニマップ側：動きを 1/K 倍して逆向きに
+      mini.addEventListener('pointerdown', e => { mdrag = { x: e.clientX, y: e.clientY, cx: cam.x, cy: cam.y }; mini.setPointerCapture(e.pointerId); e.stopPropagation(); });
+      mini.addEventListener('pointermove', e => { if (mdrag) { cam.x = mdrag.cx - (e.clientX - mdrag.x) / K; cam.y = mdrag.cy - (e.clientY - mdrag.y) / K; apply(); } });
+      mini.addEventListener('pointerup', () => mdrag = null);
+      apply();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 46 ===================== -->
+<section class="demo" id="n46">
+  <h2><span class="no">46</span>ノードエディタ <small>Node graph / Wiring</small></h2>
+  <p class="what">ノード（箱）のポート同士を線で結ぶ。線は SVG のベジェ曲線 <code>M x1 y1 C x1+d y1, x2−d y2, x2 y2</code>。出力ポートからドラッグ→入力ポートで離すと接続。ノードを動かすと線を引き直す。</p>
+  <p class="how"><b>操作：</b>右側の●から左側の●へドラッグして接続。ノード本体をドラッグで移動。線をクリックで削除。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s46-view" class="s46-view grid-bg">
+      <svg id="s46-svg" class="s46-svg"></svg>
+    </div>
+  </div>
+  <style data-code>
+    .s46-view { position: relative; height: 300px; overflow: hidden; user-select: none; touch-action: none; }
+    .s46-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    .s46-svg path { fill: none; stroke: #475569; stroke-width: 2.5; pointer-events: stroke; cursor: pointer; }
+    .s46-svg path:hover { stroke: #dc2626; } .s46-svg path.temp { stroke: var(--accent); stroke-dasharray: 6 4; }
+    .s46-node { position: absolute; width: 140px; background: #fff; border: 1px solid #94a3b8; border-radius: 8px; font-size: 12px; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+    .s46-node header { padding: 6px 10px; background: #f1f5f9; border-radius: 8px 8px 0 0; cursor: grab; font-weight: 600; }
+    .s46-node .ports { display: flex; justify-content: space-between; padding: 8px 0; }
+    .s46-port { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 2px solid var(--accent); cursor: crosshair; }
+    .s46-port.in { margin-left: -7px; } .s46-port.out { margin-right: -7px; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s46-view'), svg = $('#s46-svg');
+      const nodes = [['n1', 30, 40, '受注データ'], ['n2', 230, 140, '在庫引当'], ['n3', 430, 60, '出荷指示']];
+      nodes.forEach(([id, x, y, t]) => view.insertAdjacentHTML('beforeend',
+        `<div class="s46-node" id="${id}" style="left:${x}px;top:${y}px"><header>${t}</header><div class="ports"><div class="s46-port in" data-node="${id}"></div><div class="s46-port out" data-node="${id}"></div></div></div>`));
+      const edges = [['n1', 'n2']];
+      const portPos = (id, side) => { const p = $(`#${id} .s46-port.${side}`).getBoundingClientRect(), v = view.getBoundingClientRect(); return { x: p.left - v.left + 6, y: p.top - v.top + 6 }; };
+      const curve = (a, b) => `M ${a.x} ${a.y} C ${a.x + 60} ${a.y}, ${b.x - 60} ${b.y}, ${b.x} ${b.y}`;
+      const draw = () => {
+        svg.innerHTML = edges.map(([f, t], i) => `<path data-i="${i}" d="${curve(portPos(f, 'out'), portPos(t, 'in'))}"></path>`).join('') + '<path class="temp" id="s46-temp" d=""></path>';
+      };
+      svg.addEventListener('click', e => { if (e.target.dataset.i) { edges.splice(+e.target.dataset.i, 1); draw(); } });
+      let mode = null;
+      view.addEventListener('pointerdown', e => {
+        const v = view.getBoundingClientRect();
+        if (e.target.classList.contains('out')) mode = { type: 'wire', from: e.target.dataset.node, start: portPos(e.target.dataset.node, 'out') };
+        else if (e.target.tagName === 'HEADER') { const n = e.target.parentElement; mode = { type: 'move', node: n, dx: e.clientX - n.offsetLeft, dy: e.clientY - n.offsetTop }; }
+        if (mode) view.setPointerCapture(e.pointerId);
+      });
+      view.addEventListener('pointermove', e => {
+        if (!mode) return;
+        const v = view.getBoundingClientRect();
+        if (mode.type === 'wire') $('#s46-temp').setAttribute('d', curve(mode.start, { x: e.clientX - v.left, y: e.clientY - v.top }));
+        else { mode.node.style.left = e.clientX - mode.dx + 'px'; mode.node.style.top = e.clientY - mode.dy + 'px'; draw(); }
+      });
+      view.addEventListener('pointerup', e => {
+        if (mode?.type === 'wire') {
+          const t = document.elementFromPoint(e.clientX, e.clientY);            // 離した場所の要素を調べる
+          if (t?.classList.contains('in') && t.dataset.node !== mode.from) edges.push([mode.from, t.dataset.node]);
+        }
+        mode = null; draw();
+      });
+      draw();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 47 ===================== -->
+<section class="demo" id="n47">
+  <h2><span class="no">47</span>スナップ / スマートガイド <small>Snapping / Smart guides</small></h2>
+  <p class="what">ドラッグ中、他要素の端・中心と一定距離（しきい値）以内なら、その座標に吸着してガイド線を出す。候補座標を全部列挙して「最も近いものが閾値内か」を見るだけ。</p>
+  <p class="how"><b>操作：</b>青い箱をドラッグして灰色の箱の端・中心に近づける。<kbd>Ctrl</kbd> を押しながらだとスナップ無効。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s47-view" class="s47-view">
+      <div class="s47-fixed" style="left:60px;top:40px;width:120px;height:80px"></div>
+      <div class="s47-fixed" style="left:340px;top:150px;width:100px;height:100px"></div>
+      <div id="s47-box" class="s47-box">drag</div>
+      <div id="s47-gx" class="s47-guide v" hidden></div><div id="s47-gy" class="s47-guide h" hidden></div>
+    </div>
+  </div>
+  <style data-code>
+    .s47-view { position: relative; height: 280px; background: #fff; overflow: hidden; touch-action: none; user-select: none; }
+    .s47-fixed { position: absolute; background: #e2e8f0; border-radius: 6px; }
+    .s47-box { position: absolute; left: 200px; top: 180px; width: 80px; height: 60px; background: var(--accent); color: #fff; border-radius: 6px; display: grid; place-items: center; cursor: grab; font-size: 12px; }
+    .s47-guide { position: absolute; background: #ec4899; pointer-events: none; }
+    .s47-guide.v { top: 0; bottom: 0; width: 1px; } .s47-guide.h { left: 0; right: 0; height: 1px; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s47-view'), box = $('#s47-box'), gx = $('#s47-gx'), gy = $('#s47-gy'), TH = 6;
+      const targets = $$('.s47-fixed', view).map(f => ({ l: f.offsetLeft, t: f.offsetTop, w: f.offsetWidth, h: f.offsetHeight }));
+      const xs = [], ys = [];                                               // スナップ候補（端と中心）
+      targets.forEach(r => { xs.push(r.l, r.l + r.w / 2, r.l + r.w); ys.push(r.t, r.t + r.h / 2, r.t + r.h); });
+      const snap = (val, cands, size) => {                                  // 自分の左端/中心/右端のどれかが候補に近いか
+        let best = null;
+        for (const c of cands) for (const off of [0, size / 2, size]) { const d = c - (val + off); if (Math.abs(d) <= TH && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, line: c }; }
+        return best;
+      };
+      let drag = null;
+      box.addEventListener('pointerdown', e => { drag = { dx: e.clientX - box.offsetLeft, dy: e.clientY - box.offsetTop }; box.setPointerCapture(e.pointerId); });
+      box.addEventListener('pointermove', e => {
+        if (!drag) return;
+        let x = e.clientX - drag.dx, y = e.clientY - drag.dy;
+        const sx = e.ctrlKey ? null : snap(x, xs, box.offsetWidth), sy = e.ctrlKey ? null : snap(y, ys, box.offsetHeight);
+        if (sx) { x += sx.d; gx.style.left = sx.line + 'px'; } gx.hidden = !sx;
+        if (sy) { y += sy.d; gy.style.top = sy.line + 'px'; } gy.hidden = !sy;
+        box.style.left = x + 'px'; box.style.top = y + 'px';
+      });
+      box.addEventListener('pointerup', () => { drag = null; gx.hidden = gy.hidden = true; });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 48 ===================== -->
+<section class="demo" id="n48">
+  <h2><span class="no">48</span>矩形選択 <small>Rubber band selection</small></h2>
+  <p class="what">空白からドラッグして矩形を描き、重なった要素をまとめて選ぶ。判定は「矩形同士が交差するか」の4比較。<kbd>Shift</kbd> 併用で既存選択に追加。</p>
+  <p class="how"><b>操作：</b>空白からドラッグ。Shift+ドラッグで追加選択。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s48-view" class="s48-view"><div id="s48-band" class="s48-band" hidden></div></div>
+    <span class="readout" id="s48-out" style="position:absolute;left:8px;bottom:8px">選択: 0</span>
+  </div>
+  <style data-code>
+    .s48-view { position: relative; height: 280px; background: #fff; overflow: hidden; touch-action: none; user-select: none; }
+    .s48-item { position: absolute; width: 44px; height: 44px; border-radius: 8px; background: #e2e8f0; display: grid; place-items: center; font-size: 12px; }
+    .s48-item.sel { background: var(--accent); color: #fff; }
+    .s48-band { position: absolute; border: 1px solid var(--accent); background: rgba(37,99,235,.15); pointer-events: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s48-view'), band = $('#s48-band'), out = $('#s48-out');
+      for (let i = 0; i < 24; i++) view.insertAdjacentHTML('afterbegin', `<div class="s48-item" style="left:${20 + (i % 8) * 70}px;top:${30 + Math.floor(i / 8) * 80}px">${i + 1}</div>`);
+      const items = $$('.s48-item', view);
+      const hit = (a, b) => !(a.right < b.left || a.left > b.right || a.bottom < b.top || a.top > b.bottom); // 交差判定
+      let st = null, keep = new Set();
+      view.addEventListener('pointerdown', e => {
+        if (e.target !== view) return;
+        keep = e.shiftKey ? new Set(items.filter(i => i.classList.contains('sel'))) : new Set();
+        const r = view.getBoundingClientRect(); st = { x: e.clientX - r.left, y: e.clientY - r.top }; band.hidden = false; view.setPointerCapture(e.pointerId);
+      });
+      view.addEventListener('pointermove', e => {
+        if (!st) return;
+        const r = view.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        const b = { left: Math.min(st.x, x), top: Math.min(st.y, y), right: Math.max(st.x, x), bottom: Math.max(st.y, y) };
+        Object.assign(band.style, { left: b.left + 'px', top: b.top + 'px', width: b.right - b.left + 'px', height: b.bottom - b.top + 'px' });
+        items.forEach(it => {
+          const ir = { left: it.offsetLeft, top: it.offsetTop, right: it.offsetLeft + it.offsetWidth, bottom: it.offsetTop + it.offsetHeight };
+          it.classList.toggle('sel', keep.has(it) || hit(b, ir));
+        });
+        out.textContent = '選択: ' + items.filter(i => i.classList.contains('sel')).length;
+      });
+      view.addEventListener('pointerup', () => { st = null; band.hidden = true; });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 49 ===================== -->
+<section class="demo" id="n49">
+  <h2><span class="no">49</span>ポインタキャプチャ <small>setPointerCapture</small></h2>
+  <p class="what">ドラッグ中にポインタが要素の外に出ても、その要素がイベントを受け続けるようにする。これが無いと「速く動かすと箱が置いていかれる」「外で離すと pointerup が来ない」が起きる。</p>
+  <p class="how"><b>操作：</b>2つの箱を素早くドラッグして比べる。左はキャプチャなし（外に出た瞬間止まる）。</p>
+  <div class="stage tall" style="padding:0">
+    <div class="s49-view">
+      <div id="s49-a" class="box s49-box" style="left:40px">なし</div>
+      <div id="s49-b" class="box s49-box" style="left:200px">capture</div>
+      <span class="readout" id="s49-out" style="position:absolute;left:8px;bottom:8px">-</span>
+    </div>
+  </div>
+  <style data-code>
+    .s49-view { position: relative; height: 240px; }
+    .s49-box { position: absolute; top: 60px; cursor: grab; }
+  </style>
+  <script data-code>
+    (() => {
+      const out = $('#s49-out');
+      const setup = (el, capture) => {
+        let d = null, moves = 0;
+        el.addEventListener('pointerdown', e => { d = { x: e.clientX - el.offsetLeft, y: e.clientY - el.offsetTop }; moves = 0; if (capture) el.setPointerCapture(e.pointerId); });
+        el.addEventListener('pointermove', e => { if (!d) return; moves++; el.style.left = e.clientX - d.x + 'px'; el.style.top = e.clientY - d.y + 'px'; });
+        el.addEventListener('pointerup', () => { d = null; out.textContent = `${el.textContent}: pointermove ${moves} 回, pointerup 受信`; });
+        el.addEventListener('lostpointercapture', () => d = null);
+      };
+      setup($('#s49-a'), false); setup($('#s49-b'), true);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 50 ===================== -->
+<section class="demo" id="n50">
+  <h2><span class="no">50</span>マルチタッチジェスチャー <small>Pinch / Rotate / 2-finger pan</small></h2>
+  <p class="what">2本の指の「距離」「角度」「中点」の変化量から、拡大率・回転角・移動量を同時に求める。<code>pointerId</code> ごとに座標を Map で持てば、Pointer Events だけで書ける。</p>
+  <p class="how"><b>操作：</b>タッチ端末なら2本指でピンチ／回転。マウスなら <kbd>Shift</kbd> を押しながらドラッグすると「2本目の指が箱の中心に固定されている」扱いで模擬できる。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s50-view" class="s50-view grid-bg"><div id="s50-box" class="box" style="width:120px;height:120px;position:absolute;left:180px;top:70px">multi<br>touch</div><span class="readout" id="s50-out" style="position:absolute;left:8px;top:8px">-</span></div>
+  </div>
+  <style data-code>
+    .s50-view { position: relative; height: 280px; overflow: hidden; touch-action: none; user-select: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s50-view'), box = $('#s50-box'), out = $('#s50-out');
+      const pts = new Map(); let base = null, anchor = null;   // anchor: マウス模擬用の「固定された2本目の指」
+      const T = { x: 0, y: 0, s: 1, r: 0 };
+      const apply = () => { box.style.transform = `translate(${T.x}px, ${T.y}px) rotate(${T.r}deg) scale(${T.s})`; out.textContent = `scale=${T.s.toFixed(2)} rotate=${T.r.toFixed(0)}° pointers=${pts.size}`; };
+      const center = () => { const r = box.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+      const gesture = () => {                                  // 2点から「距離・角度・中点」を出す
+        const p = [...pts.values()], a = p[0], b = p.length >= 2 ? p[1] : anchor;  // 1本なら固定点を2本目に
+        return { d: Math.hypot(b.x - a.x, b.y - a.y), ang: Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, p0: { ...a } };
+      };
+      const rebase = () => base = pts.size ? { g: gesture(), T: { ...T } } : null;
+      view.addEventListener('pointerdown', e => { if (!pts.size) anchor = center(); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); view.setPointerCapture(e.pointerId); rebase(); });
+      view.addEventListener('pointermove', e => {
+        if (!pts.has(e.pointerId) || !base) return;
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const g = gesture();
+        if (pts.size >= 2 || e.shiftKey) {                       // ピンチ・回転・2本指パン
+          T.s = base.T.s * g.d / base.g.d; T.r = base.T.r + (g.ang - base.g.ang);
+          T.x = base.T.x + (g.mx - base.g.mx); T.y = base.T.y + (g.my - base.g.my);
+        } else {                                                 // 1本指：パンのみ
+          T.x = base.T.x + (g.p0.x - base.g.p0.x); T.y = base.T.y + (g.p0.y - base.g.p0.y);
+        }
+        apply();
+      });
+      const up = e => { pts.delete(e.pointerId); rebase(); apply(); };
+      view.addEventListener('pointerup', up); view.addEventListener('pointercancel', up);
+      apply();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 51 ===================== -->
+<section class="demo" id="n51">
+  <h2><span class="no">51</span>修飾キーによる制約 <small>Constrained drag（Shift / Alt / Ctrl）</small></h2>
+  <p class="what">ツール系アプリの共通作法：<kbd>Shift</kbd>=軸固定（水平か垂直のみ）、<kbd>Alt</kbd>=グリッド吸着、<kbd>Ctrl</kbd>=吸着解除。移動量の計算の最後に、押されているキーで補正を掛けるだけ。</p>
+  <p class="how"><b>操作：</b>箱をドラッグしながら Shift / Alt を押す。</p>
+  <div class="stage tall" style="padding:0">
+    <div class="s51-view grid-bg" style="background-size:20px 20px"><div id="s51-box" class="box" style="position:absolute;left:100px;top:60px">drag</div><span class="readout" id="s51-out" style="position:absolute;left:8px;top:8px">-</span></div>
+  </div>
+  <style data-code>
+    .s51-view { position: relative; height: 240px; overflow: hidden; touch-action: none; user-select: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s51-box'), out = $('#s51-out'), GRID = 20;
+      let st = null;
+      box.addEventListener('pointerdown', e => { st = { x: e.clientX, y: e.clientY, l: box.offsetLeft, t: box.offsetTop }; box.setPointerCapture(e.pointerId); });
+      box.addEventListener('pointermove', e => {
+        if (!st) return;
+        let dx = e.clientX - st.x, dy = e.clientY - st.y, mods = [];
+        if (e.shiftKey) { Math.abs(dx) > Math.abs(dy) ? dy = 0 : dx = 0; mods.push('Shift: 軸固定'); } // 大きい方の軸だけ残す
+        let x = st.l + dx, y = st.t + dy;
+        if (e.altKey) { x = Math.round(x / GRID) * GRID; y = Math.round(y / GRID) * GRID; mods.push('Alt: グリッド吸着'); }
+        box.style.left = x + 'px'; box.style.top = y + 'px';
+        out.textContent = `(${x}, ${y}) ${mods.join(' / ') || '制約なし'}`;
+      });
+      box.addEventListener('pointerup', () => st = null);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 52 ===================== -->
+<section class="demo" id="n52">
+  <h2><span class="no">52</span>状態機械駆動UI <small>State-machine driven interaction</small></h2>
+  <p class="what">「押した」「動かした」「離した」を場当たり的に処理するとバグが出る。状態を明示（idle → pressed → dragging → idle）し、各イベントで「今の状態で何が起きたら次はどこか」だけを書く。押しただけ（pressed→idle）はクリック、閾値を超えたらドラッグ、と分岐が自然に決まる。</p>
+  <p class="how"><b>操作：</b>箱をクリック／少しだけ動かす／大きく動かす。右の図で現在状態が光る。</p>
+  <div class="stage">
+    <div class="row" style="align-items:flex-start">
+      <div class="s52-view grid-bg"><div id="s52-box" class="box" style="position:absolute;left:40px;top:40px">箱</div></div>
+      <div style="flex:1">
+        <div class="s52-states"><span data-s="idle" class="on">idle</span>→<span data-s="pressed">pressed</span>→<span data-s="dragging">dragging</span></div>
+        <div class="log" id="s52-log"></div>
+      </div>
+    </div>
+  </div>
+  <style data-code>
+    .s52-view { position: relative; width: 240px; height: 170px; touch-action: none; user-select: none; }
+    .s52-states { font-family: ui-monospace, monospace; font-size: 13px; margin-bottom: 6px; }
+    .s52-states span { padding: 2px 8px; border-radius: 4px; background: #e2e8f0; margin: 0 4px; }
+    .s52-states span.on { background: var(--accent); color: #fff; }
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s52-box'), log = $('#s52-log'), TH = 5;
+      let state = 'idle', ctx = {};
+      const go = (next, why) => { logTo(log, `${state} --(${why})--> ${next}`); state = next; $$('.s52-states span').forEach(s => s.classList.toggle('on', s.dataset.s === next)); };
+      box.addEventListener('pointerdown', e => {
+        if (state !== 'idle') return;
+        ctx = { x: e.clientX, y: e.clientY, l: box.offsetLeft, t: box.offsetTop }; box.setPointerCapture(e.pointerId); go('pressed', 'pointerdown');
+      });
+      box.addEventListener('pointermove', e => {
+        const dx = e.clientX - ctx.x, dy = e.clientY - ctx.y;
+        if (state === 'pressed' && Math.hypot(dx, dy) > TH) go('dragging', `移動 > ${TH}px`);
+        if (state === 'dragging') { box.style.left = ctx.l + dx + 'px'; box.style.top = ctx.t + dy + 'px'; }
+      });
+      box.addEventListener('pointerup', () => {
+        if (state === 'pressed') { go('idle', 'pointerup → クリック扱い'); }
+        else if (state === 'dragging') { go('idle', 'pointerup → ドロップ確定'); }
+      });
+      box.addEventListener('pointercancel', () => { if (state !== 'idle') { box.style.left = ctx.l + 'px'; box.style.top = ctx.t + 'px'; go('idle', 'cancel → 元に戻す'); } });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 53 ===================== -->
+<section class="demo" id="n53">
+  <h2><span class="no">53</span>Web Animations API <small>WAAPI</small></h2>
+  <p class="what">JS からアニメーションを生成し、一時停止・逆再生・速度変更・完了待ち（Promise）ができる。CSS transition では「途中で止めて戻す」が書きにくいが、WAAPI なら <code>animation.reverse()</code> の1行。</p>
+  <p class="how"><b>操作：</b>ボタンで制御。「完了待ち」は <code>await anim.finished</code> の後にログが出る。</p>
+  <div class="stage">
+    <div class="row"><button id="s53-play">再生</button><button id="s53-pause">一時停止</button><button id="s53-reverse">逆再生</button><button id="s53-fast">速度×3</button><span class="readout" id="s53-out">-</span></div>
+    <div id="s53-box" class="box">WAAPI</div>
+  </div>
+  <script data-code>
+    (() => {
+      const box = $('#s53-box'), out = $('#s53-out');
+      const anim = box.animate(
+        [{ transform: 'translateX(0) rotate(0)' }, { transform: 'translateX(320px) rotate(360deg)' }],
+        { duration: 1500, easing: 'ease-in-out', fill: 'both' });
+      anim.pause();
+      const watch = async () => { out.textContent = `state: ${anim.playState}`; try { await anim.finished; out.textContent = 'finished（Promise 解決）'; } catch { /* cancel 時 */ } };
+      $('#s53-play').onclick = () => { anim.playbackRate = 1; anim.play(); watch(); };
+      $('#s53-pause').onclick = () => { anim.pause(); out.textContent = `state: ${anim.playState} @ ${Math.round(anim.currentTime)}ms`; };
+      $('#s53-reverse').onclick = () => { anim.reverse(); watch(); };
+      $('#s53-fast').onclick = () => { anim.playbackRate = 3; anim.play(); watch(); };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 54 ===================== -->
+<section class="demo" id="n54">
+  <h2><span class="no">54</span>描画ループ最適化 <small>rAF batching</small></h2>
+  <p class="what"><code>pointermove</code> は 1フレームに複数回来ることがある（高レートマウス・タッチ）。イベントごとに描画すると無駄。「最新の値だけ保存し、描画は <code>requestAnimationFrame</code> で1フレーム1回」にまとめる。</p>
+  <p class="how"><b>操作：</b>方眼の上でマウスを素早く動かす。イベント回数と描画回数の差を見る。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s54-batch" checked> rAF でまとめる</label><span class="readout" id="s54-out">-</span></div>
+    <div id="s54-view" class="s54-view grid-bg"><div id="s54-dot" class="s54-dot"></div></div>
+  </div>
+  <style data-code>
+    .s54-view { position: relative; height: 140px; overflow: hidden; }
+    .s54-dot { position: absolute; width: 16px; height: 16px; margin: -8px; border-radius: 50%; background: #dc2626; pointer-events: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s54-view'), dot = $('#s54-dot'), out = $('#s54-out'), batch = $('#s54-batch');
+      let events = 0, paints = 0, pending = false, last = null;
+      const paint = () => { paints++; dot.style.transform = `translate(${last.x}px, ${last.y}px)`; out.textContent = `pointermove ${events} 回 / 描画 ${paints} 回`; pending = false; };
+      view.addEventListener('pointermove', e => {
+        events++;
+        const r = view.getBoundingClientRect(); last = { x: e.clientX - r.left, y: e.clientY - r.top }; // 最新値だけ保持
+        if (!batch.checked) return paint();                     // 毎イベント描画（比較用）
+        if (!pending) { pending = true; requestAnimationFrame(paint); } // 1フレーム1回だけ
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 55 ===================== -->
+<section class="demo" id="n55">
+  <h2><span class="no">55</span>Canvas 描画 <small>Canvas rendering + ヒットテスト + devicePixelRatio</small></h2>
+  <p class="what">DOM要素を数万個作ると重いが、Canvas ならビットマップに描くだけなので軽い。代わりに「どれをクリックしたか」は自分で計算する（ヒットテスト）。高解像度画面では <code>devicePixelRatio</code> 分だけ内部解像度を上げないとぼやける。</p>
+  <p class="how"><b>操作：</b>点の上にマウスを乗せると赤くなる（距離計算でヒット判定）。</p>
+  <div class="stage" style="padding:0">
+    <canvas id="s55-c" class="s55-c"></canvas>
+    <span class="readout" id="s55-out" style="position:absolute;left:8px;top:8px">-</span>
+  </div>
+  <style data-code>
+    .s55-c { display: block; width: 100%; height: 240px; background: #fff; }
+  </style>
+  <script data-code>
+    (() => {
+      const c = $('#s55-c'), ctx = c.getContext('2d'), out = $('#s55-out'), N = 20000;
+      const dpr = devicePixelRatio || 1;
+      let W, H, pts = [], hover = -1;
+      const resize = () => {
+        W = c.clientWidth; H = c.clientHeight;
+        c.width = W * dpr; c.height = H * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);  // 内部解像度を DPR 倍に
+        pts = Array.from({ length: N }, () => ({ x: Math.random() * W, y: Math.random() * H }));
+        draw();
+      };
+      const draw = () => {
+        const t0 = performance.now();
+        ctx.clearRect(0, 0, W, H); ctx.fillStyle = '#93c5fd';
+        for (const p of pts) ctx.fillRect(p.x, p.y, 2, 2);
+        if (hover >= 0) { ctx.fillStyle = '#dc2626'; ctx.beginPath(); ctx.arc(pts[hover].x + 1, pts[hover].y + 1, 6, 0, Math.PI * 2); ctx.fill(); }
+        out.textContent = `${N.toLocaleString()} 点を ${(performance.now() - t0).toFixed(1)}ms で描画 / dpr=${dpr}` + (hover >= 0 ? ` / hit #${hover}` : '');
+      };
+      c.addEventListener('pointermove', e => {
+        const r = c.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+        let best = -1, bd = 64;                                              // 8px 以内で最も近い点
+        for (let i = 0; i < pts.length; i++) { const d = (pts[i].x - x) ** 2 + (pts[i].y - y) ** 2; if (d < bd) { bd = d; best = i; } }
+        if (best !== hover) { hover = best; draw(); }
+      });
+      new ResizeObserver(resize).observe(c);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 56 ===================== -->
+<section class="demo" id="n56">
+  <h2><span class="no">56</span>データグリッド操作 <small>セル範囲選択 / 列幅変更 / フィルハンドル / 貼り付け</small></h2>
+  <p class="what">業務アプリの中核。Excel の作法をどこまで再現するかで使い勝手が決まる。ここでは4つ：①ドラッグでセル範囲選択 ②列見出しの境界ドラッグで列幅変更 ③選択範囲右下の■を下にドラッグで値を埋める ④Excelからコピーした表を <kbd>Ctrl</kbd>+<kbd>V</kbd> で流し込む（TSV解析）。</p>
+  <p class="how"><b>操作：</b>セルをドラッグ、列境界をドラッグ、右下■を下へドラッグ、Excel等の表をコピーしてグリッド上で貼り付け。</p>
+  <div class="stage">
+    <div class="row"><span class="readout" id="s56-out">-</span></div>
+    <div id="s56-wrap" class="s56-wrap" tabindex="0"><table id="s56-t" class="s56"></table><div id="s56-fill" class="s56-fill" hidden></div></div>
+  </div>
+  <style data-code>
+    .s56-wrap { position: relative; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; outline: none; user-select: none; }
+    .s56 { border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    .s56 th, .s56 td { border: 1px solid #e5e7eb; padding: 3px 8px; overflow: hidden; white-space: nowrap; position: relative; }
+    .s56 th { background: #f1f5f9; font-weight: 600; }
+    .s56 th .rs { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; touch-action: none; }
+    .s56 td.sel { background: var(--accent-soft); }
+    .s56-fill { position: absolute; width: 8px; height: 8px; background: var(--accent); cursor: crosshair; touch-action: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const wrap = $('#s56-wrap'), t = $('#s56-t'), fill = $('#s56-fill'), out = $('#s56-out');
+      const COLS = ['品番', '品名', '数量', '単価'], data = Array.from({ length: 6 }, (_, r) => [`P-${100 + r}`, `部品${r + 1}`, String((r + 1) * 10), '250']);
+      let sel = null; // {r1,c1,r2,c2}
+      const render = () => {
+        t.innerHTML = '<tr>' + COLS.map((c, i) => `<th style="width:${[80, 120, 70, 70][i]}px">${c}<span class="rs" data-c="${i}"></span></th>`).join('') + '</tr>' +
+          data.map((row, r) => '<tr>' + row.map((v, c) => `<td data-r="${r}" data-c="${c}">${v}</td>`).join('') + '</tr>').join('');
+        paintSel();
+      };
+      const norm = s => ({ r1: Math.min(s.r1, s.r2), r2: Math.max(s.r1, s.r2), c1: Math.min(s.c1, s.c2), c2: Math.max(s.c1, s.c2) });
+      const paintSel = () => {
+        $$('td', t).forEach(td => td.classList.remove('sel')); fill.hidden = !sel; if (!sel) return;
+        const n = norm(sel);
+        $$('td', t).forEach(td => { const r = +td.dataset.r, c = +td.dataset.c; if (r >= n.r1 && r <= n.r2 && c >= n.c1 && c <= n.c2) td.classList.add('sel'); });
+        const last = $(`td[data-r="${n.r2}"][data-c="${n.c2}"]`, t);
+        fill.style.left = last.offsetLeft + last.offsetWidth - 5 + 'px'; fill.style.top = last.offsetTop + last.offsetHeight - 5 + 'px';
+        out.textContent = `選択: R${n.r1 + 1}C${n.c1 + 1} 〜 R${n.r2 + 1}C${n.c2 + 1}`;
+      };
+      let mode = null;
+      wrap.addEventListener('pointerdown', e => {
+        const td = e.target.closest('td');
+        if (e.target.classList.contains('rs')) { const th = e.target.parentElement; mode = { type: 'resize', th, x: e.clientX, w: th.offsetWidth }; }
+        else if (e.target === fill) { mode = { type: 'fill', from: norm(sel) }; }
+        else if (td) { sel = { r1: +td.dataset.r, c1: +td.dataset.c, r2: +td.dataset.r, c2: +td.dataset.c }; mode = { type: 'select' }; paintSel(); }
+        if (mode) wrap.setPointerCapture(e.pointerId);
+        wrap.focus();
+      });
+      wrap.addEventListener('pointermove', e => {
+        if (!mode) return;
+        const td = document.elementFromPoint(e.clientX, e.clientY)?.closest('td');
+        if (mode.type === 'resize') mode.th.style.width = Math.max(40, mode.w + e.clientX - mode.x) + 'px';
+        else if (mode.type === 'select' && td) { sel.r2 = +td.dataset.r; sel.c2 = +td.dataset.c; paintSel(); }
+        else if (mode.type === 'fill' && td) { sel = { ...mode.from, r2: Math.max(mode.from.r2, +td.dataset.r) }; paintSel(); }
+      });
+      wrap.addEventListener('pointerup', () => {
+        if (mode?.type === 'fill') {                                            // 選択範囲の最終行の値を下へコピー
+          const f = mode.from, n = norm(sel);
+          for (let r = f.r2 + 1; r <= n.r2; r++) for (let c = f.c1; c <= f.c2; c++) data[r][c] = data[f.r2][c];
+          render();
+        }
+        mode = null;
+      });
+      wrap.addEventListener('paste', e => {                                     // Excel → TSV
+        if (!sel) return; e.preventDefault();
+        const rows = e.clipboardData.getData('text/plain').replace(/\r/g, '').split('\n').filter(Boolean).map(l => l.split('\t'));
+        const n = norm(sel);
+        rows.forEach((row, i) => row.forEach((v, j) => { if (data[n.r1 + i] && n.c1 + j < COLS.length) data[n.r1 + i][n.c1 + j] = v; }));
+        sel = { r1: n.r1, c1: n.c1, r2: Math.min(data.length - 1, n.r1 + rows.length - 1), c2: Math.min(COLS.length - 1, n.c1 + rows[0].length - 1) };
+        render(); out.textContent += `（${rows.length}行貼り付け）`;
+      });
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 57 ===================== -->
+<section class="demo" id="n57">
+  <h2><span class="no">57</span>楽観的更新 <small>Optimistic UI</small></h2>
+  <p class="what">サーバ応答を待たずに画面を先に更新し、失敗したら元に戻す。kintone の <code>PUT /k/v1/record.json</code> のような更新系で、体感の遅さを消す。ロールバックとエラー通知が必須。</p>
+  <p class="how"><b>操作：</b>チェックを切り替える（即反映）。「失敗させる」をONにすると 1.2秒後に巻き戻る。</p>
+  <div class="stage">
+    <div class="row"><label><input type="checkbox" id="s57-fail"> API を失敗させる</label><span class="readout" id="s57-out">-</span></div>
+    <div id="s57-list" class="s57-list"></div>
+  </div>
+  <style data-code>
+    .s57-list label { display: flex; gap: 8px; padding: 6px 10px; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 4px; font-size: 13px; }
+    .s57-list label.pending { opacity: .6; }
+    .s57-list label.error { border-color: #dc2626; background: #fef2f2; }
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s57-list'), out = $('#s57-out');
+      const items = [{ id: 1, name: '図面確認', done: true }, { id: 2, name: '材料手配', done: false }, { id: 3, name: '治具準備', done: false }];
+      const fakeApi = (id, done) => new Promise((ok, ng) => setTimeout(() => $('#s57-fail').checked ? ng(new Error('500')) : ok(), 1200));
+      const render = () => list.innerHTML = items.map(i => `<label data-id="${i.id}" class="${i.state || ''}"><input type="checkbox" ${i.done ? 'checked' : ''}> ${i.name}</label>`).join('');
+      list.addEventListener('change', async e => {
+        const item = items.find(i => i.id === +e.target.closest('label').dataset.id);
+        const prev = item.done;
+        item.done = e.target.checked; item.state = 'pending'; render();        // ① 先に画面を更新
+        out.textContent = `#${item.id} を送信中…（画面は更新済み）`;
+        try { await fakeApi(item.id, item.done); item.state = ''; out.textContent = `#${item.id} 保存成功`; }
+        catch (err) { item.done = prev; item.state = 'error'; out.textContent = `#${item.id} 失敗 → 元に戻しました (${err.message})`; } // ② 失敗なら巻き戻す
+        render();
+      });
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 58 ===================== -->
+<section class="demo" id="n58">
+  <h2><span class="no">58</span>フォーカス管理 / ライブリージョン <small>Focus trap / inert / aria-live</small></h2>
+  <p class="what">自作モーダルでは3つ必要：①開いたら中にフォーカスを移す ②背面を <code>inert</code> にして Tab が抜けないようにする ③閉じたら元の要素へフォーカスを戻す。非同期の結果は <code>aria-live</code> 領域に書くと読み上げソフトが通知する。</p>
+  <p class="how"><b>操作：</b>開いて <kbd>Tab</kbd> を連打（外に出ない）→ 閉じると「開く」ボタンにフォーカスが戻る。</p>
+  <div class="stage" style="min-height:160px">
+    <div id="s58-main">
+      <div class="row"><button id="s58-open">自作モーダルを開く</button><button>背面のボタン（開いている間は inert）</button></div>
+      <div id="s58-live" aria-live="polite" class="readout">（ここが aria-live 領域）</div>
+    </div>
+    <div id="s58-modal" class="s58-modal" role="dialog" aria-modal="true" hidden>
+      <div class="s58-panel"><b>自作モーダル</b><div class="row" style="margin-top:8px"><input type="text" placeholder="項目"><button id="s58-save">保存</button><button id="s58-close">閉じる</button></div></div>
+    </div>
+  </div>
+  <style data-code>
+    .s58-modal { position: absolute; inset: 0; background: rgba(15,23,42,.4); display: grid; place-items: center; }
+    .s58-modal[hidden] { display: none; }  /* display を指定すると hidden 属性が負けるので明示する */
+    .s58-panel { background: #fff; padding: 16px; border-radius: 10px; width: 300px; }
+    .s58-panel :focus-visible { outline: 3px solid #f59e0b; }
+  </style>
+  <script data-code>
+    (() => {
+      const main = $('#s58-main'), modal = $('#s58-modal'), live = $('#s58-live');
+      let opener = null;
+      const open = () => { opener = document.activeElement; modal.hidden = false; main.inert = true; $('input', modal).focus(); };  // ①②
+      const close = () => { modal.hidden = true; main.inert = false; opener?.focus(); };                                         // ③
+      $('#s58-open').onclick = open; $('#s58-close').onclick = close;
+      modal.addEventListener('keydown', e => e.key === 'Escape' && close());
+      $('#s58-save').onclick = () => { close(); live.textContent = `保存しました（${new Date().toLocaleTimeString()}）← 読み上げ対象`; };
+    })();
+  </script>
+</section>
+
+<!-- ===================== 59 ===================== -->
+<section class="demo" id="n59">
+  <h2><span class="no">59</span>ファイルドロップ <small>File drop / DataTransfer</small></h2>
+  <p class="what">OSのエクスプローラからファイルをドラッグして受け取る。<code>dragover</code> で <code>preventDefault()</code> しないとブラウザがファイルを開いてしまう。ドロップ領域のハイライトと、種別・サイズの検証をここで行う。</p>
+  <p class="how"><b>操作：</b>デスクトップからファイルを枠に落とす（クリックで選択も可）。</p>
+  <div class="stage">
+    <div id="s59-zone" class="s59-zone">ここにファイルをドロップ（またはクリック）<input id="s59-input" type="file" multiple hidden></div>
+    <div class="log" id="s59-log"></div>
+  </div>
+  <style data-code>
+    .s59-zone { border: 2px dashed #94a3b8; border-radius: 8px; padding: 24px; text-align: center; color: var(--muted); cursor: pointer; margin-bottom: 8px; }
+    .s59-zone.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  </style>
+  <script data-code>
+    (() => {
+      const zone = $('#s59-zone'), input = $('#s59-input'), log = $('#s59-log');
+      const accept = files => [...files].forEach(f => {
+        const ok = f.size < 5 * 1024 * 1024;                                       // 検証例：5MB 未満
+        logTo(log, `${ok ? '✔' : '✖'} ${f.name}  ${(f.size / 1024).toFixed(1)} KB  ${f.type || '(type不明)'}` + (ok ? '' : '  → サイズ超過'));
+      });
+      zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('over'); }); // ← 必須
+      zone.addEventListener('dragleave', () => zone.classList.remove('over'));
+      zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('over'); accept(e.dataTransfer.files); });
+      zone.addEventListener('click', () => input.click());
+      input.addEventListener('change', () => accept(input.files));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 60 ===================== -->
+<section class="demo" id="n60">
+  <h2><span class="no">60</span>コンテナクエリ <small>Container queries</small></h2>
+  <p class="what">画面幅ではなく「自分が置かれた枠の幅」でレイアウトを切り替える。同じカード部品を、広いメイン領域では横並び、狭いサイドパネルでは縦積みにできる。ドッキングレイアウト（33）の中身に必須。</p>
+  <p class="how"><b>操作：</b>枠の右下をドラッグして幅を変える。420px を境にカード内のレイアウトが変わる。</p>
+  <div class="stage">
+    <div id="s60-box" class="s60-box">
+      <div class="s60-card"><div class="s60-img"></div><div><b>受注 #1001</b><p>株式会社サンプル / 納期 2026-09-12 / 数量 120</p></div></div>
+      <span class="readout" id="s60-out"></span>
+    </div>
+  </div>
+  <style data-code>
+    .s60-box { container-type: inline-size; resize: horizontal; overflow: auto; width: 520px; max-width: 100%; min-width: 200px; padding: 10px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s60-card { display: flex; gap: 12px; align-items: center; font-size: 13px; } .s60-card p { margin: 2px 0 0; color: var(--muted); }
+    .s60-img { flex: 0 0 90px; height: 60px; background: var(--accent); border-radius: 6px; }
+    @container (max-width: 420px) {
+      .s60-card { flex-direction: column; align-items: stretch; }   /* 枠が狭ければ縦積み */
+      .s60-img { flex-basis: auto; height: 40px; }
+    }
+  </style>
+  <script data-code>
+    (() => {
+      const box = $('#s60-box'), out = $('#s60-out');
+      new ResizeObserver(([e]) => out.textContent = `枠の幅: ${Math.round(e.contentRect.width)}px → ${e.contentRect.width <= 420 ? '縦積み' : '横並び'}`).observe(box);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 61 ===================== -->
+<section class="demo" id="n61">
+  <h2><span class="no">61</span>Electron：フレームレスウィンドウの操作 <small>-webkit-app-region</small></h2>
+  <p class="what">OS標準のタイトルバーを消して自前のヘッダーを作る場合、「ここを掴んだらウィンドウごと動く」領域を CSS で宣言する。ボタンなど押したい要素は <code>no-drag</code> で除外しないとクリックできなくなる。<b>ブラウザでは効かない</b>ため、ここでは同じCSSを当てたモック（枠内でウィンドウを動かす模擬）を置いている。</p>
+  <p class="how"><b>操作：</b>模擬ウィンドウのタイトルバーをドラッグ（Electron では本物のウィンドウが動く）。ボタン部分は掴めない。</p>
+  <div class="stage tall" style="padding:0">
+    <div class="s61-desktop">
+      <div id="s61-win" class="s61-win">
+        <div class="s61-titlebar" id="s61-tb"><span>Mission Bridge</span><span class="s61-btns"><button>—</button><button>▢</button><button>✕</button></span></div>
+        <div class="s61-body">frameless window（模擬）</div>
+      </div>
+    </div>
+  </div>
+  <style data-code>
+    /* Electron の renderer にそのまま使える CSS */
+    .s61-titlebar { -webkit-app-region: drag; }            /* ここを掴むとウィンドウが動く */
+    .s61-titlebar button { -webkit-app-region: no-drag; }  /* ボタンは除外（さもないと押せない） */
+
+    /* 以下はこのページ用の見た目・模擬 */
+    .s61-desktop { position: relative; height: 280px; background: #334155; overflow: hidden; }
+    .s61-win { position: absolute; left: 60px; top: 40px; width: 360px; background: #fff; border-radius: 8px; box-shadow: 0 20px 40px rgba(0,0,0,.4); overflow: hidden; }
+    .s61-titlebar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: #0f172a; color: #fff; font-size: 13px; cursor: default; user-select: none; touch-action: none; }
+    .s61-btns button { background: none; border: none; color: #fff; padding: 2px 8px; }
+    .s61-body { padding: 24px; font-size: 13px; color: var(--muted); }
+  </style>
+  <script data-code="main.js（Electron メインプロセス側。このページでは実行されない）" type="text/plain">
+    const { BrowserWindow } = require('electron');
+    const win = new BrowserWindow({
+      width: 1200, height: 800,
+      frame: false,                 // OS のタイトルバーを消す
+      titleBarStyle: 'hidden',      // macOS: 信号機ボタンだけ残す場合は 'hiddenInset'
+      webPreferences: { preload: path.join(__dirname, 'preload.js') }
+    });
+  </script>
+  <script data-code="このページ用の模擬（Electron では不要）">
+    (() => {
+      const win = $('#s61-win'), tb = $('#s61-tb'); let d = null;
+      tb.addEventListener('pointerdown', e => { if (e.target.tagName === 'BUTTON') return; d = { x: e.clientX - win.offsetLeft, y: e.clientY - win.offsetTop }; tb.setPointerCapture(e.pointerId); });
+      tb.addEventListener('pointermove', e => { if (d) { win.style.left = e.clientX - d.x + 'px'; win.style.top = e.clientY - d.y + 'px'; } });
+      tb.addEventListener('pointerup', () => d = null);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 62 ===================== -->
+<section class="demo" id="n62">
+  <h2><span class="no">62</span>Electron：ネイティブメニュー / ショートカット <small>Menu / accelerator / IPC</small></h2>
+  <p class="what">OSのメニューバー（ファイル・編集…）とショートカットはメインプロセスで定義し、押されたら IPC で renderer に通知する。renderer 側は「メニューから来た」「ボタンから来た」を区別せず同じ関数を呼ぶ設計にする。<b>ブラウザでは動かない</b>ため、下のボタンで「メニューが押された通知が来た」状況を模擬している。</p>
+  <p class="how"><b>操作：</b>「メニュー: 新規作成 を模擬」を押すと、renderer の受信ハンドラが動く。</p>
+  <div class="stage">
+    <div class="row"><button id="s62-sim">メニュー: 新規作成 を模擬（Ctrl+N）</button><button id="s62-btn">画面のボタンから新規作成</button></div>
+    <div class="log" id="s62-log"></div>
+  </div>
+  <script data-code="main.js（メインプロセス：メニュー定義と通知）" type="text/plain">
+    const { Menu, ipcMain } = require('electron');
+    const template = [{
+      label: 'ファイル',
+      submenu: [
+        { label: '新規作成', accelerator: 'CmdOrCtrl+N', click: () => win.webContents.send('menu:new') },
+        { label: 'CSV出力',  accelerator: 'CmdOrCtrl+E', click: () => win.webContents.send('menu:export') },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    }];
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  </script>
+  <script data-code="preload.js（contextBridge で安全に橋渡し）" type="text/plain">
+    const { contextBridge, ipcRenderer } = require('electron');
+    contextBridge.exposeInMainWorld('api', {
+      onMenu: (name, handler) => ipcRenderer.on('menu:' + name, () => handler())
+    });
+  </script>
+  <script data-code="renderer.js（画面側：メニューもボタンも同じ関数へ）">
+    (() => {
+      const log = $('#s62-log');
+      const createNew = from => logTo(log, `新規作成を実行（呼び出し元: ${from}）`);
+      // Electron では: window.api.onMenu('new', () => createNew('メニュー'));
+      // ブラウザ模擬: ボタンで同じハンドラを呼ぶ
+      const api = window.api || { onMenu: (name, h) => $('#s62-sim').addEventListener('click', h) };
+      api.onMenu('new', () => createNew('メニュー / Ctrl+N'));
+      $('#s62-btn').onclick = () => createNew('画面のボタン');
+    })();
+  </script>
+</section>
+
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第2弾 B：カスタマイズ性の高いUI（23〜42）動くデモ</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+</head>
+<body>
+<header class="top">
+  <h1>B：カスタマイズ性の高いUI <span class="tier tierB">23〜42</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="02-basic.html">A：一般 →</a><a href="04-pro.html">C：プロ志向 →</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">B層は「ブラウザ標準の挙動を自分で制御する」領域。Pointer Events・Observer系・requestAnimationFrame の3つが道具の中心になる。</div>
+
+<!-- ===================== 23 ===================== -->
+<section class="demo" id="n23">
+  <h2><span class="no">23</span>仮想スクロール <small>Virtual scroll / Windowing</small></h2>
+  <p class="what">10万行あっても DOM は「見えている行＋少し」だけ作る。スクロール位置から開始行を割り算で求め、上に「行高×開始行」の余白を置いて位置を合わせる。</p>
+  <p class="how"><b>操作：</b>スクロールしても DOM 行数は約20のまま。</p>
+  <div class="stage">
+    <div class="row"><span class="readout" id="s23-out"></span></div>
+    <div id="s23-view" class="s23-view"><div id="s23-spacer"><div id="s23-rows"></div></div></div>
+  </div>
+  <style data-code>
+    .s23-view { height: 200px; overflow-y: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s23-view .r { height: 28px; line-height: 28px; padding: 0 10px; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+    .s23-view .r:nth-child(even) { background: #f8fafc; }
+  </style>
+  <script data-code>
+    (() => {
+      const TOTAL = 100000, H = 28, view = $('#s23-view'), spacer = $('#s23-spacer'), rows = $('#s23-rows'), out = $('#s23-out');
+      spacer.style.height = TOTAL * H + 'px';              // 全体の高さだけ確保（DOMは作らない）
+      function render() {
+        const start = Math.floor(view.scrollTop / H);
+        const count = Math.ceil(view.clientHeight / H) + 2;  // 画面分＋余裕
+        rows.style.transform = `translateY(${start * H}px)`; // 表示行を正しい位置へ
+        let html = '';
+        for (let i = start; i < Math.min(start + count, TOTAL); i++) html += `<div class="r">行 ${i + 1}（DOMは使い回し）</div>`;
+        rows.innerHTML = html;
+        out.textContent = `全 ${TOTAL.toLocaleString()} 行 / DOM行数 ${rows.children.length} / 表示開始 ${start + 1}`;
+      }
+      view.addEventListener('scroll', render); render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 24 ===================== -->
+<section class="demo" id="n24">
+  <h2><span class="no">24</span>スティッキー（固定ヘッダー / 固定列） <small>Sticky header / column</small></h2>
+  <p class="what">スクロールしても見出しが留まる。<code>position: sticky</code> だけで実現でき、JSは不要。左上のセルは <code>top</code> と <code>left</code> の両方を指定して両方向に固定する。</p>
+  <p class="how"><b>操作：</b>表を縦横にスクロール。</p>
+  <div class="stage">
+    <div id="s24-wrap" class="s24-wrap"><table id="s24-table" class="s24"></table></div>
+  </div>
+  <style data-code>
+    .s24-wrap { height: 200px; overflow: auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .s24 { border-collapse: separate; border-spacing: 0; font-size: 13px; }
+    .s24 th, .s24 td { padding: 5px 12px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; white-space: nowrap; background: #fff; }
+    .s24 thead th { position: sticky; top: 0; background: #f1f5f9; z-index: 2; }
+    .s24 td:first-child, .s24 th:first-child { position: sticky; left: 0; background: #f1f5f9; z-index: 1; }
+    .s24 thead th:first-child { z-index: 3; } /* 左上：両方向固定・最前面 */
+  </style>
+  <script data-code>
+    (() => {
+      const t = $('#s24-table');
+      let h = '<thead><tr><th>品番</th>' + Array.from({ length: 12 }, (_, i) => `<th>${i + 1}月</th>`).join('') + '</tr></thead><tbody>';
+      for (let r = 1; r <= 30; r++) h += `<tr><td>P-${String(r).padStart(3, '0')}</td>` + Array.from({ length: 12 }, () => `<td>${Math.floor(Math.random() * 900 + 100)}</td>`).join('') + '</tr>';
+      t.innerHTML = h + '</tbody>';
+    })();
+  </script>
+</section>
+
+<!-- ===================== 25 ===================== -->
+<section class="demo" id="n25">
+  <h2><span class="no">25</span>スクロールスナップ <small>Scroll snap</small></h2>
+  <p class="what">スクロールを止めた時、区切り位置に吸着する。CSSだけで「カルーセル」「ページ単位の閲覧」ができ、慣性・タッチ対応もブラウザ任せ。</p>
+  <p class="how"><b>操作：</b>横にスクロール（Shift+ホイール or トラックパッド）。どこで止めてもカードの先頭に揃う。</p>
+  <div class="stage">
+    <div class="s25-track" id="s25-track"></div>
+  </div>
+  <style data-code>
+    .s25-track { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 4px; scroll-padding: 4px; }
+    .s25-card { flex: 0 0 200px; height: 110px; scroll-snap-align: start; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; display: grid; place-items: center; font-size: 15px; }
+  </style>
+  <script data-code>
+    (() => {
+      $('#s25-track').innerHTML = Array.from({ length: 8 }, (_, i) => `<div class="s25-card">カード ${i + 1}</div>`).join('');
+    })();
+  </script>
+</section>
+
+<!-- ===================== 26 ===================== -->
+<section class="demo" id="n26">
+  <h2><span class="no">26</span>パララックス <small>Parallax</small></h2>
+  <p class="what">前景と背景を異なる速度で動かして奥行きを出す。実装は「スクロール量 × 係数」を <code>transform</code> に入れるだけ。業務アプリでは酔いやすいので控えめに。</p>
+  <p class="how"><b>操作：</b>枠内をスクロール。背景の丸は 0.3 倍の速度で動く。</p>
+  <div class="stage" style="padding:0">
+    <div id="s26-view" class="s26-view">
+      <div id="s26-bg" class="s26-bg"></div>
+      <div class="s26-content"><p>前景（等速）</p><p>スクロールに合わせて…</p><p>背景がゆっくり動く</p><p>係数 0.3</p><p>終わり</p></div>
+    </div>
+  </div>
+  <style data-code>
+    .s26-view { position: relative; height: 220px; overflow: auto; background: #1e293b; color: #fff; }
+    .s26-bg { position: absolute; left: 0; right: 0; top: 0; height: 800px; pointer-events: none;
+      background-image: radial-gradient(circle, rgba(255,255,255,.25) 12px, transparent 13px); background-size: 120px 120px; will-change: transform; }
+    .s26-content { position: relative; padding: 20px 30px; } .s26-content p { margin: 0 0 120px; font-size: 18px; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s26-view'), bg = $('#s26-bg');
+      view.addEventListener('scroll', () => bg.style.transform = `translateY(${view.scrollTop * 0.7}px)`); // 0.7px戻す＝0.3倍で動く
+    })();
+  </script>
+</section>
+
+<!-- ===================== 27 ===================== -->
+<section class="demo" id="n27">
+  <h2><span class="no">27</span>スクロール連動アニメーション <small>Scroll-driven reveal</small></h2>
+  <p class="what">要素が画面に入った瞬間をトリガーにする。<code>scroll</code> イベントで毎回位置計算せず、<code>IntersectionObserver</code> に「入った／出た」だけ教えてもらう。</p>
+  <p class="how"><b>操作：</b>枠内をスクロール。入ったカードがフェード＋上昇で現れる。</p>
+  <div class="stage" style="padding:0">
+    <div id="s27-view" class="s27-view"></div>
+  </div>
+  <style data-code>
+    .s27-view { height: 220px; overflow: auto; padding: 14px; }
+    .s27-card { background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 14px; margin-bottom: 60px; font-size: 13px;
+      opacity: 0; transform: translateY(20px); transition: opacity .5s, transform .5s; }
+    .s27-card.in { opacity: 1; transform: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s27-view');
+      view.innerHTML = Array.from({ length: 8 }, (_, i) => `<div class="s27-card">カード ${i + 1}：画面に入ると現れる</div>`).join('');
+      const io = new IntersectionObserver(es => es.forEach(e => e.target.classList.toggle('in', e.isIntersecting)), { root: view, threshold: 0.3 });
+      $$('.s27-card', view).forEach(c => io.observe(c));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 28 ===================== -->
+<section class="demo" id="n28">
+  <h2><span class="no">28</span>慣性 / モーメンタム <small>Inertia / Momentum</small></h2>
+  <p class="what">指を離した後も速度を保ちながら減速して止まる。「離した瞬間の速度」を記録し、毎フレーム速度に減衰係数（0.95など）を掛けて位置を進める。パン（02）にこれを足すと「気持ちよさ」が出る。</p>
+  <p class="how"><b>操作：</b>方眼を素早くドラッグして離す。壁で跳ね返る。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s28-view" class="s28-view grid-bg"><div id="s28-ball" class="box" style="border-radius:50%;position:absolute;left:0;top:0">投げる</div><span class="readout" id="s28-out" style="position:absolute;left:8px;top:8px">v: 0</span></div>
+  </div>
+  <style data-code>
+    .s28-view { position: relative; height: 260px; overflow: hidden; touch-action: none; user-select: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s28-view'), ball = $('#s28-ball'), out = $('#s28-out');
+      let x = 100, y = 80, vx = 0, vy = 0, drag = null, raf = 0, last = null;
+      const paint = () => { ball.style.transform = `translate(${x}px, ${y}px)`; out.textContent = `v: ${Math.hypot(vx, vy).toFixed(2)} px/frame`; };
+      ball.addEventListener('pointerdown', e => { cancelAnimationFrame(raf); drag = { dx: e.clientX - x, dy: e.clientY - y }; last = { x: e.clientX, y: e.clientY, t: performance.now() }; ball.setPointerCapture(e.pointerId); });
+      ball.addEventListener('pointermove', e => {
+        if (!drag) return;
+        x = e.clientX - drag.dx; y = e.clientY - drag.dy;
+        const now = performance.now(), dt = Math.max(1, now - last.t);
+        vx = (e.clientX - last.x) / dt * 16; vy = (e.clientY - last.y) / dt * 16; // 1フレーム(16ms)あたりの速度
+        last = { x: e.clientX, y: e.clientY, t: now }; paint();
+      });
+      ball.addEventListener('pointerup', () => { drag = null; fling(); });
+      function fling() {
+        const W = view.clientWidth - 80, H = view.clientHeight - 80;
+        const step = () => {
+          vx *= 0.95; vy *= 0.95;                      // 減衰
+          x += vx; y += vy;
+          if (x < 0) { x = 0; vx = -vx * 0.6; } if (x > W) { x = W; vx = -vx * 0.6; } // 壁で反射
+          if (y < 0) { y = 0; vy = -vy * 0.6; } if (y > H) { y = H; vy = -vy * 0.6; }
+          paint();
+          if (Math.abs(vx) + Math.abs(vy) > 0.05) raf = requestAnimationFrame(step); // 十分遅くなったら止める
+        };
+        raf = requestAnimationFrame(step);
+      }
+      paint();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 29 ===================== -->
+<section class="demo" id="n29">
+  <h2><span class="no">29</span>スプリング物理 <small>Spring animation</small></h2>
+  <p class="what">目標との差に比例した力（バネ）と速度に比例した抵抗（減衰）で動かす。時間固定のトランジションと違い、途中で目標が変わっても不自然にならない。</p>
+  <p class="how"><b>操作：</b>枠内をクリック。連続でクリックして途中変更の滑らかさを見る。剛性・減衰を変えてみる。</p>
+  <div class="stage tall" style="padding:0">
+    <div id="s29-view" class="s29-view grid-bg">
+      <div id="s29-ball" class="box" style="border-radius:50%;position:absolute;left:0;top:0;width:40px;height:40px"></div>
+      <div class="row" style="position:absolute;left:8px;top:8px;background:#fff;padding:4px 8px;border-radius:6px;font-size:12px">
+        剛性 <input id="s29-k" type="range" min="0.02" max="0.4" step="0.01" value="0.12"> 減衰 <input id="s29-d" type="range" min="0.5" max="0.98" step="0.01" value="0.8">
+      </div>
+    </div>
+  </div>
+  <style data-code>
+    .s29-view { position: relative; height: 260px; overflow: hidden; cursor: crosshair; }
+  </style>
+  <script data-code>
+    (() => {
+      const view = $('#s29-view'), ball = $('#s29-ball');
+      let x = 200, y = 120, tx = x, ty = y, vx = 0, vy = 0, raf = 0;
+      view.addEventListener('pointerdown', e => {
+        const r = view.getBoundingClientRect(); tx = e.clientX - r.left - 20; ty = e.clientY - r.top - 20;
+        if (!raf) tick();
+      });
+      function tick() {
+        const k = +$('#s29-k').value, d = +$('#s29-d').value;
+        vx = (vx + (tx - x) * k) * d; vy = (vy + (ty - y) * k) * d; // 力＝差×剛性、速度に減衰
+        x += vx; y += vy;
+        ball.style.transform = `translate(${x}px, ${y}px)`;
+        const settled = Math.abs(vx) + Math.abs(vy) < 0.01 && Math.abs(tx - x) + Math.abs(ty - y) < 0.1;
+        raf = settled ? 0 : requestAnimationFrame(tick);
+      }
+      ball.style.transform = `translate(${x}px, ${y}px)`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== 30 ===================== -->
+<section class="demo" id="n30">
+  <h2><span class="no">30</span>FLIPアニメーション <small>First-Last-Invert-Play</small></h2>
+  <p class="what">レイアウトが変わる（並べ替え・追加・削除）ときの定石。①変更前の位置を測る（First）②DOMを変える③変更後の位置を測る（Last）④差分だけ transform で元の位置に戻す（Invert）⑤transformを0へアニメーション（Play）。</p>
+  <p class="how"><b>操作：</b>シャッフル。DOMは一瞬で並び替わっているが、見た目は滑らかに移動する。</p>
+  <div class="stage">
+    <div class="row"><button id="s30-shuffle">シャッフル</button><button id="s30-sort">並び順に戻す</button></div>
+    <div id="s30-grid" class="s30-grid"></div>
+  </div>
+  <style data-code>
+    .s30-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+    .s30-grid .box { width: 60px; height: 60px; }
+  </style>
+  <script data-code>
+    (() => {
+      const grid = $('#s30-grid');
+      grid.innerHTML = Array.from({ length: 10 }, (_, i) => `<div class="box" data-i="${i}">${i + 1}</div>`).join('');
+      function flip(mutate) {
+        const items = $$('.box', grid);
+        const first = new Map(items.map(el => [el, el.getBoundingClientRect()])); // First
+        mutate();                                                                  // DOM変更
+        items.forEach(el => {
+          const f = first.get(el), l = el.getBoundingClientRect();               // Last
+          const dx = f.left - l.left, dy = f.top - l.top;
+          if (!dx && !dy) return;
+          el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], // Invert → Play
+            { duration: 350, easing: 'cubic-bezier(.2,.8,.2,1)' });
+        });
+      }
+      $('#s30-shuffle').onclick = () => flip(() => $$('.box', grid).sort(() => Math.random() - .5).forEach(el => grid.appendChild(el)));
+      $('#s30-sort').onclick = () => flip(() => $$('.box', grid).sort((a, b) => a.dataset.i - b.dataset.i).forEach(el => grid.appendChild(el)));
+    })();
+  </script>
+</section>
+
+<!-- ===================== 31 ===================== -->
+<section class="demo" id="n31">
+  <h2><span class="no">31</span>ビュー遷移 <small>View Transitions API</small></h2>
+  <p class="what">DOM更新の「前」と「後」をブラウザがスナップショットし、自動でクロスフェードする。<code>view-transition-name</code> を付けた要素は位置・サイズの移動もアニメーションする。未対応ブラウザでは即時切替にフォールバック。</p>
+  <p class="how"><b>操作：</b>「一覧」と「詳細」を切り替える。画像だけは同じ名前を持つので位置が繋がる。</p>
+  <div class="stage" style="min-height:180px">
+    <div class="row"><button id="s31-toggle">一覧 ⇄ 詳細</button><span class="readout" id="s31-out"></span></div>
+    <div id="s31-root"></div>
+  </div>
+  <style data-code>
+    .s31-thumb { width: 50px; height: 50px; background: var(--accent); border-radius: 8px; view-transition-name: hero; }
+    .s31-hero { width: 100%; height: 90px; background: var(--accent); border-radius: 8px; view-transition-name: hero; }
+    ::view-transition-old(root), ::view-transition-new(root) { animation-duration: .35s; }
+  </style>
+  <script data-code>
+    (() => {
+      const root = $('#s31-root'), out = $('#s31-out');
+      let detail = false;
+      const render = () => root.innerHTML = detail
+        ? `<div class="s31-hero"></div><p style="font-size:13px">詳細画面：受注 #1001 の内容</p>`
+        : `<div class="row"><div class="s31-thumb"></div><span style="font-size:13px">受注 #1001（一覧の1行）</span></div>`;
+      out.textContent = document.startViewTransition ? 'View Transitions: 対応' : 'View Transitions: 非対応 → 即時切替';
+      $('#s31-toggle').onclick = () => {
+        detail = !detail;
+        if (document.startViewTransition) document.startViewTransition(render); // 対応ブラウザ
+        else render();                                                            // フォールバック
+      };
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 32 ===================== -->
+<section class="demo" id="n32">
+  <h2><span class="no">32</span>ドラッグ並べ替え <small>Sortable / Reorder（Pointer Events自作）</small></h2>
+  <p class="what">HTML標準DnD（08）を使わず Pointer Events で自作すると、タッチ対応・見た目の完全制御・FLIPとの併用ができる。掴んだ要素は transform で追従させ、他要素との重なりで挿入位置を決める。</p>
+  <p class="how"><b>操作：</b>行をドラッグして並べ替え。</p>
+  <div class="stage">
+    <div id="s32-list" class="s32-list"></div>
+  </div>
+  <style data-code>
+    .s32-list { background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; user-select: none; }
+    .s32-item { padding: 8px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; cursor: grab; touch-action: none; background: #fff; }
+    .s32-item.lifted { position: relative; z-index: 2; box-shadow: 0 8px 20px rgba(0,0,0,.15); cursor: grabbing; }
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s32-list');
+      list.innerHTML = ['切断', '曲げ', '溶接', '塗装', '検査', '梱包'].map(s => `<div class="s32-item">⋮⋮ 工程：${s}</div>`).join('');
+      let lifted = null, startY = 0, naturalTop = 0; // naturalTop: transformなしの本来の位置
+      const animating = new WeakSet();               // FLIP 中の兄弟は判定から外す（アニメ中の rect で判定すると往復する）
+      list.addEventListener('pointerdown', e => {
+        lifted = e.target.closest('.s32-item'); if (!lifted) return;
+        startY = e.clientY; naturalTop = lifted.getBoundingClientRect().top;
+        lifted.classList.add('lifted'); lifted.setPointerCapture(e.pointerId);
+      });
+      list.addEventListener('pointermove', e => {
+        if (!lifted) return;
+        let dy = e.clientY - startY;
+        lifted.style.transform = `translateY(${dy}px)`;
+        const cy = naturalTop + dy + lifted.offsetHeight / 2; // 持ち上げ中要素の見た目の中心
+        for (const sib of list.children) {
+          if (sib === lifted || animating.has(sib)) continue;
+          const r = sib.getBoundingClientRect();
+          if (cy < r.top || cy > r.bottom) continue;
+          // 兄弟の中心を越えたので DOM 上で入れ替える
+          const before = r;
+          const liftedIsAfter = sib.compareDocumentPosition(lifted) & Node.DOCUMENT_POSITION_FOLLOWING;
+          liftedIsAfter ? list.insertBefore(lifted, sib) : list.insertBefore(lifted, sib.nextSibling);
+          const after = sib.getBoundingClientRect();
+          const anim = sib.animate([{ transform: `translateY(${before.top - after.top}px)` }, { transform: 'none' }], { duration: 150 }); // FLIP
+          animating.add(sib); anim.finished.then(() => animating.delete(sib));
+          // 持ち上げ中要素の本来位置が変わったので、見た目が飛ばないよう基準をずらす
+          const newNatural = lifted.getBoundingClientRect().top - dy;
+          startY += newNatural - naturalTop; naturalTop = newNatural;
+          lifted.style.transform = `translateY(${e.clientY - startY}px)`;
+          break;
+        }
+      });
+      const drop = () => { if (!lifted) return; lifted.style.transform = ''; lifted.classList.remove('lifted'); lifted = null; };
+      list.addEventListener('pointerup', drop); list.addEventListener('pointercancel', drop);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 33 ===================== -->
+<section class="demo" id="n33">
+  <h2><span class="no">33</span>分割パネル / ドッキング <small>Split pane / Dock layout</small></h2>
+  <p class="what">境界（ガター）をドラッグして領域比率を変える。IDE風レイアウトの基礎。grid の列幅を書き換えるだけで、中身のレイアウトは自動で追従する。慣習：最小幅で止まる、ガターのダブルクリックで初期比率に戻す。</p>
+  <p class="how"><b>操作：</b>中央の縦棒をドラッグ。ダブルクリックでリセット。</p>
+  <div class="stage" style="padding:0">
+    <div id="s33-split" class="s33-split">
+      <div class="s33-pane">サイドバー</div>
+      <div id="s33-gutter" class="s33-gutter" title="ドラッグ / ダブルクリックで初期化"></div>
+      <div class="s33-pane">メイン領域<br><span class="readout" id="s33-out"></span></div>
+    </div>
+  </div>
+  <style data-code>
+    .s33-split { display: grid; grid-template-columns: 220px 6px 1fr; height: 200px; }
+    .s33-pane { padding: 12px; font-size: 13px; overflow: hidden; }
+    .s33-gutter { background: #cbd5e1; cursor: col-resize; touch-action: none; }
+    .s33-gutter:hover, .s33-gutter.active { background: var(--accent); }
+  </style>
+  <script data-code>
+    (() => {
+      const split = $('#s33-split'), g = $('#s33-gutter'), out = $('#s33-out');
+      const MIN = 120, apply = w => { split.style.gridTemplateColumns = `${w}px 6px 1fr`; out.textContent = `左: ${Math.round(w)}px`; };
+      let st = null;
+      g.addEventListener('pointerdown', e => { st = { x: e.clientX, w: split.children[0].offsetWidth }; g.setPointerCapture(e.pointerId); g.classList.add('active'); });
+      g.addEventListener('pointermove', e => { if (st) apply(Math.min(split.clientWidth - MIN - 6, Math.max(MIN, st.w + e.clientX - st.x))); });
+      g.addEventListener('pointerup', () => { st = null; g.classList.remove('active'); });
+      g.addEventListener('dblclick', () => apply(220));
+      apply(220);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 34 ===================== -->
+<section class="demo" id="n34">
+  <h2><span class="no">34</span>キーボードナビゲーション <small>Roving tabindex</small></h2>
+  <p class="what">ツールバーやグリッドの中は矢印キーで移動し、<kbd>Tab</kbd> は「グループごと」に抜ける。実現方法は「今の項目だけ <code>tabindex=0</code>、他は <code>-1</code>」に付け替え続けること（roving = 巡回）。</p>
+  <p class="how"><b>操作：</b>最初のボタンにフォーカス（クリック）→ <kbd>←</kbd><kbd>→</kbd><kbd>Home</kbd><kbd>End</kbd>。<kbd>Tab</kbd> で次のグループへ一気に抜ける。</p>
+  <div class="stage">
+    <div class="s34-bar" role="toolbar" aria-label="書式"><button tabindex="0">太字</button><button tabindex="-1">斜体</button><button tabindex="-1">下線</button><button tabindex="-1">取消線</button></div>
+    <div class="s34-bar" role="toolbar" aria-label="配置"><button tabindex="0">左</button><button tabindex="-1">中央</button><button tabindex="-1">右</button></div>
+    <div class="row"><span class="readout" id="s34-out">-</span></div>
+  </div>
+  <style data-code>
+    .s34-bar { display: inline-flex; gap: 2px; padding: 4px; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; margin: 0 8px 8px 0; }
+    .s34-bar button:focus-visible { outline: 3px solid #f59e0b; }
+  </style>
+  <script data-code>
+    (() => {
+      $$('.s34-bar').forEach(bar => {
+        const btns = $$('button', bar);
+        const go = i => { btns.forEach((b, k) => b.tabIndex = k === i ? 0 : -1); btns[i].focus(); $('#s34-out').textContent = `${bar.getAttribute('aria-label')} → ${btns[i].textContent}`; };
+        bar.addEventListener('keydown', e => {
+          const i = btns.indexOf(document.activeElement); if (i < 0) return;
+          const map = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: btns.length - 1 };
+          if (e.key in map) { e.preventDefault(); go((map[e.key] + btns.length) % btns.length); }
+        });
+        btns.forEach((b, i) => b.addEventListener('focus', () => go(i)));
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 35 ===================== -->
+<section class="demo" id="n35">
+  <h2><span class="no">35</span>ショートカットキー <small>Hotkeys</small></h2>
+  <p class="what">キー組合せで機能を呼ぶ。要点：①ブラウザ既定動作を <code>preventDefault()</code> で止める ②入力欄にフォーカス中は単独キーのショートカットを無効化 ③Mac は <code>metaKey</code>、Windows は <code>ctrlKey</code>。</p>
+  <p class="how"><b>操作：</b>このページ上で <kbd>Ctrl/⌘</kbd>+<kbd>S</kbd>、<kbd>Ctrl/⌘</kbd>+<kbd>K</kbd>（36へ）、単独 <kbd>N</kbd>。入力欄内で <kbd>N</kbd> を打つと無視される。</p>
+  <div class="stage">
+    <div class="row"><input type="text" placeholder="ここで N を打っても発火しない"><span class="readout" id="s35-out">-</span></div>
+  </div>
+  <script data-code>
+    (() => {
+      const out = $('#s35-out');
+      const isTyping = () => /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable;
+      document.addEventListener('keydown', e => {
+        const mod = e.ctrlKey || e.metaKey;
+        if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); out.textContent = 'Ctrl/⌘+S → 保存（ブラウザの保存ダイアログは抑止）'; }
+        else if (!mod && e.key.toLowerCase() === 'n' && !isTyping()) { out.textContent = 'N → 新規作成'; }
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 36 ===================== -->
+<section class="demo" id="n36">
+  <h2><span class="no">36</span>コマンドパレット <small>Command palette</small></h2>
+  <p class="what"><kbd>Ctrl</kbd>+<kbd>K</kbd> で検索窓を開き、機能を文字で呼び出す。あいまい検索 → 矢印で選択 → Enter で実行。機能が増えてもメニューを掘らずに済む。</p>
+  <p class="how"><b>操作：</b>ボタンか <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd>。「csv」「削」などで絞り込み。</p>
+  <div class="stage">
+    <div class="row"><button id="s36-open">コマンドパレットを開く</button><span class="readout" id="s36-out">-</span></div>
+    <dialog id="s36-dlg" class="s36-dlg">
+      <input id="s36-q" type="text" placeholder="コマンドを検索…" autocomplete="off">
+      <div id="s36-list" class="s36-list"></div>
+    </dialog>
+  </div>
+  <style data-code>
+    .s36-dlg { border: none; border-radius: 10px; padding: 0; width: 380px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+    .s36-dlg::backdrop { background: rgba(15,23,42,.35); }
+    .s36-dlg input { width: 100%; border: none; border-bottom: 1px solid #e5e7eb; border-radius: 10px 10px 0 0; padding: 12px 14px; font-size: 15px; outline: none; }
+    .s36-list div { padding: 8px 14px; font-size: 13px; cursor: pointer; }
+    .s36-list div.active { background: var(--accent-soft); }
+  </style>
+  <script data-code>
+    (() => {
+      const CMDS = ['新規レコード作成', 'CSV出力', 'CSV取込', '選択行を削除', '選択行を複製', '設定を開く', 'ログアウト'];
+      const dlg = $('#s36-dlg'), q = $('#s36-q'), list = $('#s36-list'), out = $('#s36-out');
+      let idx = 0, hits = [];
+      const render = () => {
+        const s = q.value.trim().toLowerCase();
+        hits = CMDS.filter(c => c.toLowerCase().includes(s)); idx = Math.min(idx, Math.max(0, hits.length - 1));
+        list.innerHTML = hits.map((c, i) => `<div class="${i === idx ? 'active' : ''}">${c}</div>`).join('') || '<div style="color:#6b7280">該当なし</div>';
+      };
+      const open = () => { q.value = ''; idx = 0; render(); dlg.showModal(); };
+      const run = () => { if (hits[idx]) out.textContent = '実行: ' + hits[idx]; dlg.close(); };
+      $('#s36-open').onclick = open;
+      document.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); open(); } });
+      q.addEventListener('input', () => { idx = 0; render(); });
+      q.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown') { idx = (idx + 1) % hits.length; render(); e.preventDefault(); }
+        if (e.key === 'ArrowUp') { idx = (idx - 1 + hits.length) % hits.length; render(); e.preventDefault(); }
+        if (e.key === 'Enter') run();
+      });
+      list.addEventListener('click', e => { idx = [...list.children].indexOf(e.target); run(); });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 37 ===================== -->
+<section class="demo" id="n37">
+  <h2><span class="no">37</span>アンドゥ / リドゥ <small>Undo / Redo</small></h2>
+  <p class="what">操作履歴を積んで巻き戻す。ここは「状態のスナップショット」方式（過去の状態を丸ごと配列に保存）。単純で確実。状態が大きいなら「逆操作コマンド」方式を検討する。</p>
+  <p class="how"><b>操作：</b>丸を追加／色替え → <kbd>Ctrl/⌘</kbd>+<kbd>Z</kbd> / <kbd>Ctrl/⌘</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> またはボタン。</p>
+  <div class="stage">
+    <div class="row">
+      <button id="s37-add">丸を追加</button><button id="s37-color">全部の色を変える</button><button id="s37-clear">全消去</button>
+      <button id="s37-undo">↶ Undo</button><button id="s37-redo">↷ Redo</button><span class="readout" id="s37-out"></span>
+    </div>
+    <div id="s37-canvas" class="s37-canvas"></div>
+  </div>
+  <style data-code>
+    .s37-canvas { height: 90px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; display: flex; gap: 6px; padding: 8px; flex-wrap: wrap; }
+    .s37-canvas i { width: 24px; height: 24px; border-radius: 50%; }
+  </style>
+  <script data-code>
+    (() => {
+      let state = [], past = [], future = [];
+      const canvas = $('#s37-canvas'), out = $('#s37-out');
+      const render = () => { canvas.innerHTML = state.map(c => `<i style="background:${c}"></i>`).join(''); out.textContent = `past:${past.length} future:${future.length}`; };
+      const commit = next => { past.push(state); future = []; state = next; render(); };  // 新操作で redo 履歴は捨てる
+      const undo = () => { if (!past.length) return; future.push(state); state = past.pop(); render(); };
+      const redo = () => { if (!future.length) return; past.push(state); state = future.pop(); render(); };
+      const rnd = () => `hsl(${Math.random() * 360},70%,55%)`;
+      $('#s37-add').onclick = () => commit([...state, rnd()]);
+      $('#s37-color').onclick = () => commit(state.map(rnd));
+      $('#s37-clear').onclick = () => commit([]);
+      $('#s37-undo').onclick = undo; $('#s37-redo').onclick = redo;
+      document.addEventListener('keydown', e => {
+        if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+        e.preventDefault(); e.shiftKey ? redo() : undo();
+      });
+      render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 38 ===================== -->
+<section class="demo" id="n38">
+  <h2><span class="no">38</span>インライン編集 <small>Inline editing</small></h2>
+  <p class="what">表示中の値をその場で編集状態に切り替える。終了経路を3つ揃える：<kbd>Enter</kbd>=確定、<kbd>Esc</kbd>=取消、フォーカスが外れた=確定。どれか欠けると「戻れない」UIになる。</p>
+  <p class="how"><b>操作：</b>セルをダブルクリック（またはフォーカスして Enter）。</p>
+  <div class="stage">
+    <table class="s38"><tr><th>品名</th><th>数量</th></tr><tr><td tabindex="0">六角ボルト M8</td><td tabindex="0">120</td></tr><tr><td tabindex="0">平ワッシャー</td><td tabindex="0">300</td></tr></table>
+    <div class="row"><span class="readout" id="s38-out">-</span></div>
+  </div>
+  <style data-code>
+    .s38 { border-collapse: collapse; background: #fff; font-size: 13px; margin-bottom: 8px; }
+    .s38 th, .s38 td { border: 1px solid #cbd5e1; padding: 4px 10px; min-width: 120px; }
+    .s38 td input { width: 100%; font: inherit; border: 2px solid var(--accent); padding: 2px 4px; margin: -4px -6px; }
+  </style>
+  <script data-code>
+    (() => {
+      const out = $('#s38-out');
+      function edit(td) {
+        const old = td.textContent;
+        const input = document.createElement('input'); input.value = old;
+        td.textContent = ''; td.appendChild(input); input.focus(); input.select();
+        let done = false;
+        const finish = (commit) => {
+          if (done) return; done = true;
+          td.textContent = commit ? input.value : old;
+          out.textContent = commit ? `確定: 「${old}」→「${input.value}」` : '取消';
+          td.focus();
+        };
+        input.addEventListener('keydown', e => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); });
+        input.addEventListener('blur', () => finish(true));
+      }
+      $$('.s38 td').forEach(td => {
+        td.addEventListener('dblclick', () => edit(td));
+        td.addEventListener('keydown', e => { if (e.key === 'Enter' && !td.querySelector('input')) edit(td); });
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 39 ===================== -->
+<section class="demo" id="n39">
+  <h2><span class="no">39</span>カスタムコンテキストメニュー <small>Custom context menu</small></h2>
+  <p class="what">右クリックで独自メニューを出す。<code>contextmenu</code> イベントを止め、クリック位置に出す。画面端では反転して枠内に収める。</p>
+  <p class="how"><b>操作：</b>灰色の領域で右クリック（タッチは長押し）。端の方で試す。</p>
+  <div class="stage" style="padding:0">
+    <div id="s39-area" class="s39-area">右クリック</div>
+    <div id="s39-menu" class="s39-menu" role="menu" hidden><button>コピー</button><button>貼り付け</button><button>行を挿入</button></div>
+    <span class="readout" id="s39-out" style="position:absolute;left:8px;bottom:8px">-</span>
+  </div>
+  <style data-code>
+    .s39-area { height: 180px; display: grid; place-items: center; color: var(--muted); }
+    .s39-menu { position: absolute; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 4px; box-shadow: 0 10px 24px rgba(0,0,0,.15); z-index: 5; }
+    .s39-menu button { display: block; width: 100%; text-align: left; border: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const area = $('#s39-area'), menu = $('#s39-menu'), stage = area.parentElement, out = $('#s39-out');
+      area.addEventListener('contextmenu', e => {
+        e.preventDefault();
+        menu.hidden = false;
+        const s = stage.getBoundingClientRect();
+        let x = e.clientX - s.left, y = e.clientY - s.top;
+        if (x + menu.offsetWidth > s.width) x -= menu.offsetWidth;    // 右にはみ出す → 左へ
+        if (y + menu.offsetHeight > s.height) y -= menu.offsetHeight; // 下にはみ出す → 上へ
+        menu.style.left = x + 'px'; menu.style.top = y + 'px';
+      });
+      const close = () => menu.hidden = true;
+      document.addEventListener('click', close);
+      document.addEventListener('keydown', e => e.key === 'Escape' && close());
+      $$('button', menu).forEach(b => b.onclick = () => out.textContent = '実行: ' + b.textContent);
+    })();
+  </script>
+</section>
+
+<!-- ===================== 40 ===================== -->
+<section class="demo" id="n40">
+  <h2><span class="no">40</span>進捗表示 <small>Progress（determinate / indeterminate）</small></h2>
+  <p class="what">完了率が分かるなら確定型（バー）、分からないなら不定型（流れるだけ）。長い処理には必ずキャンセル手段を添える。<code>AbortController</code> で中断できる作りにしておく。</p>
+  <p class="how"><b>操作：</b>開始 → 途中でキャンセル。</p>
+  <div class="stage">
+    <div class="row"><button id="s40-start">1000件処理を開始</button><button id="s40-cancel" disabled>キャンセル</button><span class="readout" id="s40-out">待機</span></div>
+    <progress id="s40-bar" max="100" value="0" style="width:100%"></progress>
+    <div class="s40-indet" id="s40-indet" hidden></div>
+  </div>
+  <style data-code>
+    .s40-indet { height: 6px; margin-top: 8px; border-radius: 3px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 40% 100%; animation: s40 1s linear infinite; }
+    @keyframes s40 { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+  </style>
+  <script data-code>
+    (() => {
+      const bar = $('#s40-bar'), out = $('#s40-out'), indet = $('#s40-indet'), start = $('#s40-start'), cancel = $('#s40-cancel');
+      let ctrl = null;
+      start.onclick = async () => {
+        ctrl = new AbortController(); start.disabled = true; cancel.disabled = false; indet.hidden = false; out.textContent = '準備中（不定型）';
+        await new Promise(r => setTimeout(r, 800));
+        indet.hidden = true;
+        for (let i = 1; i <= 100; i++) {
+          if (ctrl.signal.aborted) { out.textContent = `キャンセル（${i * 10}件で中断）`; break; }
+          await new Promise(r => setTimeout(r, 30));
+          bar.value = i; out.textContent = `${i * 10} / 1000 件`;
+        }
+        start.disabled = false; cancel.disabled = true;
+      };
+      cancel.onclick = () => ctrl?.abort();
+    })();
+  </script>
+</section>
+
+<!-- ===================== 41 ===================== -->
+<section class="demo" id="n41">
+  <h2><span class="no">41</span>ジェスチャー競合の解決 <small>touch-action / 方向ロック</small></h2>
+  <p class="what">「縦にスクロールしたいのか、横にスワイプしたいのか」をブラウザと取り合わない。<code>touch-action: pan-y</code> で縦はブラウザに任せ、横は自分で取る。さらに初動数pxの方向で「今回はどちらか」を確定（方向ロック）する。</p>
+  <p class="how"><b>操作：</b>カードを横にドラッグ（削除アクションが出る）。縦に動かすと枠がスクロールする。タッチ端末で差がよく分かる。</p>
+  <div class="stage" style="padding:0">
+    <div id="s41-list" class="s41-list"></div>
+  </div>
+  <style data-code>
+    .s41-list { height: 200px; overflow-y: auto; }
+    .s41-row { position: relative; background: #dc2626; color: #fff; }
+    .s41-row::after { content: '削除'; position: absolute; right: 14px; top: 10px; font-size: 13px; }
+    .s41-card { position: relative; background: #fff; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; font-size: 13px; color: var(--text); touch-action: pan-y; user-select: none; }
+    .s41-card.snap { transition: transform .2s; }
+  </style>
+  <script data-code>
+    (() => {
+      const list = $('#s41-list');
+      list.innerHTML = Array.from({ length: 8 }, (_, i) => `<div class="s41-row"><div class="s41-card">通知 ${i + 1}：横スワイプで削除、縦でスクロール</div></div>`).join('');
+      $$('.s41-card', list).forEach(card => {
+        let st = null, lock = null; // lock: 'x' | 'y' | null
+        card.addEventListener('pointerdown', e => { st = { x: e.clientX, y: e.clientY }; lock = null; card.classList.remove('snap'); });
+        card.addEventListener('pointermove', e => {
+          if (!st) return;
+          const dx = e.clientX - st.x, dy = e.clientY - st.y;
+          if (!lock && Math.hypot(dx, dy) > 6) lock = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y'; // 初動で方向確定
+          if (lock !== 'x') return;                    // 縦ならブラウザのスクロールに任せる
+          card.setPointerCapture(e.pointerId);
+          card.style.transform = `translateX(${Math.min(0, dx)}px)`;
+        });
+        const end = e => {
+          if (!st) return;
+          const dx = e.clientX - st.x; st = null; card.classList.add('snap');
+          if (lock === 'x' && dx < -100) card.style.transform = 'translateX(-100%)'; else card.style.transform = '';
+        };
+        card.addEventListener('pointerup', end); card.addEventListener('pointercancel', end);
+      });
+    })();
+  </script>
+</section>
+
+<!-- ===================== 42 ===================== -->
+<section class="demo" id="n42">
+  <h2><span class="no">42</span>モーション低減対応 <small>prefers-reduced-motion</small></h2>
+  <p class="what">OS設定で「視覚効果を減らす」を選んだユーザーには、動きを短縮・省略する。CSSのメディアクエリ1つで全アニメーションを止められる。JSからも <code>matchMedia</code> で判定できる。</p>
+  <p class="how"><b>操作：</b>ボタンで動かす。OS設定を変えるとこのページの動きが止まる（右の表示で確認）。</p>
+  <div class="stage">
+    <div class="row"><button id="s42-run">動かす</button><span class="readout" id="s42-out"></span></div>
+    <div id="s42-ball" class="box s42-ball">●</div>
+  </div>
+  <style data-code>
+    .s42-ball { transition: transform .8s cubic-bezier(.2,.8,.2,1); }
+    .s42-ball.moved { transform: translateX(300px) rotate(360deg); }
+    @media (prefers-reduced-motion: reduce) {
+      .s42-ball { transition: none; }  /* 移動はするが、動きは付けない */
+    }
+  </style>
+  <script data-code>
+    (() => {
+      const mq = matchMedia('(prefers-reduced-motion: reduce)'), out = $('#s42-out');
+      const show = () => out.textContent = `OS設定: ${mq.matches ? 'モーション低減 ON（アニメーション省略）' : '通常'}`;
+      mq.addEventListener('change', show); show();
+      $('#s42-run').onclick = () => $('#s42-ball').classList.toggle('moved');
+    })();
+  </script>
+</section>
+
+</main>
+</div>
+</body>
+</html>

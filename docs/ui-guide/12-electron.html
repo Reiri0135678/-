@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Electron 実装リファレンス</title>
+<link rel="stylesheet" href="assets/guide.css">
+<style>
+  .tierF { background: #475569; }
+  main.single { max-width: 960px; margin: 0 auto; padding: 24px; }
+  .ref { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 18px; margin-bottom: 14px; }
+  .ref h2 { margin: 0 0 6px; font-size: 16px; } .ref p { font-size: 13.5px; margin: 0 0 8px; }
+  pre { background: var(--code); color: #e2e8f0; padding: 10px 12px; border-radius: 8px; font-size: 12px; overflow: auto; margin: 6px 0; line-height: 1.5; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; }
+  table.cmp th, table.cmp td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Electron 実装リファレンス <span class="tier tierF">UI操作との対応</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="13-kintone.html">kintone</a><a href="04-pro.html#n61">61</a><a href="04-pro.html#n62">62</a></nav>
+</header>
+<main class="single">
+  <div class="lead">デモ 61・62 で触れた Electron 固有の部分を、業務アプリ（Mission Bridge 想定）で必要になる順にまとめる。<b>原則：renderer は普通のブラウザとして書き、OS・ファイル・通信の権限が要るものだけ main に置いて IPC で呼ぶ。</b>デモと ui-kit は renderer 側でそのまま動く。このページは参照用で、コードはこのページでは実行されない。</div>
+
+  <div class="ref"><h2>0. 構成の原則（contextIsolation + preload）</h2>
+    <p>renderer から Node を直接触らせない。preload で必要な関数だけ <code>window.api</code> として公開し、renderer はそれを呼ぶ。これで UI コードはブラウザで動くものと同じになり、デモ・ui-kit がそのまま使える。</p>
+<pre>// main.js
+const win = new BrowserWindow({ width: 1200, height: 800,
+  webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true } });
+
+// preload.js
+const { contextBridge, ipcRenderer } = require('electron');
+contextBridge.exposeInMainWorld('api', {
+  kintone: (req) => ipcRenderer.invoke('kintone:request', req),         // 通信は main 経由（13 参照）
+  onMenu: (name, fn) => ipcRenderer.on('menu:' + name, () => fn()),     // 62
+  windowState: { get: () => ipcRenderer.invoke('win:getState') },
+});
+
+// renderer.js（普通のブラウザコード）
+const records = await window.api.kintone({ method: 'GET', path: '/k/v1/records.json', params: { app: 1, query: 'limit 100' } });</pre></div>
+
+  <div class="ref"><h2>1. ウィンドウ状態の永続化（位置・サイズ・最大化）<small> ← 81 ワークスペース永続化の OS 側</small></h2>
+    <p>閉じる前に <code>getBounds()</code> を保存し、起動時に復元する。ディスプレイ構成が変わっていると画面外に出るので、<code>screen</code> で表示範囲内か検証してから使う。</p>
+<pre>const { screen } = require('electron');
+const saved = store.get('win');                                         // 自前の JSON 保存（electron-store 等でも可）
+const fits = saved &amp;&amp; screen.getAllDisplays().some(d => {
+  const a = d.workArea; return saved.x >= a.x &amp;&amp; saved.y >= a.y &amp;&amp; saved.x + saved.width <= a.x + a.width &amp;&amp; saved.y + saved.height <= a.y + a.height; });
+const win = new BrowserWindow({ ...(fits ? saved : { width: 1200, height: 800 }) });
+if (saved?.maximized) win.maximize();
+const save = () => store.set('win', { ...win.getNormalBounds(), maximized: win.isMaximized() });
+win.on('close', save); win.on('resize', debounce(save, 500)); win.on('move', debounce(save, 500));</pre></div>
+
+  <div class="ref"><h2>2. フレームレスウィンドウとタイトルバー <small>← 61</small></h2>
+    <p>自前タイトルバーは <code>-webkit-app-region: drag</code>。Windows/Linux で OS の最小化・最大化・閉じるボタンだけ残したいなら <code>titleBarOverlay</code>。ダブルクリックで最大化は自前実装。</p>
+<pre>new BrowserWindow({ frame: false, titleBarStyle: 'hidden', titleBarOverlay: { color: '#0f172a', symbolColor: '#fff', height: 32 } });
+// renderer: .titlebar { -webkit-app-region: drag; height: 32px; padding-right: 140px; /* overlay のボタン分を空ける */ }
+//           .titlebar button, .titlebar input { -webkit-app-region: no-drag; }
+// preload: dblclick → ipcRenderer.send('win:toggleMaximize')
+ipcMain.on('win:toggleMaximize', e => { const w = BrowserWindow.fromWebContents(e.sender); w.isMaximized() ? w.unmaximize() : w.maximize(); });</pre></div>
+
+  <div class="ref"><h2>3. メニュー・アクセラレータと画面内ショートカットの衝突 <small>← 62, 35</small></h2>
+    <p>アプリメニューの <code>accelerator</code> は renderer の keydown より先に取られる。同じキーを両方に登録しない。方針：<b>アプリ全体の操作（新規、保存、終了）はメニュー側、画面内の操作（矢印移動、セル編集）は renderer 側</b>。<code>globalShortcut</code> はアプリが背面でも効くので、業務アプリでは基本使わない。</p>
+<pre>const template = [{ label: 'ファイル', submenu: [
+  { label: '新規', accelerator: 'CmdOrCtrl+N', click: (_, w) => w?.webContents.send('menu:new') },
+  { label: '保存', accelerator: 'CmdOrCtrl+S', click: (_, w) => w?.webContents.send('menu:save') },
+  { type: 'separator' }, { role: 'quit' } ] },
+  { label: '表示', submenu: [{ role: 'reload' }, { role: 'toggleDevTools' }, { type: 'separator' }, { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] }];
+Menu.setApplicationMenu(Menu.buildFromTemplate(template));</pre></div>
+
+  <div class="ref"><h2>4. IPC の型と失敗の扱い <small>← 57 楽観的更新, 79 オフライン</small></h2>
+    <p><code>invoke/handle</code> は Promise を返すので、renderer 側は <code>fetch</code> と同じ感覚で <code>await</code> できる。main で throw した Error は renderer に届く（メッセージのみ）。チャンネル名は <code>'領域:動詞'</code> で統一し、一覧を1ファイルにまとめる。</p>
+<pre>// channels.js（main と preload で共有）
+module.exports = { KINTONE_REQUEST: 'kintone:request', WIN_GET_STATE: 'win:getState', FILE_OPEN: 'file:open' };
+// main
+ipcMain.handle(CH.KINTONE_REQUEST, async (e, req) => { validate(req); return kintoneClient.request(req); }); // 入力は必ず検証
+// renderer
+try { await window.api.kintone(req); } catch (err) { toast.show(err.message, { kind: 'error' }); /* 57: 巻き戻し */ }</pre></div>
+
+  <div class="ref"><h2>5. 複数ウィンドウ <small>← 85</small></h2>
+    <p>同一アプリの複数 BrowserWindow は同じオリジンなので、renderer 同士は <code>BroadcastChannel</code>（ui-kit の <code>sync.js</code>）で同期できる。main が「真実の状態」を持つ設計なら、<code>BrowserWindow.getAllWindows()</code> に配信する（62 のコード）。ウィンドウごとに <code>webContents.id</code> を持つので、送信元を除外できる。</p></div>
+
+  <div class="ref"><h2>6. ファイルの受け渡し <small>← 59 ファイルドロップ</small></h2>
+    <p>OS からのドロップは renderer の <code>drop</code> で受ける（59 と同じ）。パスが必要なら <code>webUtils.getPathForFile(file)</code>（preload 側）。逆にアプリからエクスプローラへドラッグして出すのは <code>webContents.startDrag</code>。保存ダイアログは main の <code>dialog</code>。</p>
+<pre>// preload
+contextBridge.exposeInMainWorld('api', { pathOf: (file) => webUtils.getPathForFile(file), saveAs: (name, data) => ipcRenderer.invoke('file:saveAs', name, data) });
+// main
+ipcMain.handle('file:saveAs', async (e, name, data) => { const { filePath } = await dialog.showSaveDialog({ defaultPath: name }); if (filePath) await fs.promises.writeFile(filePath, data); return filePath; });</pre></div>
+
+  <div class="ref"><h2>7. 認証情報の保存 <small>← 13 kintone</small></h2>
+    <p>API トークンやパスワードを平文の JSON に置かない。<code>safeStorage</code> で OS のキーチェーンに紐づけて暗号化する。renderer には渡さず、main が通信時にだけ復号して使う。</p>
+<pre>const { safeStorage } = require('electron');
+const enc = safeStorage.encryptString(token).toString('base64');     // 保存はこれ
+const token = safeStorage.decryptString(Buffer.from(enc, 'base64'));   // 使うときだけ復号（main 内）</pre></div>
+
+  <div class="ref"><h2>8. 表示倍率・DPI <small>← 55 devicePixelRatio</small></h2>
+    <p>Ctrl+ホイールの既定ズームは renderer の内容ごと拡大する。図面ビュー（43）で自前ズームをするなら、既定ズームと衝突しないよう <code>wheel</code> で <code>ctrlKey</code> 付きのものを <code>preventDefault</code> するか、<code>webContents.setVisualZoomLevelLimits(1, 1)</code> でピンチズームを止める。Canvas は <code>devicePixelRatio</code> を見て内部解像度を上げる（55）。</p></div>
+
+  <div class="ref"><h2>9. 二重起動・起動時間・開発者ツール</h2>
+<pre>if (!app.requestSingleInstanceLock()) app.quit();                      // 二重起動禁止。2つ目は既存ウィンドウを前面へ
+app.on('second-instance', () => { const w = BrowserWindow.getAllWindows()[0]; w?.focus(); });
+win.once('ready-to-show', () => win.show());                            // 白い画面を見せない（show:false で作る）
+if (!app.isPackaged) win.webContents.openDevTools({ mode: 'detach' });</pre></div>
+
+  <div class="ref"><h2>10. チェックリスト</h2>
+    <table class="cmp">
+      <tr><th style="width:280px">項目</th><th>確認</th></tr>
+      <tr><td>contextIsolation / sandbox / nodeIntegration:false</td><td>renderer から require できないこと</td></tr>
+      <tr><td>IPC の入力検証</td><td>renderer から来る引数を main で必ず検証（パス・URL・app ID）</td></tr>
+      <tr><td>ウィンドウ状態の復元</td><td>マルチディスプレイ→シングルに戻した時に画面外へ行かない</td></tr>
+      <tr><td>メニューと画面のショートカット</td><td>同じキーを二重登録していない</td></tr>
+      <tr><td>認証情報</td><td>safeStorage。ログ・エラー画面にトークンを出さない</td></tr>
+      <tr><td>オフライン</td><td>79 のキューが main 再起動後も残る（ファイルに保存）</td></tr>
+      <tr><td>自動更新</td><td>更新は業務時間外か、ユーザーの承諾後に再起動（進捗は 40 の作法）</td></tr>
+    </table>
+  </div>
+  <p class="note">API 名・挙動は Electron のバージョンで変わる。特に <code>webUtils.getPathForFile</code>（<code>File.path</code> の後継）と <code>titleBarOverlay</code> は比較的新しい API なので、使用バージョンの公式ドキュメントで確認すること。</p>
+</main>
+</body>
+</html>

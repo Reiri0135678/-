@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>アクセシビリティ：キーボード・読み上げ・色・動き</title>
+<link rel="stylesheet" href="assets/guide.css">
+<script src="assets/guide.js"></script>
+<style>
+  .tierF { background: #475569; }
+  table.cmp { border-collapse: collapse; width: 100%; font-size: 13px; background: #fff; }
+  table.cmp th, table.cmp td { border: 1px solid var(--line); padding: 6px 10px; vertical-align: top; text-align: left; }
+  table.cmp th { background: #f1f5f9; }
+  .chk li { margin-bottom: 4px; font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>アクセシビリティ <span class="tier tierF">全デモに共通</span></h1>
+  <nav><a href="00-index.html">⌂ 入口</a><a href="08-foundations.html">基礎</a><a href="01-ui-operations-catalog.html">カタログ</a><a href="09-exercises.html">課題</a><a href="10-accessibility.html">a11y</a><a href="11-quiz.html">クイズ</a></nav>
+</header>
+<div class="layout">
+<aside class="toc"></aside>
+<main>
+<div class="lead">業務アプリでのアクセシビリティは「障害対応」だけでなく「マウスを持ち替えずに入力できる」「現場の暗い場所・老眼でも読める」「動きで酔わない」という<b>作業効率と安全</b>の話。ここでは自分で検査できる道具と、各デモがどう対応しているかをまとめる。</div>
+
+<!-- ===================== A1 ===================== -->
+<section class="demo" id="a1">
+  <h2><span class="no">A1</span>キーボードだけで操作できるか <small>フォーカス順の可視化</small></h2>
+  <p class="what">マウスなしで全機能に届くか。<kbd>Tab</kbd> の順番が見た目の順と一致しているか、フォーカスが見えるか、閉じ込められて抜けられない箇所がないか。下のボタンで、このページ内の「フォーカスできる要素」に番号を振って順路を可視化する。</p>
+  <p class="how"><b>操作：</b>「フォーカス順を表示」→ 番号が見た目の順に並んでいるか確認。その後 <kbd>Tab</kbd> で実際に辿る。</p>
+  <div class="stage">
+    <div class="row"><button id="a1-show">フォーカス順を表示</button><button id="a1-hide">消す</button><span class="readout" id="a1-out">-</span></div>
+    <div class="row"><button>1つ目</button><a href="#a1">リンク</a><input type="text" placeholder="入力"><div tabindex="0" class="box" style="width:auto;height:auto;padding:6px 10px">tabindex=0 の div</div><div class="box" style="width:auto;height:auto;padding:6px 10px;background:#94a3b8">tabindex なし（届かない）</div><button tabindex="-1">tabindex=-1（Tabで届かない）</button></div>
+  </div>
+  <style data-code>
+    .a11y-badge { position: absolute; z-index: 999; background: #dc2626; color: #fff; font: 700 11px/1 system-ui; padding: 2px 5px; border-radius: 3px; pointer-events: none; }
+  </style>
+  <script data-code>
+    (() => {
+      const SEL = 'a[href], button, input, select, textarea, [tabindex]';
+      const focusable = () => $$(SEL).filter(el => !el.disabled && el.tabIndex >= 0 && el.getClientRects().length);
+      $('#a1-show').onclick = () => {
+        $$('.a11y-badge').forEach(b => b.remove());
+        const list = focusable();
+        list.forEach((el, i) => { const r = el.getBoundingClientRect(); const b = document.createElement('span'); b.className = 'a11y-badge'; b.textContent = i + 1; b.style.left = r.left + scrollX + 'px'; b.style.top = r.top + scrollY - 8 + 'px'; document.body.appendChild(b); });
+        $('#a1-out').textContent = `フォーカス可能: ${list.length} 個`;
+      };
+      $('#a1-hide').onclick = () => $$('.a11y-badge').forEach(b => b.remove());
+    })();
+  </script>
+</section>
+
+<!-- ===================== A2 ===================== -->
+<section class="demo" id="a2">
+  <h2><span class="no">A2</span>読み上げに何が伝わるか <small>アクセシブルネームと role</small></h2>
+  <p class="what">スクリーンリーダーは「役割（role）」と「名前（accessible name）」を読む。アイコンだけのボタンは名前が空になる。<code>aria-label</code> か視覚的に隠したテキストで名前を与える。下の検査は、ページ内のボタン・リンクで名前が空のものを列挙する。</p>
+  <p class="how"><b>操作：</b>「名前のない操作要素を探す」。右の例は意図的に名前が無い。</p>
+  <div class="stage">
+    <div class="row"><button id="a2-scan">名前のない操作要素を探す</button><span class="readout" id="a2-out">-</span></div>
+    <div class="row">
+      <button title="良い例: aria-label あり" aria-label="削除">🗑</button>
+      <button title="悪い例: 名前なし">🗑</button>
+      <button title="良い例: 隠しテキスト">🔍<span class="a2-sr">検索</span></button>
+      <a href="#a2" title="悪い例: 名前なし"><span style="display:inline-block;width:16px;height:16px;background:#94a3b8;border-radius:3px"></span></a>
+    </div>
+    <div class="log" id="a2-log" style="height:70px"></div>
+  </div>
+  <style data-code>
+    /* 視覚的に隠すが読み上げには残す（display:none は読み上げも消える） */
+    .a2-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  </style>
+  <script data-code>
+    (() => {
+      const name = el => (el.getAttribute('aria-label') || el.getAttribute('aria-labelledby') && document.getElementById(el.getAttribute('aria-labelledby'))?.textContent || el.textContent || el.getAttribute('title') || '').trim();
+      $('#a2-scan').onclick = () => {
+        const log = $('#a2-log'); log.textContent = '';
+        const bad = $$('button, a[href]').filter(el => !name(el).replace(/[\u{1F300}-\u{1FAFF}\s]/gu, ''));
+        bad.forEach(el => logTo(log, `${el.tagName.toLowerCase()}: "${el.outerHTML.slice(0, 60)}…" → 名前なし`));
+        $('#a2-out').textContent = `名前のない要素: ${bad.length} 個（title はブラウザにより読まれないので不十分）`;
+      };
+    })();
+  </script>
+</section>
+
+<!-- ===================== A3 ===================== -->
+<section class="demo" id="a3">
+  <h2><span class="no">A3</span>コントラスト比 <small>WCAG 4.5:1（通常文字）/ 3:1（大きな文字・UI部品）</small></h2>
+  <p class="what">現場の照明や古いモニタでは、薄い灰色の文字は読めない。文字色と背景色から比率を計算し、基準を満たすか確認する。計算式は WCAG の相対輝度。</p>
+  <p class="how"><b>操作：</b>色を変えて比率を見る。</p>
+  <div class="stage">
+    <div class="row">文字 <input type="color" id="a3-fg" value="#6b7280"> 背景 <input type="color" id="a3-bg" value="#ffffff"> <span class="readout" id="a3-out"></span></div>
+    <div id="a3-sample" style="padding:10px 14px;border-radius:6px;font-size:14px">サンプル文字：受注 #1001 納期 2026-09-12</div>
+  </div>
+  <script data-code>
+    (() => {
+      const lum = hex => { const c = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4); return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]; };
+      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + 0.05) / (l2 + 0.05); };
+      const upd = () => { const fg = $('#a3-fg').value, bg = $('#a3-bg').value, r = ratio(fg, bg); Object.assign($('#a3-sample').style, { color: fg, background: bg }); $('#a3-out').textContent = `${r.toFixed(2)} : 1 → 通常文字 ${r >= 4.5 ? '合格' : '不合格'} / 大きな文字・UI ${r >= 3 ? '合格' : '不合格'}`; };
+      $('#a3-fg').oninput = $('#a3-bg').oninput = upd; upd();
+    })();
+  </script>
+</section>
+
+<!-- ===================== A4 ===================== -->
+<section class="demo" id="a4">
+  <h2><span class="no">A4</span>非同期結果の通知 <small>aria-live の polite / assertive</small></h2>
+  <p class="what">保存完了やエラーを画面の隅に出しても、読み上げユーザーには伝わらない。<code>aria-live</code> 領域にテキストを書くと自動で読み上げられる。<code>polite</code> は今の読み上げが終わってから、<code>assertive</code> は割り込む（エラー用）。領域は<b>最初から存在</b>させ、中身だけ変える。</p>
+  <p class="how"><b>操作：</b>ボタンで通知。スクリーンリーダー（Windows: ナレーター Win+Ctrl+Enter、macOS: VoiceOver Cmd+F5）を起動して聞く。</p>
+  <div class="stage">
+    <div class="row"><button id="a4-ok">保存成功（polite）</button><button id="a4-ng">エラー（assertive）</button></div>
+    <div class="readout" id="a4-polite" aria-live="polite" role="status">（status 領域）</div>
+    <div class="readout" id="a4-assert" aria-live="assertive" role="alert" style="margin-top:6px;color:#dc2626">（alert 領域）</div>
+  </div>
+  <script data-code>
+    (() => {
+      let n = 0;
+      $('#a4-ok').onclick = () => $('#a4-polite').textContent = `レコード #${1000 + ++n} を保存しました`;
+      $('#a4-ng').onclick = () => $('#a4-assert').textContent = `保存に失敗しました（通信エラー）`;
+    })();
+  </script>
+</section>
+
+<!-- ===================== A5 ===================== -->
+<section class="demo" id="a5">
+  <h2><span class="no">A5</span>環境設定の尊重 <small>reduced-motion / contrast / color-scheme / forced-colors</small></h2>
+  <p class="what">OS の設定をメディアクエリで拾える。動きを減らす、コントラストを上げる、ダークモード、Windows のハイコントラストモード（<code>forced-colors</code>、色指定が無視される）。この環境の現在値を表示する。</p>
+  <div class="stage"><table class="cmp" id="a5-t"></table></div>
+  <script data-code>
+    (() => {
+      const Q = [['prefers-reduced-motion: reduce', '動きを減らす → アニメーションを短縮・省略（42）'], ['prefers-contrast: more', 'コントラストを上げる → 枠線・文字色を濃く'], ['prefers-color-scheme: dark', 'ダークモード → 配色を切替（70）'], ['forced-colors: active', 'ハイコントラストモード → 背景色で状態を表すUIは消える。枠線・アイコンで表す'], ['hover: hover', 'ホバー可能な入力装置（06）'], ['pointer: coarse', '粗いポインタ（指）→ 当たり判定を 44px 以上に']];
+      const render = () => $('#a5-t').innerHTML = '<tr><th>メディアクエリ</th><th>この環境</th><th>対応</th></tr>' + Q.map(([q, d]) => `<tr><td><code>@media (${q})</code></td><td>${matchMedia(`(${q})`).matches ? '<b>該当</b>' : '—'}</td><td>${d}</td></tr>`).join('');
+      Q.forEach(([q]) => matchMedia(`(${q})`).addEventListener('change', render)); render();
+    })();
+  </script>
+</section>
+
+<!-- ===================== A6 ===================== -->
+<section class="demo" id="a6">
+  <h2><span class="no">A6</span>チェックリストと各デモの対応 <small>実装時に見る</small></h2>
+  <div class="stage" style="padding:0;border:none;background:none">
+  <table class="cmp">
+    <tr><th style="width:260px">項目</th><th>やること</th><th style="width:120px">関連デモ</th></tr>
+    <tr><td>キーボードで全操作可能</td><td>ドラッグ操作には矢印キーの代替を用意（並べ替え、リサイズ、パン）。Tab順は見た目順</td><td><a href="03-custom.html#n34">34</a> <a href="02-basic.html#n19">19</a></td></tr>
+    <tr><td>フォーカスが見える</td><td><code>:focus-visible</code> で必ず可視化。<code>outline: none</code> だけの指定は禁止</td><td><a href="02-basic.html#n07">07</a></td></tr>
+    <tr><td>モーダルの作法</td><td>開いたら中へフォーカス、背面は inert、Esc で閉じる、閉じたら元へ戻す</td><td><a href="02-basic.html#n15">15</a> <a href="04-pro.html#n58">58</a></td></tr>
+    <tr><td>ホバー依存を避ける</td><td>ホバーで出る情報はフォーカスやクリックでも出す（タッチ端末にホバーは無い）</td><td><a href="02-basic.html#n06">06</a> <a href="02-basic.html#n17">17</a></td></tr>
+    <tr><td>役割と状態を属性で表す</td><td><code>role</code>, <code>aria-selected</code>, <code>aria-expanded</code>, <code>aria-busy</code>, <code>aria-valuenow</code>。色や形だけで状態を表さない</td><td><a href="02-basic.html#n11">11</a> <a href="02-basic.html#n18">18</a> <a href="03-custom.html#n40">40</a></td></tr>
+    <tr><td>非同期の結果を伝える</td><td><code>aria-live</code> 領域に書く。トーストも同様</td><td><a href="#a4">A4</a> <a href="02-basic.html#n16">16</a></td></tr>
+    <tr><td>動きを止められる</td><td><code>prefers-reduced-motion</code> で transition / animation を無効化。自動再生のパララックス等は特に</td><td><a href="03-custom.html#n42">42</a></td></tr>
+    <tr><td>当たり判定の大きさ</td><td>タッチ対象は 44×44px 以上。細い境界（分割パネル）は見た目より広い判定にする</td><td><a href="03-custom.html#n33">33</a></td></tr>
+    <tr><td>コントラスト</td><td>通常文字 4.5:1、大きな文字と UI 部品 3:1。薄い灰色の補足文が最も落ちやすい</td><td><a href="#a3">A3</a></td></tr>
+    <tr><td>時間制限</td><td>トーストは読む時間を確保（ホバーで停止）。長い処理はキャンセル可</td><td><a href="02-basic.html#n16">16</a> <a href="03-custom.html#n40">40</a></td></tr>
+    <tr><td>エラーの伝え方</td><td>どの項目が、なぜ、どう直せばよいか。色だけで示さない。フォーカスをエラー項目へ</td><td><a href="05-advanced.html#n75">75</a></td></tr>
+  </table>
+  </div>
+</section>
+
+</main>
+</div>
+</body>
+</html>
