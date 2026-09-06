@@ -136,8 +136,14 @@ body{margin:0;display:flex;flex-direction:column;font:13px system-ui,-apple-syst
     show(key, parts[1] || '');
   });
 
+  // ナビの見出しは短く：「第N弾」と括弧書きを落とし、「見出し：説明」は見出しだけにする
+  function navLabel(title) {
+    var t = title.replace(/^第\d+弾\s*/, '').replace(/[（(].*$/, '').trim();
+    var head = t.split('：')[0];
+    return head.length >= 3 ? head : t;
+  }
   nav.innerHTML = PAGES.map(function (p) {
-    return '\x3ca href="#" data-key="' + p.key + '">' + p.title.replace(/[（(].*$/, '').trim() + '\x3c/a>';
+    return '\x3ca href="#" data-key="' + p.key + '" title="' + p.title + '">' + navLabel(p.title) + '\x3c/a>';
   }).join('');
   nav.addEventListener('click', function (e) {
     var a = e.target.closest('a[data-key]');
